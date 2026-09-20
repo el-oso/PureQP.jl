@@ -20,7 +20,7 @@
 #         # writes bench/results/illconditioned_shootout.json
 using PureOSQP, PureIPM, PureDAQP, PureQPBase
 using Clarabel, COSMO, QPALM, DAQP
-using LinearAlgebra, SparseArrays, Random, JSON, Printf
+using LinearAlgebra, SparseArrays, Random, JSON, Printf, Chairmarks
 
 include(joinpath(@__DIR__, "helpers_conditioning.jl"))
 include(joinpath(@__DIR__, "helpers_clarabel.jl"))
@@ -30,7 +30,7 @@ BLAS.set_num_threads(1)
 
 const RESULTS = joinpath(@__DIR__, "results", "illconditioned_shootout.json")
 const TOL = 1.0e-6
-const REPS = 3
+const SECONDS = 0.5
 const SEED = 2026
 
 """
@@ -112,20 +112,20 @@ function active_rows(A, l, u, x)
     end
 end
 
-median_of(v) = (
-    s = sort(v); isodd(length(s)) ? s[(length(s) + 1) ÷ 2] :
-        0.5 * (s[length(s) ÷ 2] + s[length(s) ÷ 2 + 1])
-)
+"""
+    timed(f) -> (; time, x, iters)
 
-"Median of `REPS` timed runs of `f`, which returns `(x, iterations)`. Setup is inside `f`."
+Median run time of `f`, which returns `(x, iterations)`. Setup is inside `f`.
+
+Timed with Chairmarks rather than `@elapsed` over a few repetitions. Three `@elapsed` windows
+cannot separate a garbage collection from the work: on these instances that read a solver which
+allocates during setup as 1.6x slower than it is, while leaving the solvers that allocate less
+alone, which is a difference between solvers that is not in the solvers.
+"""
 function timed(f)
-    ts = Float64[]
     x, iters = f()
-    for _ in 1:REPS
-        t = @elapsed ((x, iters) = f())
-        push!(ts, t)
-    end
-    return (; time = median_of(ts), x, iters)
+    b = @b f() seconds = SECONDS
+    return (; time = b.time, x, iters)
 end
 
 function run_qpalm(P, q, A, l, u, tol)
@@ -261,7 +261,7 @@ open(RESULTS, "w") do io
         io, Dict(
             "julia_version" => string(VERSION),
             "blas_threads" => BLAS.get_num_threads(),
-            "tol" => TOL, "reps" => REPS, "seed" => SEED,
+            "tol" => TOL, "seconds_per_solver" => SECONDS, "seed" => SEED,
             "versions" => Dict(
                 "Clarabel" => string(pkgversion(Clarabel)), "COSMO" => string(pkgversion(COSMO)),
                 "QPALM" => string(pkgversion(QPALM)), "DAQP" => string(pkgversion(DAQP)),

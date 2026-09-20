@@ -406,6 +406,28 @@ function reduce_qp(
         iseq::AbstractVector{Bool}; eps_prox::T = zero(T)
     ) where {T <: Real}
     n = size(H, 1)
+    m = size(A, 1)
+    # `H = μI` has the Cholesky factor `√μ I`, so the reduction `A R⁻¹` is a scaling rather
+    # than a triangular solve. Worth testing for because it is the shape of every problem
+    # whose objective is a plain squared norm. The test leaves the general case alone: it
+    # stops at the first entry that disqualifies `H`, which for a dense `H` is the first
+    # off-diagonal one.
+    mu = scalar_diagonal(H)
+    if !isnothing(mu)
+        s = sqrt(mu + eps_prox)
+        s > 0 || throw(
+            ArgumentError(
+                "P is not positive definite, which ActiveSet() needs when eps_prox = 0, " *
+                    "because the reduction factors it. Pass eps_prox > 0 to run proximal-point " *
+                    "iterations instead, which accept a positive semidefinite P."
+            )
+        )
+        Mr = Matrix{T}(undef, m, n)
+        copyto!(Mr, A)
+        rmul!(Mr, one(T) / s)
+        R = Cholesky(Matrix{T}(s * I, n, n), 'U', 0)
+        return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m)
+    end
     # Symmetrize into one buffer. `(H + H') / 2` reads pleasantly and allocates four
     # matrices to produce one, which is most of what a small solve costs.
     Hs = Matrix{T}(undef, n, n)
@@ -436,14 +458,46 @@ function reduce_qp(
     # of that substitution scales and subtracts whole columns of `M`, which are contiguous
     # and carry no dependence within a column; solving `R⁻ᵀ Aᵀ` instead makes every entry a
     # short dot product against the entries above it, and runs well under half the speed.
-    m = size(A, 1)
     Mr = Matrix{T}(undef, m, n)
     copyto!(Mr, A)
     rdiv!(Mr, R.U)
+    return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m)
+end
 
-    # Row normalization, as the reference does: it makes `primal_tol` mean the same thing on
-    # every row however that row happened to be scaled. The rows are written out to `Mt` in
-    # the layout the loop reads, so the transpose costs no pass of its own.
+"""
+    scalar_diagonal(H) -> μ or nothing
+
+`μ` when `H` is `μI`, and `nothing` otherwise.
+
+Stops at the first entry that rules it out, so a dense `H` costs one comparison rather than a
+pass over the matrix.
+"""
+function scalar_diagonal(H::AbstractMatrix{T}) where {T}
+    n = size(H, 1)
+    n == size(H, 2) || return nothing
+    mu = H[1, 1]
+    for j in 1:n, i in 1:n
+        if i == j
+            H[i, j] == mu || return nothing
+        else
+            iszero(H[i, j]) || return nothing
+        end
+    end
+    return mu
+end
+
+"""
+Normalize the rows of `M = A R⁻¹` and pack the reduction around them.
+
+Shared by the two ways of forming `M`, because normalization is what makes `primal_tol` mean
+the same thing on every row however that row happened to be scaled.
+"""
+function finish_reduction(
+        R, Mr::Matrix{T}, bupper::AbstractVector{T}, blower::AbstractVector{T},
+        iseq::AbstractVector{Bool}, eps_prox::T, n::Int, m::Int
+    ) where {T}
+    # The rows are written out to `Mt` in the layout the loop reads, so the transpose costs no
+    # pass of its own.
     Mt = Matrix{T}(undef, n, m)
     scale = Vector{T}(undef, m)
     bu = Vector{T}(undef, m)
