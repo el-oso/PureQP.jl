@@ -182,9 +182,20 @@ function solvers_for(P, q, A, l, u; kron_factors = nothing)
             (s.x, s.iter)
         end
     )
+    # `eps_prox = 0` runs the method on its own and needs `P ≻ 0`; a positive value runs
+    # proximal-point outer iterations instead, which a positive definite `P` pays for and does
+    # not need. Taking the default first and regularizing only on refusal is what a caller
+    # would do, and is worth 20% on a family whose `P` is already definite.
+    eps_prox = try
+        PureOSQP.solve(P, q, A, l, u, PureDAQP.ActiveSet())
+        0.0
+    catch err
+        err isa ArgumentError || rethrow()
+        1.0e-4
+    end
     push!(
         out, "PureDAQP" => () -> begin
-            s = PureOSQP.solve(P, q, A, l, u, PureDAQP.ActiveSet(; eps_prox = 1.0e-4))
+            s = PureOSQP.solve(P, q, A, l, u, PureDAQP.ActiveSet(; eps_prox))
             (s.x, s.iter)
         end
     )
