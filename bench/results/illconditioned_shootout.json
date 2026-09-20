@@ -1,0 +1,195 @@
+{
+  "blas_threads": 1,
+  "families": [
+    {
+      "active_rows": 40,
+      "cond_A": 9.999999994849986e7,
+      "family": "Kronecker",
+      "m": 400,
+      "n": 400,
+      "planted_active": 40,
+      "ref_cross_check": 9.55782084012131e-13,
+      "rows": [
+        {
+          "feasible": true,
+          "iter": 1000,
+          "objective": -22.813396609347237,
+          "relerr": 8.327971331895144e-6,
+          "solver": "PureOSQP",
+          "time_s": 0.040643276,
+          "violation": 6.463041112014789e-8
+        },
+        {
+          "feasible": true,
+          "iter": 1050,
+          "objective": -22.813399363864445,
+          "relerr": 7.189308905502906e-5,
+          "solver": "PureOSQP :kronecker",
+          "time_s": 0.026178768,
+          "violation": 1.355897548178768e-6
+        },
+        {
+          "feasible": true,
+          "iter": 9,
+          "objective": -22.81338529862217,
+          "relerr": 6.977913954929247e-5,
+          "solver": "PureIPM",
+          "time_s": 0.054649451,
+          "violation": 0.0
+        },
+        {
+          "feasible": true,
+          "iter": 50,
+          "objective": -22.813397224334313,
+          "relerr": 9.58881260038986e-13,
+          "solver": "PureDAQP",
+          "time_s": 0.0033415,
+          "violation": 9.71445146547012e-17
+        },
+        {
+          "feasible": true,
+          "iter": -1,
+          "objective": -22.813397224334345,
+          "relerr": 1.9773883852326803e-15,
+          "solver": "DAQP",
+          "time_s": 0.001598238,
+          "violation": 1.3877787807814457e-16
+        },
+        {
+          "feasible": true,
+          "iter": 1000,
+          "objective": -22.813396609347233,
+          "relerr": 8.327971226180919e-6,
+          "solver": "OSQP (libosqp)",
+          "time_s": 0.278311909,
+          "violation": 6.463040212734139e-8
+        },
+        {
+          "feasible": true,
+          "iter": 13,
+          "objective": -22.813397101898815,
+          "relerr": 9.5111062451567e-7,
+          "solver": "Clarabel",
+          "time_s": 0.531923833,
+          "violation": 0.0
+        },
+        {
+          "feasible": true,
+          "iter": 51,
+          "objective": -22.81339692661215,
+          "relerr": 2.9048922478754215e-6,
+          "solver": "QPALM",
+          "time_s": 0.112953752,
+          "violation": 2.4644776670801338e-8
+        },
+        {
+          "feasible": true,
+          "iter": 225,
+          "objective": -22.813397401064194,
+          "relerr": 9.264208849700422e-6,
+          "solver": "COSMO",
+          "time_s": 0.096708171,
+          "violation": 1.1101319852824254e-6
+        }
+      ],
+      "zeros_frac": 0.0
+    },
+    {
+      "active_rows": 40,
+      "cond_A": 9.999999989493309e7,
+      "family": "Dense control",
+      "m": 400,
+      "n": 400,
+      "planted_active": 40,
+      "ref_cross_check": 1.196417695589634e-9,
+      "rows": [
+        {
+          "feasible": true,
+          "iter": 6125,
+          "objective": -1.1788145895488525e7,
+          "relerr": 0.021681224911697765,
+          "solver": "PureOSQP",
+          "time_s": 0.209485691,
+          "violation": 1.0572223652083323e-9
+        },
+        {
+          "feasible": true,
+          "iter": 9,
+          "objective": -1.178814203597165e7,
+          "relerr": 0.08131258544243715,
+          "solver": "PureIPM",
+          "time_s": 0.06235218,
+          "violation": 0.0
+        },
+        {
+          "feasible": true,
+          "iter": 47,
+          "objective": -1.1788146184377724e7,
+          "relerr": 4.813116300426265e-12,
+          "solver": "PureDAQP",
+          "time_s": 0.003276488,
+          "violation": 6.106226635438361e-16
+        },
+        {
+          "feasible": true,
+          "iter": -1,
+          "objective": -1.1788146184377708e7,
+          "relerr": 2.4057537661686428e-11,
+          "solver": "DAQP",
+          "time_s": 0.022582529,
+          "violation": 9.992007221626409e-16
+        },
+        {
+          "feasible": true,
+          "iter": 5850,
+          "objective": -1.1788145894967316e7,
+          "relerr": 0.021707441547389777,
+          "solver": "OSQP (libosqp)",
+          "time_s": 2.076663477,
+          "violation": 1.1342467104435983e-9
+        },
+        {
+          "feasible": true,
+          "iter": 10,
+          "objective": -1.178814349505281e7,
+          "relerr": 0.06336940640326982,
+          "solver": "Clarabel",
+          "time_s": 0.43084321,
+          "violation": 0.0
+        },
+        {
+          "feasible": true,
+          "iter": 37,
+          "objective": -1.178814618437419e7,
+          "relerr": 2.338637285211098e-5,
+          "solver": "QPALM",
+          "time_s": 0.101739562,
+          "violation": 4.411951443072937e-9
+        },
+        {
+          "feasible": true,
+          "iter": 2720,
+          "objective": -1.1788145915498378e7,
+          "relerr": 0.02111907694203778,
+          "solver": "COSMO",
+          "time_s": 1.19480225,
+          "violation": 4.4895906235742356e-7
+        }
+      ],
+      "zeros_frac": 0.0
+    }
+  ],
+  "julia_version": "1.13.0",
+  "reps": 3,
+  "seed": 2026,
+  "tol": 1.0e-6,
+  "versions": {
+    "COSMO": "0.8.11",
+    "Clarabel": "0.11.1",
+    "DAQP": "0.9.2",
+    "PureDAQP": "0.1.0",
+    "PureIPM": "0.1.0",
+    "PureOSQP": "0.1.0",
+    "QPALM": "1.0.0"
+  }
+}
