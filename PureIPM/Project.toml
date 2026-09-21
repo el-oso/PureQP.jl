@@ -11,9 +11,6 @@ TypeContracts = "c7a3f1e2-84b5-4d69-9e0a-1f2b3c4d5e6f"
 [weakdeps]
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 
-[sources]
-PureQPBase = {path = "../PureQPBase"}
-
 [extensions]
 PureIPMMathOptInterfaceExt = "MathOptInterface"
 

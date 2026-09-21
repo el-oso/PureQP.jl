@@ -10,6 +10,27 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
+  # A [sources] entry in a registered package's Project.toml points at a path that exists only
+  # in this repository, so it must not reach main. It is the ordinary way to work on a branch,
+  # where the solvers are built against the PureQPBase beside them rather than the released
+  # one; the test environments carry that link permanently and are not registered, which is
+  # what keeps the suites running against this checkout without it.
+  sources:
+    name: No path sources in the registered packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Project.toml
+        run: |
+          status=0
+          for p in PureQPBase PureOSQP PureIPM PureDAQP; do
+            if grep -q '^\[sources\]' "$p/Project.toml"; then
+              echo "::error file=$p/Project.toml::[sources] must be removed before merging to main"
+              status=1
+            fi
+          done
+          exit $status
+
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -28,6 +49,11 @@ jobs:
       # backends work, PureIPM the interior-point method with nothing else loaded. PureOSQP
       # then runs the operator-splitting suite and everything that compares the two, so its
       # test environment takes the other packages from this checkout.
+      # The solvers depend on the released PureQPBase, so their Project.toml names no path to
+      # it. Without this each suite below would run against whatever version the registry
+      # serves, and a change to the base in this checkout would go untested until after it was
+      # released. Developing it into each environment restores that without a [sources] entry
+      # that would travel into the registered package.
       - uses: julia-actions/julia-buildpkg@v1
         with:
           project: PureQPBase
