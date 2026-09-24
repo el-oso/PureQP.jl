@@ -99,7 +99,9 @@ None of `rhs_x rhs_z x z` may alias each other or `prob.work_n`, `prob.work_m`, 
 """
 function solve_system! end
 
-@contract LinearSystem begin
+# A StrictMode contract: the solves run once per iteration and are held to allocation-free,
+# type-stable, `--trim` compatible code on top of the method surface TypeContracts checks.
+@strict_contract LinearSystem begin
     factorize!(::Self, ::Problem, ::SystemWeights)::Bool
     solve_system!(::Self, ::Problem, ::SystemWeights, ::Any, ::Any, ::Any, ::Any)::Nothing
     backend_info(::Self)::BackendInfo
