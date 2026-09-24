@@ -254,8 +254,12 @@ are never written past the zero the constructor sets once.
 For a LAPACK element type the factorization is LAPACK's `sytrf` into `ipiv` and `work`,
 which the backend holds and sized once, so a refactorization allocates nothing. It is the
 call `bunchkaufman!` makes, with the same workspace size, so the factor is the same. `fact`
-is then built once over `K` and `ipiv` and never replaced, and its `info` field is not
-maintained: [`factorize!`](@ref)'s return value is what reports a failed factorization.
+wraps `K` and `ipiv` directly and is rebuilt, not replaced, after every `sytrf` call, so its
+`info` field always reports the outcome of the most recent attempt; a `FullKKT` that has
+never had a successful factorization starts with `info` set to report failure.
+[`solve_system!`](@ref) and [`solve_multiplier!`](@ref) check `issuccess(fact)` before
+reading it, so solving without a successful factorization throws instead of reading `K` or
+`ipiv` before they hold a real factor.
 """
 mutable struct FullKKT{T <: Real, M <: AbstractMatrix{T}, V <: AbstractVector{T}, F} <: LinearSystem
     const K::M
@@ -279,18 +283,18 @@ function FullKKT(proto::AbstractVector{T}, n::Integer, m::Integer) where {T <: R
     K0 = fill!(similar(K), zero(T))
     rhs = similar(proto, T, n + m)
     ipiv = zeros(LinearAlgebra.BlasInt, n + m)
-    work = Vector{T}(undef, sytrf_lwork(T, n + m))
+    work = Vector{T}(undef, sytrf_lwork(K, ipiv))
     fact = kkt_factorization(K, ipiv)
     return FullKKT{T, typeof(K), typeof(rhs), typeof(fact)}(K, K0, rhs, ipiv, work, fact, false)
 end
 
 """
-    sytrf_lwork(T, dim) -> Int
+    sytrf_lwork(K, ipiv) -> Int
 
-The workspace length LAPACK's `sytrf` asks for on a `dim×dim` matrix of element type `T`;
-zero for a type LAPACK has no method for.
+The workspace length LAPACK's `sytrf` asks for over `K`, pivoting into `ipiv`; zero for an
+element type LAPACK has no method for.
 """
-sytrf_lwork(::Type, dim::Integer) = 0
+sytrf_lwork(K::AbstractMatrix, ipiv::AbstractVector) = 0
 
 """
     sytrf_lower!(A, ipiv, work) -> info
@@ -302,7 +306,10 @@ function sytrf_lower! end
 
 for (fname, elty) in ((:dsytrf_, :Float64), (:ssytrf_, :Float32))
     @eval begin
-        function sytrf_lwork(::Type{$elty}, dim::Integer)
+        function sytrf_lwork(K::StridedMatrix{$elty}, ipiv::Vector{LinearAlgebra.BlasInt})
+            LinearAlgebra.chkstride1(K)
+            dim = LinearAlgebra.checksquare(K)
+            length(ipiv) >= dim || throw(DimensionMismatch("ipiv is shorter than K"))
             iszero(dim) && return 0
             work = Vector{$elty}(undef, 1)
             info = Ref{LinearAlgebra.BlasInt}()
@@ -313,8 +320,9 @@ for (fname, elty) in ((:dsytrf_, :Float64), (:ssytrf_, :Float32))
                     Ptr{LinearAlgebra.BlasInt}, Ptr{$elty}, Ref{LinearAlgebra.BlasInt},
                     Ref{LinearAlgebra.BlasInt}, Clong,
                 ),
-                'L', dim, C_NULL, max(1, dim), C_NULL, work, -1, info, 1
+                'L', dim, K, max(1, stride(K, 2)), ipiv, work, -1, info, 1
             )
+            info[] < 0 && throw(ArgumentError("invalid argument #$(-info[]) to LAPACK sytrf workspace query"))
             return Int(real(work[1]))
         end
 
@@ -1040,21 +1048,28 @@ function factor_kkt!(ls::FullKKT)
     return issuccess(ls.fact)
 end
 
-# `fact` was built over `K` and `ipiv` and a solve reads only those, so it stays current
-# without being replaced; LAPACK's `info` alone decides whether the factorization succeeded.
-factor_kkt!(ls::FullKKT{T, <:StridedMatrix{T}}) where {T <: Union{Float32, Float64}} =
-    iszero(sytrf_lower!(ls.K, ls.ipiv, ls.work))
+# `K` and `ipiv` hold the factor in place, so `fact` is rebuilt around the same two arrays
+# rather than replaced with a new one; only the scalar `info` LAPACK just returned changes,
+# so `issuccess(ls.fact)` always reports the outcome of the most recent `sytrf` call and
+# never survives from an earlier, unrelated attempt.
+function factor_kkt!(ls::FullKKT{T, <:StridedMatrix{T}}) where {T <: Union{Float32, Float64}}
+    info = sytrf_lower!(ls.K, ls.ipiv, ls.work)
+    ls.fact = LinearAlgebra.BunchKaufman(ls.K, ls.ipiv, 'L', true, false, info)
+    return iszero(info)
+end
 
 """
     kkt_factorization(K, ipiv) -> BunchKaufman
 
-The factorization object a `FullKKT` over `K` starts with. For a LAPACK element type it is a
-view of `K` and `ipiv` themselves, which every later `sytrf` rewrites in place; otherwise a
-placeholder of the type `bunchkaufman!` returns, replaced at every factorization.
+The factorization object a `FullKKT` over `K` starts with, before any call to
+[`factorize!`](@ref) has succeeded. For a LAPACK element type it is a view of `K` and `ipiv`
+themselves, which every later `sytrf` call rewrites in place, with `info` set to report
+failure so `issuccess` is `false` until a real factorization has run; otherwise a placeholder
+of the type `bunchkaufman!` returns, replaced at every factorization.
 """
 kkt_factorization(K::AbstractMatrix{T}, ipiv) where {T} = bunchkaufman!(Symmetric(fill(one(T), 1, 1)))
 kkt_factorization(K::StridedMatrix{T}, ipiv) where {T <: Union{Float32, Float64}} =
-    LinearAlgebra.BunchKaufman(K, ipiv, 'L', true, false, zero(LinearAlgebra.BlasInt))
+    LinearAlgebra.BunchKaufman(K, ipiv, 'L', true, false, one(LinearAlgebra.BlasInt))
 
 """
     reduced_rhs!(prob, wt, rhs_x, rhs_z) -> prob.work_n
@@ -1097,7 +1112,19 @@ function solve_system!(ls::TridiagonalReduced, prob, wt, rhs_x, rhs_z, x, z)::No
     return nothing
 end
 
+# Kept out of line so the message it builds stays off the per-iteration solve path, which
+# must not allocate.
+@noinline function throw_unfactored(ls::FullKKT)
+    throw(
+        ArgumentError(
+            "solve_system!/solve_multiplier! called on a FullKKT with no successful " *
+                "factorization; call factorize! or refactor_weights! first."
+        )
+    )
+end
+
 function solve_system!(ls::FullKKT, prob, wt, rhs_x, rhs_z, x, z)::Nothing
+    issuccess(ls.fact) || throw_unfactored(ls)
     n, m = prob.n, prob.m
     # Indexed rather than `copyto!(view(...), ...)`: the views leave allocation sites that
     # AllocCheck reports, and the loops make the no-allocation property provable.
@@ -1126,6 +1153,7 @@ directly instead of recovered through `z̃`. This is [`solve_system!`](@ref) min
 that would go on to form `z̃ = rhs_z + w_inv ⊙ ν`.
 """
 function solve_multiplier!(ls::FullKKT, prob, wt, rhs_x, rhs_z, x, nu)::Nothing
+    issuccess(ls.fact) || throw_unfactored(ls)
     n, m = prob.n, prob.m
     for i in 1:n
         ls.rhs[i] = rhs_x[i]
