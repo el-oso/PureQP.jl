@@ -1209,25 +1209,19 @@ algorithm that accepts one defines further methods for its own accelerator types
 """
 accelerator_reset!(::Nothing) = nothing
 
-# Kept out of line so the message it builds stays off the refactorization path, which runs
-# inside the iteration and must not allocate.
-@noinline function throw_unfactorized(ls)
+function refactored!(ws, ok::Bool)
     # The reduced form squares `cond(A)`, so the full quasi-definite system is the remedy —
     # but only for a backend that is not already solving it.
-    throw(
+    ok || throw(
         ArgumentError(
-            "the linear system could not be factorized with the $(backend_name(ls)) backend. " *
+            "the linear system could not be factorized with the $(backend_name(ws.linsys)) backend. " *
                 (
-                backend_info(ls).system === :reduced ?
+                backend_info(ws.linsys).system === :reduced ?
                     "Rebuild the workspace with linsys = :kkt, which does not square the conditioning of A." :
                     "This is already the full KKT system; the problem is singular at this ρ."
             )
         )
     )
-end
-
-function refactored!(ws, ok::Bool)
-    ok || throw_unfactorized(ws.linsys)
     ws.refactor_count += 1
     # A refactorization means `ρ` or the data moved, and the iteration is a fixed point of a
     # different map afterwards. An accelerator extrapolating from both sides of that is
