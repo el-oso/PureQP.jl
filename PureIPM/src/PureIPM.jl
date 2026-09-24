@@ -19,6 +19,7 @@ module PureIPM
 
 using LinearAlgebra
 using TypeContracts: TypeContracts, @contract, @verify
+using StrictMode: @assert_noalloc, @assert_trim_compatible
 using PureQPBase
 
 import PureQPBase:
@@ -76,6 +77,34 @@ The wrapper lives in a package extension, so it costs nothing to a caller who do
 it; this name is the only part of it this package owns.
 """
 function Optimizer end
+
+# The calls the interior-point method makes every iteration, checked on a problem small
+# enough to solve here. `factorize_newton!` is checked for `--trim` only: its dense backend
+# `FullKKT` allocates LAPACK's pivot and work arrays in every `bunchkaufman!`, and a
+# regularization bump builds new `SystemWeights`. `solve!` returns a `Solution` holding
+# unscaled copies of `x` and `y`, so it carries no allocation claim either. These checks
+# report rather than throw; `test/strictmode_tests.jl` proves the same signatures with
+# StrictModeTest.
+let
+    P = [4.0 1.0; 1.0 2.0]
+    q = [1.0, 1.0]
+    A = [1.0 1.0; 1.0 0.0; 0.0 1.0]
+    l = [1.0, 0.0, 0.0]
+    u = [1.0, 0.7, 0.7]
+    ws = setup(P, q, A, l, u, InteriorPoint())
+    solve!(ws)
+    @assert_noalloc weights!(ws)
+    @assert_trim_compatible weights!(ws)
+    @assert_trim_compatible factorize_newton!(ws, false)
+    @assert_noalloc ipm_step!(ws)
+    @assert_trim_compatible ipm_step!(ws)
+    @assert_noalloc direction!(ws)
+    @assert_trim_compatible direction!(ws)
+    @assert_noalloc ipm_residuals!(ws)
+    @assert_trim_compatible ipm_residuals!(ws)
+    @assert_noalloc check_termination(ws, false, false)
+    @assert_trim_compatible check_termination(ws, false, false)
+end
 
 # Every workspace and algorithm this package defines must satisfy its contract and be
 # `--trim` compatible, asserted here rather than type by type: a per-type `@verify` is

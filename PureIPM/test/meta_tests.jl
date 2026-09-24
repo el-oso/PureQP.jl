@@ -10,6 +10,7 @@
         "meta_tests.jl" => 1,
         "moi_tests.jl" => 2,
         "standalone_tests.jl" => 3,
+        "strictmode_tests.jl" => 1,
     )
     dir = @__DIR__
     files = sort(filter(f -> endswith(f, "_tests.jl"), readdir(dir)))
