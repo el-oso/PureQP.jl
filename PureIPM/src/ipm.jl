@@ -93,7 +93,6 @@ function starting_point!(ws::InteriorPointWorkspace{T}) where {T}
         fill!(wt.w_inv, o)
         set_refresh_index!(ls, -1)
         factorize_newton!(ws, true) || return false
-        wt = ws.weights
         for j in eachindex(ws.rhs_x)
             ws.rhs_x[j] = -prob.q[j]
         end
