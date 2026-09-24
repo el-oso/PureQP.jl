@@ -48,7 +48,7 @@ function DiagonalLowRank(proto::AbstractVector{T}, n::Integer, k::Integer) where
     for i in 1:k
         cap[i, i] = one(T)
     end
-    fact = capacitance_factorization(cap)
+    fact = cholesky!(Symmetric(copy(cap)))
     return DiagonalLowRank{T, typeof(cinv), typeof(Y), typeof(fact)}(
         cinv, Y, V, cap, fact, similar(proto, T, k), similar(proto, T, n)
     )
@@ -144,30 +144,9 @@ function refresh_core!(ls::DiagonalLowRank{T}, prob, wt)::Bool where {T}
     for i in 1:k
         ls.cap[i, i] += inv(rho[i])
     end
-    return factor_capacitance!(ls)
-end
-
-function factor_capacitance!(ls::DiagonalLowRank)
     ls.fact = cholesky!(Symmetric(ls.cap); check = false)
     return issuccess(ls.fact)
 end
-
-# `fact` was built over `cap` and a solve reads only its factor, so it stays current without
-# being replaced; LAPACK's `info` alone decides whether the factorization succeeded. This is
-# the `potrf` call `cholesky!` makes.
-factor_capacitance!(ls::DiagonalLowRank{T, <:Any, <:StridedMatrix{T}}) where {T <: LinearAlgebra.BlasFloat} =
-    iszero(last(LAPACK.potrf!('U', ls.cap)))
-
-"""
-    capacitance_factorization(cap) -> Cholesky
-
-The factorization object a `DiagonalLowRank` starts with. For a LAPACK element type it is a
-view of `cap` itself, which every later `potrf` rewrites in place; otherwise the factor of a
-copy, of the type `cholesky!` returns, replaced at every factorization.
-"""
-capacitance_factorization(cap::AbstractMatrix) = cholesky!(Symmetric(copy(cap)))
-capacitance_factorization(cap::StridedMatrix{<:LinearAlgebra.BlasFloat}) =
-    Cholesky(cap, 'U', zero(LinearAlgebra.BlasInt))
 
 function factorize!(ls::DiagonalLowRank, prob, wt)::Bool
     scale_coupling!(ls, prob)
