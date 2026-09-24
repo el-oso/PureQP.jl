@@ -32,15 +32,15 @@ iteration is past any margin a genuine convergent or infeasible run needs.
 """
     set_regularization!(ws, reg_primal, reg_dual) -> ws
 
-Put `reg_primal` and `reg_dual` in force. A new `reg_primal` replaces the weights object, whose
-`sigma` it is, and marks the backend's factorization as needing a full rebuild.
+Put `reg_primal` and `reg_dual` in force. A new `reg_primal` becomes the weights' `sigma`, set
+in place so a bump inside the iteration allocates nothing, and marks the backend's
+factorization as needing a full rebuild.
 """
 function set_regularization!(ws::InteriorPointWorkspace{T}, reg_primal::T, reg_dual::T) where {T}
     ws.reg_dual = reg_dual
     if reg_primal != ws.reg_primal
         ws.reg_primal = reg_primal
-        wt = ws.weights
-        ws.weights = SystemWeights(wt.w, wt.w_inv, reg_primal)
+        ws.weights.sigma = reg_primal
         ws.sigma_changed = true
     end
     return ws
