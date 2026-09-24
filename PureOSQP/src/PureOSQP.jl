@@ -21,6 +21,7 @@ module PureOSQP
 
 using LinearAlgebra
 using TypeContracts: TypeContracts, @contract, @verify
+using StrictMode: @assert_noalloc, @assert_trim_compatible
 using PureQPBase
 
 import PureQPBase:
@@ -117,6 +118,26 @@ The wrapper lives in a package extension, so it costs nothing to a caller who do
 it; this name is the only part of it this package owns.
 """
 function Optimizer end
+
+# The calls ADMM makes every iteration, checked on a problem small enough to solve here.
+# `solve!` itself carries no allocation claim: it returns a `Solution` holding unscaled
+# copies of `x` and `y`. These checks report rather than throw; `test/strictmode_tests.jl`
+# proves the same signatures with StrictModeTest.
+let
+    P = [4.0 1.0; 1.0 2.0]
+    q = [1.0, 1.0]
+    A = [1.0 1.0; 1.0 0.0; 0.0 1.0]
+    l = [1.0, 0.0, 0.0]
+    u = [1.0, 0.7, 0.7]
+    ws = setup(P, q, A, l, u)
+    solve!(ws)
+    @assert_noalloc admm_step!(ws)
+    @assert_trim_compatible admm_step!(ws)
+    @assert_noalloc update_residuals!(ws)
+    @assert_trim_compatible update_residuals!(ws)
+    @assert_noalloc check_termination(ws, false)
+    @assert_trim_compatible check_termination(ws, false)
+end
 
 # Every workspace and algorithm this package defines must satisfy its contract and be
 # `--trim` compatible, asserted here rather than type by type: a per-type `@verify` is
