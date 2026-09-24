@@ -9,7 +9,7 @@
         "block_tests.jl" => 3,
         "indirect_tests.jl" => 1,
         "kronecker_tests.jl" => 4,
-        "linsys_tests.jl" => 18,
+        "linsys_tests.jl" => 19,
         "meta_tests.jl" => 1,
         "operator_tests.jl" => 5,
         "scaling_tests.jl" => 8,

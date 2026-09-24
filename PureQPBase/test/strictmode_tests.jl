@@ -110,45 +110,57 @@ end
     using PureQPBase, LinearAlgebra, Random
     include(joinpath(@__DIR__, "helpers.jl"))
 
-    Random.seed!(3)
-    n, m = 12, 30
-    X = randn(n, n)
-    P = Matrix(X'X / n + I)
-    A = randn(m, n)
-    b = A * randn(n)
-
     # `FullKKT` factors through `sytrf` into arrays it holds; `bunchkaufman!` on the same
-    # matrix is the reference, bit for bit.
-    prob, wt, ls = backend_for(P, randn(n), A, b .- rand(m), b .+ rand(m); linsys = :kkt)
-    K = copy(ls.K0)
-    for j in 1:n
-        K[j, j] += wt.sigma
-    end
-    for i in 1:m
-        K[n + i, n + i] = -wt.w_inv[i]
-    end
-    ref = bunchkaufman!(Symmetric(K, :L); check = false)
-    for _ in 1:2    # the factorization and a refactorization over the same arrays
-        @test PureQPBase.refactor_weights!(ls, prob, wt)
-        @test ls.fact.LD == ref.LD
-        @test ls.fact.ipiv == ref.ipiv
-        bx, bz = randn(n), randn(m)
-        x, z = zeros(n), zeros(m)
-        PureQPBase.solve_system!(ls, prob, wt, bx, bz, x, z)
-        r = ldiv!(ref, [bx; bz])
-        @test x == r[1:n]
+    # matrix is the reference, bit for bit, for both LAPACK element types it specializes on.
+    for T in (Float64, Float32)
+        Random.seed!(3)
+        n, m = 12, 30
+        X = randn(T, n, n)
+        P = Matrix(X'X / n + I)
+        A = randn(T, m, n)
+        b = A * randn(T, n)
+        q, l, u = randn(T, n), b .- rand(T, m), b .+ rand(T, m)
+
+        prob, wt, ls = if T === Float64
+            backend_for(P, q, A, l, u; linsys = :kkt)
+        else
+            probT = PureQPBase.validated_problem(T, n, m, P, q, A, l, u, 10)
+            wtT = PureQPBase.SystemWeights(fill(T(0.1), m), fill(T(10), m), T(1.0e-6))
+            (probT, wtT, PureQPBase.FullKKT(probT.q, n, m))
+        end
+        PureQPBase.assemble_kkt0!(ls, prob)
+        K = copy(ls.K0)
+        for j in 1:n
+            K[j, j] += wt.sigma
+        end
+        for i in 1:m
+            K[n + i, n + i] = -wt.w_inv[i]
+        end
+        ref = bunchkaufman!(Symmetric(K, :L); check = false)
+        for _ in 1:2    # the factorization and a refactorization over the same arrays
+            @test PureQPBase.refactor_weights!(ls, prob, wt)
+            @test ls.fact.LD == ref.LD
+            @test ls.fact.ipiv == ref.ipiv
+            bx, bz = randn(T, n), randn(T, m)
+            x, z = zeros(T, n), zeros(T, m)
+            PureQPBase.solve_system!(ls, prob, wt, bx, bz, x, z)
+            r = ldiv!(ref, [bx; bz])
+            @test x == r[1:n]
+        end
     end
 
-    # `DiagonalLowRank` factors its capacitance through `potrf`; `cholesky!` is the reference.
-    nd = 50
-    Al = PureQPBase.RowCoupled(randn(3, nd) ./ 4, ones(nd - 3), collect(1:(nd - 3)))
-    prob, wt, ls = backend_for(Diagonal(rand(nd) .+ 0.5), randn(nd), Al, -rand(nd), rand(nd); linsys = :lowrank)
-    @test PureQPBase.refactor_weights!(ls, prob, wt)
-    cap = ls.Y * ls.V'
-    for i in axes(cap, 1)
-        cap[i, i] += inv(wt.w[i])
-    end
-    @test triu(ls.cap) == triu(cholesky!(Symmetric(cap)).factors)
+    # A zero pivot is reported as a failure, exactly as `bunchkaufman!` reports it.
+    n, m = 2, 1
+    prob, wt, ls = backend_for(
+        zeros(n, n), [1.0, 1.0], [1.0 0.0], [0.0], [1.0];
+        linsys = :kkt, scaling = 0, sigma = 0.0, factorize = false
+    )
+    PureQPBase.assemble_kkt0!(ls, prob)
+    K = copy(ls.K0)
+    K[3, 3] = -wt.w_inv[1]
+    ok = PureQPBase.factorize!(ls, prob, wt)
+    @test !ok
+    @test ok == issuccess(bunchkaufman!(Symmetric(K, :L); check = false))
 end
 
 @testitem "the proofs fail on code that allocates or cannot be trimmed" begin

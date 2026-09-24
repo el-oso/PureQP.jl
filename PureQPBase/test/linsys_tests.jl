@@ -39,6 +39,23 @@ end
     @test norm(x .- ref, Inf) < 1.0e-4 * norm(ref, Inf)
 end
 
+@testitem "FullKKT refuses to solve before it has factorized" begin
+    using PureQPBase, LinearAlgebra, Random
+    include(joinpath(@__DIR__, "helpers.jl"))
+    Random.seed!(7)
+    n, m = 8, 10
+    P, q, A, l, u = random_qp(n, m; seed = 7)
+    prob, wt, ls = backend_for(P, q, A, l, u; linsys = :kkt, factorize = false)
+    @test ls isa PureQPBase.FullKKT
+    bx, bz = randn(n), randn(m)
+    x, z = zeros(n), zeros(m)
+    @test_throws ArgumentError PureQPBase.solve_system!(ls, prob, wt, bx, bz, x, z)
+    @test_throws ArgumentError PureQPBase.solve_multiplier!(ls, prob, wt, bx, bz, x, z)
+    # Once factorized, the same calls succeed.
+    @test PureQPBase.factorize!(ls, prob, wt)
+    PureQPBase.solve_system!(ls, prob, wt, bx, bz, x, z)
+end
+
 @testitem "named linsys options reach their backend, and decline loudly" begin
     using PureQPBase, LinearAlgebra, SparseArrays, Random
     using LDLFactorizations, BandedMatrices, Krylov
