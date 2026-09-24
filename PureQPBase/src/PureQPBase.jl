@@ -55,37 +55,19 @@ export PolishStatus, POLISH_SUCCESS, POLISH_FAILED, POLISH_NOT_PERFORMED
 export POLISH_NO_ACTIVE_SET_FOUND, POLISH_LINSYS_ERROR
 export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURATE
 
-# The per-iteration calls into the backends this module defines, checked on a small problem.
-# `solve_system!` and `solve_multiplier!` run every iteration and must not allocate.
-# `factorize!` and `refactor_weights!` run when the weights move, and are held to that only
-# on the diagonal and tridiagonal backends: `ReducedCholesky` allocates an `m`-vector of
-# scaled weight roots per factorization, and `FullKKT`'s `bunchkaufman!` allocates LAPACK's
-# pivot and work arrays. These checks report rather than throw; `test/strictmode_tests.jl`
-# proves the same signatures with StrictModeTest.
+# The calls an algorithm makes into a backend while it iterates, checked on a small problem
+# for every backend this module defines. `solve_system!` and `solve_multiplier!` run every
+# iteration, `refactor_weights!` every time the weights move, and `factorize!` every time the
+# interior-point method bumps its regularization. `KroneckerReduced`'s `factorize!` is the one
+# checked for `--trim` only: it eigendecomposes `AᵢᵀAᵢ`, which allocates, and it runs only
+# when `P`, `A` or `σ` change, since no interior-point rung selects that backend. The
+# preconditioners' `ldiv!` runs once per conjugate-gradient iteration. These checks report
+# rather than throw; `test/strictmode_tests.jl` proves the same signatures with
+# StrictModeTest.
 let
-    n, m = 3, 4
-    P = [4.0 1.0 0.0; 1.0 3.0 0.5; 0.0 0.5 2.0]
-    A = [1.0 1.0 0.0; 0.0 1.0 1.0; 1.0 0.0 1.0; 1.0 -1.0 0.0]
-    q = [1.0, -1.0, 0.5]
-    wt = SystemWeights(fill(0.1, m), fill(10.0, m), 1.0e-6)
-    dense = validated_problem(Float64, n, m, P, q, A, fill(-1.0, m), fill(1.0, m), 10)
-    bx, bz, x, z = ones(n), ones(m), zeros(n), zeros(m)
-    for ls in (ReducedCholesky(q, n, m), FullKKT(q, n, m))
-        @assert_trim_compatible factorize!(ls, dense, wt)
-        @assert_trim_compatible refactor_weights!(ls, dense, wt)
-        @assert_noalloc solve_system!(ls, dense, wt, bx, bz, x, z)
-        @assert_trim_compatible solve_system!(ls, dense, wt, bx, bz, x, z)
-        @assert_noalloc solve_multiplier!(ls, dense, wt, bx, bz, x, z)
-        @assert_trim_compatible solve_multiplier!(ls, dense, wt, bx, bz, x, z)
-    end
-
-    wt = SystemWeights(fill(0.1, n), fill(10.0, n), 1.0e-6)
-    bz, z = ones(n), zeros(n)
-    Ad = Diagonal([1.0, 0.5, 2.0])
-    diagonal = validated_problem(Float64, n, n, Diagonal([4.0, 3.0, 2.0]), q, Ad, fill(-1.0, n), fill(1.0, n), 10)
-    tridiagonal = validated_problem(Float64, n, n, SymTridiagonal([4.0, 3.0, 2.0], [1.0, 0.5]), q, Ad, fill(-1.0, n), fill(1.0, n), 10)
-    for (ls, prob) in ((DiagonalReduced(q, n), diagonal), (TridiagonalReduced(q, n), tridiagonal))
-        @assert_noalloc factorize!(ls, prob, wt)
+    function check(ls, prob, wt)
+        bx, bz, x, z = ones(prob.n), ones(prob.m), zeros(prob.n), zeros(prob.m)
+        ls isa KroneckerReduced || @assert_noalloc factorize!(ls, prob, wt)
         @assert_trim_compatible factorize!(ls, prob, wt)
         @assert_noalloc refactor_weights!(ls, prob, wt)
         @assert_trim_compatible refactor_weights!(ls, prob, wt)
@@ -93,11 +75,44 @@ let
         @assert_trim_compatible solve_system!(ls, prob, wt, bx, bz, x, z)
         @assert_noalloc solve_multiplier!(ls, prob, wt, bx, bz, x, z)
         @assert_trim_compatible solve_multiplier!(ls, prob, wt, bx, bz, x, z)
+        return nothing
     end
-    # Applied once per conjugate-gradient iteration.
-    for M in (IdentityPreconditioner(), JacobiPreconditioner(ones(n)))
-        @assert_noalloc ldiv!(x, M, bx)
-        @assert_trim_compatible ldiv!(x, M, bx)
+    function backend(linsys, P, A; scaling = 10)
+        n, m = size(A, 2), size(A, 1)
+        q, l, u = collect(range(-1.0, 1.0; length = n)), fill(-1.0, m), fill(1.0, m)
+        prob = validated_problem(Float64, n, m, P, q, A, l, u, scaling)
+        wt = SystemWeights(fill(0.1, m), fill(10.0, m), 1.0e-6)
+        ls, factored = named_backend(Val(linsys), P, A, prob, wt, ADMMSelection(), nothing)
+        factored || factorize!(ls, prob, wt)
+        return ls, prob, wt
+    end
+    P = [4.0 1.0 0.0; 1.0 3.0 0.5; 0.0 0.5 2.0]
+    A = [1.0 1.0 0.0; 0.0 1.0 1.0; 1.0 0.0 1.0; 1.0 -1.0 0.0]
+    D = Diagonal([4.0, 3.0, 2.0, 1.0, 2.0, 3.0])
+    Ad = Diagonal([1.0, 0.5, 2.0, 1.0, 1.5, 0.5])
+    for (linsys, Pc, Ac, scaling) in (
+            (:dense, P, A, 10),
+            (:kkt, P, A, 10),
+            (:diagonal, D, Ad, 10),
+            (:tridiagonal, SymTridiagonal(diag(D), fill(0.25, 5)), Ad, 10),
+            (
+                :block,
+                BlockDiagonal([[3.0 1.0; 1.0 2.0], [2.0 0.5; 0.5 3.0]]),
+                BlockDiagonal([[1.0 0.5], [0.5 1.0]]), 10,
+            ),
+            (:lowrank, D, RowCoupled(fill(0.25, 1, 6), 5), 10),
+            (:kronecker, Diagonal(fill(2.0, 4)), KroneckerOperator([2.0 1.0; 0.0 1.0], [1.0 0.5; 0.5 2.0]), 0),
+        )
+        check(backend(linsys, Pc, Ac; scaling)...)
+    end
+
+    ls, prob, wt = backend(:dense, P, A)
+    y, x = zeros(prob.n), ones(prob.n)
+    for M in (IdentityPreconditioner(), JacobiPreconditioner(ones(prob.n)))
+        @assert_noalloc update_preconditioner!(M, prob, wt, 0)
+        @assert_trim_compatible update_preconditioner!(M, prob, wt, 0)
+        @assert_noalloc ldiv!(y, M, x)
+        @assert_trim_compatible ldiv!(y, M, x)
     end
 end
 
