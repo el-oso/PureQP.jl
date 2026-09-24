@@ -119,24 +119,50 @@ it; this name is the only part of it this package owns.
 """
 function Optimizer end
 
-# The calls ADMM makes every iteration, checked on a problem small enough to solve here.
-# `solve!` itself carries no allocation claim: it returns a `Solution` holding unscaled
-# copies of `x` and `y`. These checks report rather than throw; `test/strictmode_tests.jl`
-# proves the same signatures with StrictModeTest.
+# The calls ADMM makes every iteration, checked on a problem small enough to solve here over
+# every backend PureQPBase defines. `adapt_rho!` refactorizes whenever `ρ` moves. `solve!`
+# itself carries no allocation claim: it returns a `Solution` holding unscaled copies of `x`
+# and `y`. These checks report rather than throw; `test/strictmode_tests.jl` proves the same
+# signatures with StrictModeTest.
 let
-    P = [4.0 1.0; 1.0 2.0]
-    q = [1.0, 1.0]
-    A = [1.0 1.0; 1.0 0.0; 0.0 1.0]
-    l = [1.0, 0.0, 0.0]
-    u = [1.0, 0.7, 0.7]
-    ws = setup(P, q, A, l, u)
-    solve!(ws)
-    @assert_noalloc admm_step!(ws)
-    @assert_trim_compatible admm_step!(ws)
-    @assert_noalloc update_residuals!(ws)
-    @assert_trim_compatible update_residuals!(ws)
-    @assert_noalloc check_termination(ws, false)
-    @assert_trim_compatible check_termination(ws, false)
+    function check(ws)
+        solve!(ws)
+        @assert_noalloc accelerate_pre!(ws.accel, ws, 1)
+        @assert_trim_compatible accelerate_pre!(ws.accel, ws, 1)
+        @assert_noalloc admm_step!(ws)
+        @assert_trim_compatible admm_step!(ws)
+        @assert_noalloc accelerate_post!(ws.accel, ws, 1)
+        @assert_trim_compatible accelerate_post!(ws.accel, ws, 1)
+        @assert_noalloc update_residuals!(ws)
+        @assert_trim_compatible update_residuals!(ws)
+        @assert_noalloc check_termination(ws, false)
+        @assert_trim_compatible check_termination(ws, false)
+        @assert_noalloc adapt_rho!(ws)
+        @assert_trim_compatible adapt_rho!(ws)
+        return nothing
+    end
+    function run(linsys, P, A; scaling = 10)
+        n, m = size(A, 2), size(A, 1)
+        q, l, u = collect(range(-1.0, 1.0; length = n)), fill(-1.0, m), fill(1.0, m)
+        return check(setup(P, q, A, l, u; linsys, scaling))
+    end
+    P = [4.0 1.0 0.0; 1.0 3.0 0.5; 0.0 0.5 2.0]
+    A = [1.0 1.0 0.0; 0.0 1.0 1.0; 1.0 0.0 1.0; 1.0 -1.0 0.0]
+    D = Diagonal([4.0, 3.0, 2.0, 1.0, 2.0, 3.0])
+    Ad = Diagonal([1.0, 0.5, 2.0, 1.0, 1.5, 0.5])
+    run(:dense, P, A)
+    run(:kkt, P, A)
+    run(:diagonal, D, Ad)
+    run(:tridiagonal, SymTridiagonal(diag(D), fill(0.25, 5)), Ad)
+    run(
+        :block, BlockDiagonal([[3.0 1.0; 1.0 2.0], [2.0 0.5; 0.5 3.0]]),
+        BlockDiagonal([[1.0 0.5], [0.5 1.0]])
+    )
+    run(:lowrank, D, RowCoupled(fill(0.25, 1, 6), 5))
+    run(
+        :kronecker, Diagonal(fill(2.0, 4)),
+        KroneckerOperator([2.0 1.0; 0.0 1.0], [1.0 0.5; 0.5 2.0]); scaling = 0
+    )
 end
 
 # Every workspace and algorithm this package defines must satisfy its contract and be
