@@ -7,6 +7,17 @@ what is true now; this file is where the history lives.
 
 ### Changed
 
+- **Every per-iteration call allocates nothing, and the test suites prove it.** StrictMode
+  checks the kernels at load time and StrictModeTest proves them allocation-free and `--trim`
+  compatible on every backend in `PureQPBase`'s own source. Allocations removed, per call on
+  a 12-variable, 30-row problem unless noted: `ReducedCholesky`'s refactorization 304 B,
+  `FullKKT`'s 22 008 B (it now calls `sytrf` into pivot and work arrays it holds, giving the
+  same factor as `bunchkaufman!`), `KroneckerReduced`'s refactorization 5 424 B on a 20-variable
+  problem (it keeps its eigenbases when only the weights move), and so the interior-point
+  refactorization and ADMM's `adapt_rho!` by the same amounts. A regularization bump sets
+  `SystemWeights.sigma` in place instead of building a new object. `LinearSystem` and
+  `Preconditioner` are StrictMode contracts.
+
 - **Three packages, one repository.** `PureQPBase` holds everything the algorithms share:
   the problem representation, the linear-system backends and their selection, equilibration,
   termination, the polishing and derivative kernels, the `QPAlgorithm`/`QPWorkspace`

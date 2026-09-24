@@ -26,6 +26,7 @@
         "selection_tests.jl" => 2,
         "setup_tests.jl" => 14,
         "solve_tests.jl" => 34,
+        "strictmode_tests.jl" => 2,
         "trim_tests.jl" => 1,
         "update_tests.jl" => 11,
     )

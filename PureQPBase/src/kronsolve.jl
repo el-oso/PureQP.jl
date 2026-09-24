@@ -113,8 +113,6 @@ function factorize!(ls::KroneckerReduced{T}, prob, wt)::Bool where {T}
     # call to `scalar_multiple` behind.
     is_scalar_multiple(P) || return false
     ls.mu = T(scalar_multiple(P))
-    rho = first(wt.w)
-    shift = prob.c * ls.mu + wt.sigma
     # `Gᵢ = AᵢᵀAᵢ` is formed at factor size and thrown away; only its eigenbasis is kept.
     F1 = eigen(Symmetric(A.A1' * A.A1))
     F2 = eigen(Symmetric(A.A2' * A.A2))
@@ -122,6 +120,14 @@ function factorize!(ls::KroneckerReduced{T}, prob, wt)::Bool where {T}
     copyto!(ls.Q2, F2.vectors)
     copyto!(ls.lambda1, F1.values)
     copyto!(ls.lambda2, F2.values)
+    return refactor_weights!(ls, prob, wt)
+end
+
+# The eigenbases depend only on `A` and `μ` only on `P`, so new weights rebuild only the
+# reciprocal diagonal, which allocates nothing.
+function refactor_weights!(ls::KroneckerReduced{T}, prob, wt)::Bool where {T}
+    rho = first(wt.w)
+    shift = prob.c * ls.mu + wt.sigma
     for a in axes(ls.dinv, 2), b in axes(ls.dinv, 1)
         d = shift + rho * ls.lambda1[a] * ls.lambda2[b]
         d > zero(T) || return false

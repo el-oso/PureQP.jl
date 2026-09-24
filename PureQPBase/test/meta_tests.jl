@@ -9,11 +9,12 @@
         "block_tests.jl" => 3,
         "indirect_tests.jl" => 1,
         "kronecker_tests.jl" => 4,
-        "linsys_tests.jl" => 18,
+        "linsys_tests.jl" => 19,
         "meta_tests.jl" => 1,
         "operator_tests.jl" => 5,
         "scaling_tests.jl" => 8,
         "selection_tests.jl" => 6,
+        "strictmode_tests.jl" => 4,
     )
     dir = @__DIR__
     files = sort(filter(f -> endswith(f, "_tests.jl"), readdir(dir)))

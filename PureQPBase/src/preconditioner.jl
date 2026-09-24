@@ -38,7 +38,9 @@ the backend's vectors.
 """
 abstract type Preconditioner end
 
-@contract Preconditioner begin
+# A StrictMode contract: `ldiv!` runs once per conjugate-gradient iteration and is held to
+# allocation-free, type-stable code on top of the method surface TypeContracts checks.
+@strict_contract Preconditioner begin
     update_preconditioner!(::Self, ::Problem, ::SystemWeights, ::Int)::Self => "refresh for the current weights and return the preconditioner, of the same type"
     LinearAlgebra.ldiv!(::AbstractVector, ::Self, ::AbstractVector) => "write the preconditioned vector into `y`"
 end

@@ -8,8 +8,9 @@ The diagonal weights and the primal regularization a [`LinearSystem`](@ref) is b
 
 Invariants, maintained by the owner: `w[i] > 0`, `w_inv[i] == inv(w[i])` as the owner
 computed it, `sigma > 0`, `length(w) == m`. The vectors are read in place, so a change to
-their contents reaches the next [`refactor_weights!`](@ref) without a new object; a change to
-`sigma` needs a new object.
+their contents reaches the next [`refactor_weights!`](@ref) without a new object. `sigma` is
+assigned in place too, and a change to it reaches the next [`factorize!`](@ref), since the
+part of a factorization `refactor_weights!` keeps may depend on it.
 
 ADMM holds `w = ρ`, `w_inv = ρ⁻¹` and `sigma = σ`.
 """
@@ -21,5 +22,7 @@ mutable struct SystemWeights{T <: Real, V <: AbstractVector{T}}
     # kernels `admm_step!` inlines over `w` and `w_inv` stop vectorizing.
     const w::V
     const w_inv::V
-    const sigma::T
+    # Not `const`: the interior-point method changes it on a regularization bump, and a new
+    # object for that would allocate inside the iteration.
+    sigma::T
 end
