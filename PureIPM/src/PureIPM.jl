@@ -99,6 +99,8 @@ let
         @assert_trim_compatible ipm_step!(ws)
         @assert_noalloc direction!(ws)
         @assert_trim_compatible direction!(ws)
+        @assert_noalloc max_step(ws, one(bound))
+        @assert_trim_compatible max_step(ws, one(bound))
         @assert_noalloc ipm_residuals!(ws)
         @assert_trim_compatible ipm_residuals!(ws)
         @assert_noalloc finite_residuals(ws)

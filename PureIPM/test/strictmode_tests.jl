@@ -55,6 +55,7 @@
                 (PureIPM.set_regularization!, (W, T, T)),
                 (PureIPM.ipm_step!, (W,)),
                 (PureIPM.direction!, (W,)),
+                (PureIPM.max_step, (W, T)),
                 (PureIPM.ipm_residuals!, (W,)),
                 (PureIPM.finite_residuals, (W,)),
                 (PureIPM.stalled!, (W, T)),
