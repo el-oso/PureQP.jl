@@ -171,7 +171,7 @@ end
     grow(n) = zeros(n)
     @test_throws StrictMode.StrictViolation test_signatures([(grow, (Int,))]; guarantees = (:noalloc,))
     # A broadcast into a scratch vector keeps an aliasing check whose copy AllocCheck finds,
-    # although it is never taken: the pattern the dense factorization no longer uses.
+    # although it is never taken, which is why the dense factorization writes its scratch in a loop.
     scaled!(dst, a, b) = (dst .= sqrt.(a) .* b; nothing)
     V = Vector{Float64}
     @test_throws StrictMode.StrictViolation test_signatures([(scaled!, (V, V, V))]; guarantees = (:noalloc,))
