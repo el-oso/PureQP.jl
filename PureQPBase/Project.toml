@@ -1,6 +1,6 @@
 name = "PureQPBase"
 uuid = "2fc88845-7e3c-4d5a-ae99-1d63540d249b"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["el-oso <15278831+el-oso@users.noreply.github.com>"]
 
 [deps]

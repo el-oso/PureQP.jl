@@ -50,13 +50,18 @@ The solver state that an algorithm's `setup_backend` builds is a subtype of
 
 | method | returns | what it does |
 |---|---|---|
-| [`solve!(ws)`](@ref solve!) | [`Solution`](@ref) | runs the algorithm from the workspace's state |
+| [`solve!(ws)`](@ref solve!) | [`Solution`](@ref) | runs the algorithm from the workspace's state, and refills the workspace's result |
 | [`warm_start!(ws; x, y)`](@ref warm_start!) | `ws` | seeds the next solve, in problem space |
 | [`cold_start!(ws)`](@ref cold_start!) | `ws` | discards the iterates |
 | [`update!(ws; q, l, u, P, A)`](@ref update!) | `ws` | replaces problem data |
 | [`update_settings!(ws; kwargs...)`](@ref update_settings!) | `ws` | merges options; a default serves every workspace |
 | [`update_settings!(ws, alg)`](@ref update_settings!) | `ws` | replaces the algorithm parameters; the default throws for another algorithm's object |
 | [`dimensions(ws)`](@ref dimensions) | `Tuple{Int, Int}` | the number of variables and of rows; a default serves every workspace |
+
+A solve allocates nothing: `setup` reserves everything the iteration and the result need,
+so `solve!` refills the workspace's own [`Solution`](@ref) rather than building one. Two
+results read from the same workspace are therefore the same object. `copy` the one you
+need before solving again.
 
 Optional, because only [`OperatorSplittingWorkspace`](@ref) implements them:
 [`update_rho!`](@ref) and [`constraint_violation`](@ref).

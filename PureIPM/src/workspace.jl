@@ -153,6 +153,16 @@ mutable struct InteriorPointWorkspace{
     polish_time::Float64
     algorithm::InteriorPoint{T, T, T, Int}
     options::Options{T}
+    # Where the result is unscaled, in the workspace's own array type. The `Solution` holds
+    # `Vector`s, so an array that forbids scalar indexing is scaled here and copied across
+    # once rather than indexed element by element.
+    xout::V
+    yout::V
+    # Refilled and handed back by every solve, so a solve allocates nothing at all. Its
+    # arrays are plain `Vector`s whatever the workspace was built from: the result is what a
+    # caller reads, not a buffer the solver iterates on. `Solution` says what reuse means
+    # for a caller holding one across a solve.
+    sol::Solution{T}
 end
 
 function Base.show(io::IO, ws::InteriorPointWorkspace)
@@ -195,6 +205,12 @@ function ipm_workspace(
         zero(T), zero(T), zero(T), zero(T),
         0, 0, 0, 0, UNSOLVED, false, true, false, POLISH_NOT_PERFORMED, 0.0, 0.0, 0.0, 0.0,
         algorithm, options,
+        buf(n), buf(m),
+        # The certificates are reserved rather than sized: only one of them is reported, and
+        # only by a run that ends infeasible, so their lengths are what a solve sets.
+        empty_solution(
+            Vector{T}(undef, n), Vector{T}(undef, m), reserved(T, m), reserved(T, n)
+        ),
     )
     return ws
 end

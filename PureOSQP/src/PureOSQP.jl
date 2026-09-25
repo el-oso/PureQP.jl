@@ -34,7 +34,8 @@ import PureQPBase:
     INFTY, MIN_SCALING, RHO_MIN, RHO_MAX, RHO_TOL, RHO_EQ_OVER_INEQ, DIVISION_TOL,
     active_kkt, accelerator_reset!, add!, adopt_settings!, adopt_update!, block_rung,
     check_finite, check_storage, choose_backend, dense_rung,
-    eps_prim, eps_dual, eps_duality_gap, factorize!, factors, formed_rung, gap_terms,
+    empty_solution, eps_prim, eps_dual, eps_duality_gap, factorize!, factors, formed_rung,
+    gap_terms, reserved, unit_certificate!, unscale!,
     increment!, indirect_backend, indirect_rung, inner_iterations, invscaled_norm_inf,
     is_convex, is_dual_infeasible, is_materializable, is_primal_infeasible, is_scalar_multiple,
     is_symmetric, kkt_rung, kronecker_rung, last_solve_converged, lowrank_rung, mul_A!,
@@ -139,6 +140,13 @@ let
         @assert_trim_compatible check_termination(ws, false)
         @assert_noalloc adapt_rho!(ws)
         @assert_trim_compatible adapt_rho!(ws)
+        # A solve allocates nothing: the `Solution` it returns is the workspace's own,
+        # refilled. `build_solution` resizes the certificates into capacity reserved at
+        # setup, and `solve!` reads the clock; AllocCheck can prove neither, so
+        # `test/strictmode_tests.jl` measures these two rather than proving them.
+        @assert_noalloc build_solution(ws)
+        @assert_trim_compatible build_solution(ws)
+        @assert_trim_compatible solve!(ws)
         return nothing
     end
     function run(linsys, P, A; scaling = 10)

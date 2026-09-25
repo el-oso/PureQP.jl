@@ -170,10 +170,12 @@ end
     opts = (eps_abs = 1.0e-8, eps_rel = 1.0e-8, max_iter = 100_000)
 
     ws = setup(P, q, A, l, u; opts...)
-    first = PureOSQP.solve!(ws)
+    # Copied: a solve refills the workspace's own `Solution`, so comparing two runs means
+    # keeping the earlier one before the later one overwrites it.
+    first = copy(PureOSQP.solve!(ws))
     @test first.status == SOLVED
 
-    warm = PureOSQP.solve!(ws)               # warm started from `first`
+    warm = copy(PureOSQP.solve!(ws))         # warm started from `first`
     @test warm.iter < first.iter
 
     # Only the iterates are discarded. `ρ`, the equilibration factors and the
@@ -327,7 +329,7 @@ end
     # `setup_time` belongs to the workspace, so every solve reports it, but only the first
     # charges it to `run_time` -- a re-solve did not pay it again.
     ws = setup(P, q, A, l, u; eps_abs = 1.0e-9, eps_rel = 1.0e-9)
-    first = PureOSQP.solve!(ws)
+    first = copy(PureOSQP.solve!(ws))
     again = PureOSQP.solve!(ws)
     @test first.setup_time > 0
     @test again.setup_time == first.setup_time
@@ -795,7 +797,7 @@ end
 
     # A tight safeguard discards many proposals.
     ws = setup(P, q, A, l, u; accelerator = PureOSQP.anderson(Float64, n + m; safeguard_tol = 1.0e-3), opts...)
-    first_solve = solve!(ws)
+    first_solve = copy(solve!(ws))
     @test first_solve.status === SOLVED
     @test 0 < first_solve.accel_declined <= first_solve.iter
     warm_start!(ws; x = zeros(n), y = zeros(m))

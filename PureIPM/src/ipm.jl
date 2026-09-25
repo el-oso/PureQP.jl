@@ -799,36 +799,62 @@ Assemble a [`Solution`](@ref) from the workspace's counters and the values that 
 how the run ended.
 """
 function ipm_solution(
-        ws::InteriorPointWorkspace{T}, x, y, obj::T, dual_obj::T, gap::T, prim_cert, dual_cert
+        ws::InteriorPointWorkspace{T}, obj::T, dual_obj::T, gap::T
     ) where {T}
-    return Solution{T}(
-        Vector{T}(x), Vector{T}(y), ws.status, obj, dual_obj, gap,
-        ws.prim_res, ws.dual_res, ws.rel_kkt_error, ws.iter,
-        0.0, 0.0, zero(T), 0, 0, ws.cg_iters, ws.polished, ws.status_polish,
-        ws.setup_time, ws.update_time, ws.solve_time, ws.polish_time,
-        (ws.first_run ? ws.setup_time : 0.0) + ws.update_time + ws.solve_time + ws.polish_time,
-        Vector{T}(prim_cert), Vector{T}(dual_cert),
-    )
+    sol = ws.sol
+    sol.status = ws.status
+    sol.obj_val = obj
+    sol.dual_obj_val = dual_obj
+    sol.duality_gap = gap
+    sol.prim_res = ws.prim_res
+    sol.dual_res = ws.dual_res
+    sol.rel_kkt_error = ws.rel_kkt_error
+    sol.iter = ws.iter
+    # An interior-point run reports neither the primal-dual integral nor a ρ, so these stay
+    # at the values `empty_solution` set.
+    sol.cg_iters = ws.cg_iters
+    sol.polished = ws.polished
+    sol.status_polish = ws.status_polish
+    sol.setup_time = ws.setup_time
+    sol.update_time = ws.update_time
+    sol.solve_time = ws.solve_time
+    sol.polish_time = ws.polish_time
+    sol.run_time = (ws.first_run ? ws.setup_time : 0.0) +
+        ws.update_time + ws.solve_time + ws.polish_time
+    return sol
 end
 
 function build_solution(ws::InteriorPointWorkspace{T}) where {T}
     prob = ws.prob
-    n, m = prob.n, prob.m
+    sol = ws.sol
     nan = T(NaN)
+    # The certificates carry the outcome in their length: a run reports the one its status
+    # names and empties the other, and the memory for both is reserved at setup.
     if ws.status == PRIMAL_INFEASIBLE || ws.status == PRIMAL_INFEASIBLE_INACCURATE
-        cert = prob.E .* ws.cert_y
-        nc = norm_inf(cert)
-        nc > zero(T) && (cert ./= nc)
-        return ipm_solution(ws, fill(nan, n), fill(nan, m), T(Inf), nan, nan, cert, T[])
+        fill!(sol.x, nan)
+        fill!(sol.y, nan)
+        unit_certificate!(sol.prim_inf_cert, ws.yout, prob.E, ws.cert_y, true)
+        resize!(sol.dual_inf_cert, 0)
+        return ipm_solution(ws, T(Inf), nan, nan)
     elseif ws.status == DUAL_INFEASIBLE || ws.status == DUAL_INFEASIBLE_INACCURATE
-        cert = prob.D .* ws.cert_x
-        nc = norm_inf(cert)
-        nc > zero(T) && (cert ./= nc)
-        return ipm_solution(ws, fill(nan, n), fill(nan, m), T(-Inf), nan, nan, T[], cert)
-    elseif !has_solution(ws.status)
-        return ipm_solution(ws, fill(nan, n), fill(nan, m), nan, nan, nan, T[], T[])
+        fill!(sol.x, nan)
+        fill!(sol.y, nan)
+        resize!(sol.prim_inf_cert, 0)
+        unit_certificate!(sol.dual_inf_cert, ws.xout, prob.D, ws.cert_x, true)
+        return ipm_solution(ws, T(-Inf), nan, nan)
     end
-    x = prob.D .* ws.x
-    y = (prob.E .* ws.y) ./ prob.c
-    return ipm_solution(ws, x, y, ws.obj_val, ws.dual_obj_val, ws.duality_gap, T[], T[])
+    resize!(sol.prim_inf_cert, 0)
+    resize!(sol.dual_inf_cert, 0)
+    if !has_solution(ws.status)
+        fill!(sol.x, nan)
+        fill!(sol.y, nan)
+        return ipm_solution(ws, nan, nan, nan)
+    end
+    # Unscaled where the iterates live, then copied across once: `sol` holds `Vector`s and
+    # the workspace's arrays need not support scalar indexing.
+    unscale!(ws.xout, prob.D, ws.x, one(T))
+    unscale!(ws.yout, prob.E, ws.y, prob.c)
+    copyto!(sol.x, ws.xout)
+    copyto!(sol.y, ws.yout)
+    return ipm_solution(ws, ws.obj_val, ws.dual_obj_val, ws.duality_gap)
 end

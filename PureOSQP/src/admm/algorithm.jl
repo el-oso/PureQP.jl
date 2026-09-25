@@ -179,6 +179,17 @@ mutable struct OperatorSplittingWorkspace{
     polish_time::Float64
     algorithm::OperatorSplitting{T}
     options::Options{T}
+    # Where the result is unscaled, in the workspace's own array type. The `Solution` holds
+    # `Vector`s, so an array that forbids scalar indexing is scaled here and copied across
+    # once rather than indexed element by element.
+    xout::V
+    yout::V
+    # Refilled and handed back by every solve, so a solve allocates nothing at all. Its
+    # arrays are plain `Vector`s whatever the workspace was built from: the result is what a
+    # caller reads, not a buffer the solver iterates on, and a GPU array here would make
+    # every field access a device transfer. `Solution` says what reuse means for a caller
+    # holding one across a solve.
+    sol::Solution{T}
 end
 
 """
@@ -258,6 +269,12 @@ function setup_backend(
             algorithm.rho, 0, 0, 0, 0, UNSOLVED, false, POLISH_NOT_PERFORMED,
             0.0, 0.0, true, 0.0, 0.0,
             algorithm, options,
+            buf(n, z), buf(m, z),
+            # The certificates are reserved rather than sized: only one of them is reported,
+            # and only by a run that ends infeasible, so their lengths are what a solve sets.
+            empty_solution(
+                Vector{T}(undef, n), Vector{T}(undef, m), reserved(T, m), reserved(T, n)
+            ),
         )
         adopt_settings!(built.linsys, algorithm, options)
         return built

@@ -246,58 +246,78 @@ function solve!(ws::OperatorSplittingWorkspace{T}) where {T}
 end
 
 """
-    solution_from(ws, x, y, obj, dual_obj, gap, prim_cert, dual_cert) -> Solution
+    solution_from(ws, obj, dual_obj, gap) -> Solution
 
-Assemble a [`Solution`](@ref), taking everything that does not depend on the outcome
-directly from the workspace. The objectives and the gap are passed in because a run
-without a meaningful point must not report them.
+Refill everything in the workspace's [`Solution`](@ref) that does not depend on the
+outcome. The objectives and the gap are passed in because a run without a meaningful point
+must not report them; `x`, `y` and the certificates are written by the caller.
 """
 function solution_from(
-        ws::OperatorSplittingWorkspace{T}, x, y, obj::T, dual_obj::T, gap::T, prim_cert, dual_cert
+        ws::OperatorSplittingWorkspace{T}, obj::T, dual_obj::T, gap::T
     ) where {T}
-    # `Solution` holds plain `Vector`s whatever the workspace was built from: it is the
-    # result a caller reads, not a buffer the solver iterates on, and leaving a GPU array
-    # here would make every field access a device transfer.
-    return Solution{T}(
-        Vector{T}(x), Vector{T}(y), ws.status, obj, dual_obj, gap,
-        ws.prim_res, ws.dual_res, ws.rel_kkt_error, ws.iter,
-        ws.primdual_int, ws.primdual_int_log,
-        ws.rho_estimate, ws.rho_updates, ws.accel_declined, ws.cg_iters, ws.polished, ws.status_polish,
-        ws.setup_time, ws.update_time, ws.solve_time, ws.polish_time,
-        # Setup is charged to the first run only; a re-solve did not pay it again. The
-        # updates since the previous solve are charged here, because they are what this
-        # run cost the caller.
-        (ws.first_run ? ws.setup_time : 0.0) + ws.update_time + ws.solve_time + ws.polish_time,
-        Vector{T}(prim_cert), Vector{T}(dual_cert),
-    )
+    sol = ws.sol
+    sol.status = ws.status
+    sol.obj_val = obj
+    sol.dual_obj_val = dual_obj
+    sol.duality_gap = gap
+    sol.prim_res = ws.prim_res
+    sol.dual_res = ws.dual_res
+    sol.rel_kkt_error = ws.rel_kkt_error
+    sol.iter = ws.iter
+    sol.primdual_int = ws.primdual_int
+    sol.primdual_int_log = ws.primdual_int_log
+    sol.rho_estimate = ws.rho_estimate
+    sol.rho_updates = ws.rho_updates
+    sol.accel_declined = ws.accel_declined
+    sol.cg_iters = ws.cg_iters
+    sol.polished = ws.polished
+    sol.status_polish = ws.status_polish
+    sol.setup_time = ws.setup_time
+    sol.update_time = ws.update_time
+    sol.solve_time = ws.solve_time
+    sol.polish_time = ws.polish_time
+    # Setup is charged to the first run only; a re-solve did not pay it again. The updates
+    # since the previous solve are charged here, because they are what this run cost the
+    # caller.
+    sol.run_time = (ws.first_run ? ws.setup_time : 0.0) +
+        ws.update_time + ws.solve_time + ws.polish_time
+    return sol
 end
 
 function build_solution(ws::OperatorSplittingWorkspace{T}) where {T}
     prob = ws.prob
-    n, m = prob.n, prob.m
+    sol = ws.sol
     nan = T(NaN)
+    scaled = prob.scaling > 0
+    # The certificates carry the outcome in their length: a run reports the one its status
+    # names and empties the other, and the memory for both is reserved at setup.
     if ws.status == PRIMAL_INFEASIBLE || ws.status == PRIMAL_INFEASIBLE_INACCURATE
-        cert = prob.scaling > 0 ? prob.E .* ws.delta_y : copy(ws.delta_y)
-        nc = norm_inf(cert)
-        nc > zero(T) && (cert ./= nc)
-        return solution_from(
-            ws, fill(nan, n), fill(nan, m), T(Inf), nan, nan, cert, T[]
-        )
+        fill!(sol.x, nan)
+        fill!(sol.y, nan)
+        unit_certificate!(sol.prim_inf_cert, ws.yout, prob.E, ws.delta_y, scaled)
+        resize!(sol.dual_inf_cert, 0)
+        return solution_from(ws, T(Inf), nan, nan)
     elseif ws.status == DUAL_INFEASIBLE || ws.status == DUAL_INFEASIBLE_INACCURATE
-        cert = prob.scaling > 0 ? prob.D .* ws.delta_x : copy(ws.delta_x)
-        nc = norm_inf(cert)
-        nc > zero(T) && (cert ./= nc)
-        return solution_from(
-            ws, fill(nan, n), fill(nan, m), T(-Inf), nan, nan, T[], cert
-        )
-    elseif !has_solution(ws.status)
+        fill!(sol.x, nan)
+        fill!(sol.y, nan)
+        resize!(sol.prim_inf_cert, 0)
+        unit_certificate!(sol.dual_inf_cert, ws.xout, prob.D, ws.delta_x, scaled)
+        return solution_from(ws, T(-Inf), nan, nan)
+    end
+    resize!(sol.prim_inf_cert, 0)
+    resize!(sol.dual_inf_cert, 0)
+    if !has_solution(ws.status)
         # NON_CONVEX and anything else without a meaningful point: no number here would
         # mean anything, so do not hand back one that looks like a solution.
-        return solution_from(ws, fill(nan, n), fill(nan, m), nan, nan, nan, T[], T[])
+        fill!(sol.x, nan)
+        fill!(sol.y, nan)
+        return solution_from(ws, nan, nan, nan)
     end
-    x = prob.D .* ws.x
-    y = (prob.E .* ws.y) ./ prob.c
-    return solution_from(
-        ws, x, y, ws.obj_val, ws.dual_obj_val, ws.duality_gap, T[], T[]
-    )
+    # Unscaled where the iterates live, then copied across once: `sol` holds `Vector`s and
+    # the workspace's arrays need not support scalar indexing.
+    unscale!(ws.xout, prob.D, ws.x, one(T))
+    unscale!(ws.yout, prob.E, ws.y, prob.c)
+    copyto!(sol.x, ws.xout)
+    copyto!(sol.y, ws.yout)
+    return solution_from(ws, ws.obj_val, ws.dual_obj_val, ws.duality_gap)
 end

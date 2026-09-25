@@ -36,7 +36,7 @@ import PureQPBase:
     derivative_ready, setup_backend, algorithm_defaults, element_typed, dimensions,
     QPData, Options, Solution, Status, QPAlgorithm, QPWorkspace, PolishStatus,
     adopt_update!, check_update, has_solution, is_convex, is_materializable, validate,
-    validated_data, validate_update!, check_option_names, settings_tuple, paired
+    validated_data, validate_update!, check_option_names, settings_tuple, paired, empty_solution
 
 export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
 export dimensions, capabilities

@@ -12,6 +12,13 @@
         return @allocated PureOSQP.refactor_rho!(ws)
     end
 
+    # The rule the package holds itself to: everything a solve needs is allocated by
+    # `setup`, so a second solve on the same workspace takes nothing at all.
+    function resolve_bytes(ws)
+        solve!(ws)
+        return @allocated solve!(ws)
+    end
+
     Random.seed!(1)
     n, m = 12, 30
     X = randn(n, n)
@@ -62,6 +69,17 @@
             guarantees = (:noalloc, :trim_compatible)
         ) isa Vector
         @test iszero(refactor_bytes(ws))
+        # `build_solution` and `solve!` are trim-safe but cannot be proved
+        # allocation-free: the first resizes the certificates into capacity reserved at
+        # setup, the second reads the clock, and AllocCheck sees through neither. What the
+        # rule asks of them is measured on a warm re-solve instead.
+        @test test_signatures(
+            [(PureOSQP.build_solution, (W,)), (PureOSQP.solve!, (W,))];
+            guarantees = (:trim_compatible,)
+        ) isa Vector
+        @test iszero(resolve_bytes(ws))
+        # The result is the workspace's own, refilled rather than rebuilt.
+        @test solve!(ws) === ws.sol
     end
 end
 

@@ -140,7 +140,9 @@ end
     include(joinpath(@__DIR__, "helpers.jl"))
     P, q, A, l, u = random_qp(20, 40; seed = 11)
     ws = setup(P, q, A, l, u; linsys = :indirect)
-    first = solve!(ws)
+    # Copied: a solve refills the workspace's own `Solution`, so the second run would
+    # otherwise overwrite the count this one is compared against.
+    first = copy(solve!(ws))
     @test first.cg_iters > 0
     @test first.cg_iters == PureOSQP.inner_iterations(ws.linsys)
     # A second solve reports its own iterations, not the workspace's running total.

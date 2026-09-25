@@ -166,6 +166,16 @@ function add_scaled!(dest::Vector, a, s, b)
 end
 add_scaled!(dest, a, s, b) = (dest .+= a .+ s .* b)
 
+"`dest = s ⊙ src / c`, elementwise, for a scalar `c`: an equilibrated vector in the caller's
+own scaling."
+function unscale!(dest::Vector, s, src, c)
+    for i in eachindex(dest)
+        dest[i] = s[i] * src[i] / c
+    end
+    return dest
+end
+unscale!(dest, s, src, c) = (dest .= s .* src ./ c)
+
 "`dest *= a`, elementwise."
 function scale_by!(dest::Vector, a)
     for i in eachindex(dest)

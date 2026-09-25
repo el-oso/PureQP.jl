@@ -213,11 +213,102 @@ mutable struct Solution{T <: Real}
     dual_inf_cert::Vector{T}
 end
 
+"""
+    reserved(T, n) -> Vector{T}
+
+An empty `Vector{T}` that can grow to `n` elements without allocating.
+
+`resize!` up to `n` and back reuses the memory reserved here, which is what lets a workspace
+hand back a field whose length depends on how a run ended without allocating during the run.
+"""
+reserved(::Type{T}, n::Integer) where {T} = resize!(Vector{T}(undef, n), 0)
+
+"""
+    empty_solution(x, y, prim_cert, dual_cert) -> Solution
+
+The [`Solution`](@ref) a workspace keeps and refills, reporting through the arrays it is
+given and holding no answer yet.
+
+A solve writes every field before a caller sees it, so the values here are placeholders.
+The four arrays belong to the workspace: a caller holding a `Solution` across a second
+solve sees the second solve's numbers.
+"""
+function empty_solution(
+        x::Vector{T}, y::Vector{T}, prim_cert::Vector{T}, dual_cert::Vector{T}
+    ) where {T}
+    return Solution{T}(
+        x, y, UNSOLVED, zero(T), zero(T), zero(T),
+        zero(T), zero(T), zero(T), 0,
+        0.0, 0.0, zero(T), 0, 0, 0,
+        false, POLISH_NOT_PERFORMED,
+        0.0, 0.0, 0.0, 0.0, 0.0,
+        prim_cert, dual_cert,
+    )
+end
+
+"""
+    copy(sol::Solution) -> Solution
+
+A `Solution` that keeps this run's numbers when the workspace solves again.
+
+A solve refills the workspace's own `Solution` rather than building one, so two results
+read from the same workspace are the same object. Copy the one you need to keep before
+solving again; comparing a run against a later one otherwise compares it against itself.
+"""
+function Base.copy(sol::Solution{T}) where {T}
+    return Solution{T}(
+        copy(sol.x), copy(sol.y), sol.status, sol.obj_val, sol.dual_obj_val,
+        sol.duality_gap, sol.prim_res, sol.dual_res, sol.rel_kkt_error, sol.iter,
+        sol.primdual_int, sol.primdual_int_log, sol.rho_estimate, sol.rho_updates,
+        sol.accel_declined, sol.cg_iters, sol.polished, sol.status_polish,
+        sol.setup_time, sol.update_time, sol.solve_time, sol.polish_time, sol.run_time,
+        copy(sol.prim_inf_cert), copy(sol.dual_inf_cert),
+    )
+end
+
+"""
+    unit_certificate!(dest, scratch, s, src, scaled) -> dest
+
+Write `s ⊙ src` — or `src` itself when the problem was not equilibrated — into `dest`,
+normalized to unit `∞`-norm, resizing `dest` to the length `src` needs.
+
+A certificate proves an infeasibility direction, so only its direction carries meaning and
+any positive multiple of it does as well. `dest` is reserved by the workspace, so the
+resize reuses memory rather than taking any.
+
+The product runs in `scratch`, a workspace buffer of the solver's own array type, and
+`dest` is a `Vector` the caller reads: an array that forbids scalar indexing is scaled
+where it lives and copied across once, rather than indexed element by element.
+"""
+function unit_certificate!(dest::Vector{T}, scratch, s, src, scaled::Bool) where {T}
+    n = length(src)
+    resize!(dest, n)
+    work = view_n(scratch, n)
+    if scaled
+        multiply!(work, s, src)
+    else
+        copyto!(work, src)
+    end
+    copyto!(dest, work)
+    nc = zero(T)
+    for i in eachindex(dest)
+        nc = max(nc, abs(dest[i]))
+    end
+    nc > zero(T) && (dest ./= nc)
+    return dest
+end
+
+"The first `n` entries of `v`, as a view, when `v` is longer than the vector being built."
+@inline view_n(v, n::Integer) = length(v) == n ? v : view(v, firstindex(v):(firstindex(v) + n - 1))
+
 # The keyword forms (`warm_start!(ws; x, y)`, `update!(ws; q, l, u, P, A)`,
 # `update_settings!(ws; kwargs...)`) are checked through their positional signature, which is
 # all `hasmethod` sees of a keyword method.
+#
+# `solve!` returns the workspace's own `Solution`, refilled: a solve allocates nothing, so
+# the result is storage the workspace owns rather than a fresh object per run.
 @contract QPWorkspace begin
-    solve!(::Self)::Solution => "run the algorithm from the workspace's state and return the result"
+    solve!(::Self)::Solution => "run the algorithm from the workspace's state and refill the workspace's result"
     warm_start!(::Self)::Self => "seed the next solve with `x` and `y`, given as keywords in problem space"
     cold_start!(::Self)::Self => "discard the iterates, so the next solve starts from its own starting point"
     update!(::Self)::Self => "replace `q`, `l`, `u`, `P` or `A`, given as keywords"

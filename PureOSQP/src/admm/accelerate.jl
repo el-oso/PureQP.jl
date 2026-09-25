@@ -60,9 +60,18 @@ accelerate_post!(::Nothing, ws, iter::Integer) = ws
 Write `[x; ρ⁻¹ ⊙ y + z]`, the vector the ADMM iteration is a fixed point of.
 """
 function pack_fixed_point!(w::AbstractVector{T}, ws::OperatorSplittingWorkspace{T}) where {T}
+    # Loops over `w` rather than broadcasts into views of it: `Base.Broadcast` cannot rule
+    # out that a view of `w` aliases the workspace vector beside it, so it keeps an
+    # `unaliascopy` branch, and that is an allocation site whether or not it can be reached.
+    Base.require_one_based_indexing(w)
+    x, y, z, w_inv = ws.x, ws.y, ws.z, ws.weights.w_inv
     n = ws.prob.n
-    @views w[1:n] .= ws.x
-    @views w[(n + 1):end] .= ws.weights.w_inv .* ws.y .+ ws.z
+    for i in eachindex(x)
+        w[i] = x[i]
+    end
+    for i in eachindex(y)
+        w[n + i] = w_inv[i] * y[i] + z[i]
+    end
     return w
 end
 
@@ -76,12 +85,20 @@ is the part inside, `y` is what is left scaled by `ρ`. Carrying the previous `y
 instead leaves the pair inconsistent, and the iteration does not recover from that.
 """
 function unpack_fixed_point!(ws::OperatorSplittingWorkspace{T}, w::AbstractVector{T}) where {T}
+    Base.require_one_based_indexing(w)
     prob = ws.prob
     n = prob.n
-    @views ws.x .= w[1:n]
-    v = @view w[(n + 1):end]
-    @. ws.z = clamp(v, prob.l, prob.u)
-    @. ws.y = ws.weights.w * (v - ws.z)
+    x, y, z, wt, l, u = ws.x, ws.y, ws.z, ws.weights.w, prob.l, prob.u
+    for i in eachindex(x)
+        x[i] = w[i]
+    end
+    # `z` and `y` in one pass: the projection separates them, and the second reads the first.
+    for i in eachindex(z)
+        vi = w[n + i]
+        zi = clamp(vi, l[i], u[i])
+        z[i] = zi
+        y[i] = wt[i] * (vi - zi)
+    end
     return ws
 end
 

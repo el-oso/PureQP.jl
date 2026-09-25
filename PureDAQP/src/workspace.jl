@@ -145,7 +145,9 @@ function setup_backend(
         UNSOLVED, false, POLISH_NOT_PERFORMED, 0, false,
         (time_ns() - t0) / 1.0e9, 0.0, 0.0,
         zeros(T, n),
-        empty_solution(x, y),
+        # A dual active-set method reports no infeasibility certificate, so neither vector
+        # ever grows and neither needs memory reserved for it.
+        empty_solution(x, y, T[], T[]),
     )
     return ws
 end

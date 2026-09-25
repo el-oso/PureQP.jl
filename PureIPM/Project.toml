@@ -1,6 +1,6 @@
 name = "PureIPM"
 uuid = "7796d3b0-b4f1-40ab-b599-32a1660dec1b"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["el-oso <15278831+el-oso@users.noreply.github.com>"]
 
 [deps]
@@ -18,7 +18,7 @@ PureIPMMathOptInterfaceExt = "MathOptInterface"
 [compat]
 LinearAlgebra = "1"
 MathOptInterface = "1"
-PureQPBase = "0.1.1"
+PureQPBase = "0.1.2"
 StrictMode = "0.4.7"
 TypeContracts = "0.14.0"
 julia = "1.12"

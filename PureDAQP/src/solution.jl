@@ -42,25 +42,6 @@ function build_solution(ws::ActiveSetWorkspace{T}) where {T}
 end
 
 """
-    empty_solution(x, y) -> Solution
-
-The solution a workspace keeps and refills, reporting through the arrays it is given and
-holding no answer yet.
-
-The fields an active-set method never reports are set here and not touched again.
-"""
-function empty_solution(x::AbstractVector{T}, y::AbstractVector{T}) where {T}
-    return Solution{T}(
-        x, y, UNSOLVED, zero(T), zero(T), zero(T),
-        zero(T), zero(T), zero(T), 0,
-        0.0, 0.0, zero(T), 0, 0, 0,
-        false, POLISH_NOT_PERFORMED,
-        0.0, 0.0, 0.0, 0.0, 0.0,
-        T[], T[],
-    )
-end
-
-"""
     report(ws) -> (objective, primal_residual, dual_residual, duality_gap)
 
 Everything a [`Solution`](@ref) reports about the point, from the caller's own data, in one
