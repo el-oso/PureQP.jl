@@ -67,18 +67,17 @@ export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURA
 # conjugate-gradient iteration. These checks report rather than throw;
 # `test/strictmode_tests.jl` proves the same signatures with StrictModeTest.
 #
-# Two exemptions, and each is a different reason. `KroneckerReduced`'s `factorize!`
-# eigendecomposes `AᵢᵀAᵢ`, which allocates; it runs only when `P`, `A` or `σ` change, and no
-# interior-point rung selects that backend. `DiagonalLowRank`'s two are exempt from the scan
-# and from it alone: AllocCheck proves both allocate nothing, while the value-free scan reads
-# typed IR, which still holds allocations LLVM goes on to delete, and reports them. Asserting
-# them here would warn every caller of this package about a guarantee the proof already
-# settles in their favour. `test/strictmode_tests.jl` proves them like the rest.
+# `DiagonalLowRank`'s two are asserted for `--trim` and not for allocation, and only because
+# of where the question is settled: AllocCheck proves both allocate nothing, while the
+# value-free scan reads typed IR, which still holds allocations LLVM goes on to delete, and
+# reports them. Asserting them here would warn every caller of this package about a guarantee
+# the proof already settles in their favour. `test/strictmode_tests.jl` proves them like the
+# rest, and every other backend is asserted for both here.
 let
     function check(ls, prob, wt)
         bx, bz, x, z = ones(prob.n), ones(prob.m), zeros(prob.n), zeros(prob.m)
         scanned = !(ls isa DiagonalLowRank)
-        ls isa KroneckerReduced || scanned && @assert_noalloc factorize!(ls, prob, wt)
+        scanned && @assert_noalloc factorize!(ls, prob, wt)
         @assert_trim_compatible factorize!(ls, prob, wt)
         scanned && @assert_noalloc refactor_weights!(ls, prob, wt)
         @assert_trim_compatible refactor_weights!(ls, prob, wt)

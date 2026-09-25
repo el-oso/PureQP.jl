@@ -31,6 +31,8 @@ mutable struct KroneckerReduced{
     dinv::M          # `n₂×n₁`, the reciprocal diagonal in the eigenbasis
     X::M             # `n₂×n₁` scratch, the right-hand side reshaped
     Z::M             # `n₂×n₁` scratch, one product in
+    work1::V         # `syev` workspace for the `n₁` factor, sized once at construction
+    work2::V         # and for the `n₂` factor
     mu::T            # the `μ` of `P = μI`, read by the rung and by every `factorize!`
 end
 
@@ -43,10 +45,16 @@ was given. See [`ReducedCholesky`](@ref) on why `proto` is a vector.
 function KroneckerReduced(
         proto::AbstractVector{T}, n1::Integer, n2::Integer, mu::T
     ) where {T <: Real}
+    Q1 = similar(proto, T, n1, n1)
+    Q2 = similar(proto, T, n2, n2)
+    # Sized once here, from LAPACK's own query, so no factorization has to ask again.
+    work1 = similar(proto, T, max(syev_lwork(Q1), 1))
+    work2 = similar(proto, T, max(syev_lwork(Q2), 1))
     return KroneckerReduced{T, Matrix{T}, Vector{T}}(
-        similar(proto, T, n1, n1), similar(proto, T, n2, n2),
+        Q1, Q2,
         similar(proto, T, n1), similar(proto, T, n2),
         similar(proto, T, n2, n1), similar(proto, T, n2, n1), similar(proto, T, n2, n1),
+        work1, work2,
         mu,
     )
 end
@@ -113,14 +121,16 @@ function factorize!(ls::KroneckerReduced{T}, prob, wt)::Bool where {T}
     # call to `scalar_multiple` behind.
     is_scalar_multiple(P) || return false
     ls.mu = T(scalar_multiple(P))
-    # `Gᵢ = AᵢᵀAᵢ` is formed at factor size and thrown away; only its eigenbasis is kept.
-    F1 = eigen(Symmetric(A.A1' * A.A1))
-    F2 = eigen(Symmetric(A.A2' * A.A2))
-    copyto!(ls.Q1, F1.vectors)
-    copyto!(ls.Q2, F2.vectors)
-    copyto!(ls.lambda1, F1.values)
-    copyto!(ls.lambda2, F2.values)
-    return refactor_weights!(ls, prob, wt)
+    # `Gᵢ = AᵢᵀAᵢ` is formed straight into the eigenvector buffer, which `syev` then overwrites
+    # with the basis: the Gram is never kept, and neither it nor the factorization allocates.
+    mul!(ls.Q1, transpose(A.A1), A.A1)
+    mul!(ls.Q2, transpose(A.A2), A.A2)
+    info1 = syev_lower!(ls.Q1, ls.lambda1, ls.work1)
+    info2 = syev_lower!(ls.Q2, ls.lambda2, ls.work2)
+    # A Gram matrix is positive semidefinite, so `syev` converges; a failure here is the
+    # factor being unusable rather than the problem being non-convex, and the rung that
+    # selected this backend takes the next one.
+    return iszero(info1) && iszero(info2) && refactor_weights!(ls, prob, wt)
 end
 
 # The eigenbases depend only on `A` and `μ` only on `P`, so new weights rebuild only the

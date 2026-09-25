@@ -64,15 +64,7 @@
         ]
         guarantees = (:typestable, :noalloc, :trim_compatible)
         @test test_signatures(per_iteration; guarantees) isa Vector
-        if ls isa PureQPBase.KroneckerReduced
-            # Its `factorize!` eigendecomposes `AᵢᵀAᵢ`, which allocates. It runs only when
-            # `P`, `A` or `σ` change, and no interior-point rung selects this backend.
-            @test test_signatures(
-                [(PureQPBase.factorize!, types[1:3])]; guarantees = (:typestable, :trim_compatible)
-            ) isa Vector
-        else
-            @test test_signatures([(PureQPBase.factorize!, types[1:3])]; guarantees) isa Vector
-        end
+        @test test_signatures([(PureQPBase.factorize!, types[1:3])]; guarantees) isa Vector
     end
 end
 

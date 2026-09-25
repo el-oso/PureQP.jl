@@ -348,6 +348,68 @@ for (fname, elty) in ((:dsytrf_, :Float64), (:ssytrf_, :Float32))
     end
 end
 
+"""
+    syev_lwork(A) -> Int
+
+The `work` length LAPACK's `syev` asks for on a matrix the size of `A`.
+"""
+function syev_lwork end
+
+"""
+    syev_lower!(A, w, work) -> info
+
+LAPACK's `syev` on the lower triangle of `A`: the eigenvalues into `w`, ascending, and the
+eigenvectors over `A` itself. `work` must be at least [`syev_lwork`](@ref) long. Nothing is
+allocated.
+
+A different driver from `LinearAlgebra.eigen`, which calls `syevr`. The eigenvalues agree;
+individual eigenvectors may differ in sign, which a solve through the basis does not see.
+"""
+function syev_lower! end
+
+for (fname, elty) in ((:dsyev_, :Float64), (:ssyev_, :Float32))
+    @eval begin
+        function syev_lwork(A::StridedMatrix{$elty})
+            LinearAlgebra.chkstride1(A)
+            dim = LinearAlgebra.checksquare(A)
+            iszero(dim) && return 0
+            work = Vector{$elty}(undef, 1)
+            w = Vector{$elty}(undef, dim)
+            info = Ref{LinearAlgebra.BlasInt}()
+            ccall(
+                (LinearAlgebra.BLAS.@blasfunc($fname), libblastrampoline), Cvoid,
+                (
+                    Ref{UInt8}, Ref{UInt8}, Ref{LinearAlgebra.BlasInt}, Ptr{$elty},
+                    Ref{LinearAlgebra.BlasInt}, Ptr{$elty}, Ptr{$elty},
+                    Ref{LinearAlgebra.BlasInt}, Ref{LinearAlgebra.BlasInt}, Clong, Clong,
+                ),
+                'V', 'L', dim, A, max(1, stride(A, 2)), w, work, -1, info, 1, 1
+            )
+            info[] < 0 && throw(ArgumentError("invalid argument #$(-info[]) to LAPACK syev workspace query"))
+            # `syev` needs at least `3n-1`; the query answers with the blocked size.
+            return max(Int(real(work[1])), 3 * dim - 1)
+        end
+
+        function syev_lower!(A::StridedMatrix{$elty}, w::Vector{$elty}, work::Vector{$elty})
+            LinearAlgebra.chkstride1(A)
+            dim = LinearAlgebra.checksquare(A)
+            length(w) >= dim || throw(DimensionMismatch("w is shorter than A"))
+            iszero(dim) && return LinearAlgebra.BlasInt(0)
+            info = Ref{LinearAlgebra.BlasInt}()
+            ccall(
+                (LinearAlgebra.BLAS.@blasfunc($fname), libblastrampoline), Cvoid,
+                (
+                    Ref{UInt8}, Ref{UInt8}, Ref{LinearAlgebra.BlasInt}, Ptr{$elty},
+                    Ref{LinearAlgebra.BlasInt}, Ptr{$elty}, Ptr{$elty},
+                    Ref{LinearAlgebra.BlasInt}, Ref{LinearAlgebra.BlasInt}, Clong, Clong,
+                ),
+                'V', 'L', dim, A, max(1, stride(A, 2)), w, work, length(work), info, 1, 1
+            )
+            return info[]
+        end
+    end
+end
+
 # `P` or `A` is about to change, so the cached scaled lower triangle no longer reflects the
 # data it will be factored against.
 check_update(ls::FullKKT, P, A) = (ls.k0_current = false; nothing)
