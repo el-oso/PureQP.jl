@@ -41,9 +41,19 @@ end
 backend_name(::BlockReduced) = :block
 
 # One triangle per block is what is stored, and the blocks are all there is.
+#
+# Loops rather than `sum(f, ls.blocks)`: the reduction passes the function to
+# `Base.MappingRF`, whose two parameters are both `Function`, and `--trim` refuses a call it
+# cannot resolve. `refactored!` names this in the message it throws when a factorization
+# fails, so the reduction sits on the error path of every block solve.
 function backend_info(ls::BlockReduced)
-    n = sum(B -> size(B, 1), ls.blocks)
-    stored = sum(B -> size(B, 1) * (size(B, 1) + 1) ÷ 2, ls.blocks)
+    n = 0
+    stored = 0
+    for B in ls.blocks
+        k = size(B, 1)
+        n += k
+        stored += k * (k + 1) ÷ 2
+    end
     return BackendInfo(backend_name(ls), true, :reduced, n, stored)
 end
 
