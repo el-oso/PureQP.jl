@@ -31,6 +31,12 @@ using LinearAlgebra: Symmetric, I
 using SparseArrays: SparseMatrixCSC, nnz, nzrange, rowvals, nonzeros, triu
 using LDLFactorizations: LDLFactorizations, ldl_analyze, ldl_factorize!, factorized
 
+# Resolved once. `Base.get_extension` builds a `PkgId` on every call, and a `Module` returned
+# at run time makes each call through it a dynamic dispatch with boxed arguments, which on the
+# refactorization path is what `ρ` pays every time it moves. This extension loads after the
+# SparseArrays one, which its `[extensions]` entry requires, so the lookup cannot be `nothing`.
+const SparseExt = Base.get_extension(PureQPBase, :PureQPBaseSparseArraysExt)::Module
+
 """
     fact_L(F) -> SparseMatrixCSC
     fact_perm(F) -> Vector{Int}
@@ -46,7 +52,9 @@ Asserted rather than converted: the assertion narrows an `Any` to something the 
 infer through, while a concrete element type here would round every factor to it — a
 `BigFloat` problem factored to `Float64` and returned as though it had not been.
 """
-fact_L(F) = F.L::SparseMatrixCSC{<:Real, Int}
+# Parametric rather than `SparseMatrixCSC{<:Real, Int}`: that `UnionAll` is constructed on
+# every call, while an assertion naming the factorization's own element type folds away.
+fact_L(F::LDLFactorizations.LDLFactorization{T}) where {T} = F.L::SparseMatrixCSC{T, Int}
 fact_perm(F)::Vector{Int} = F.P
 
 """
@@ -97,7 +105,7 @@ function PureQPBase.ldl_backend(gram, proto::AbstractVector{T}, n::Integer) wher
     # `D` is singular exactly when the reduced matrix is, which for `P̃ + σI + Ãᵀ diag(ρ) Ã`
     # means the problem was not convex after all. Hand it back rather than divide by zero.
     any(iszero, fact.d) && return nothing
-    Base.get_extension(PureQPBase, :PureQPBaseSparseArraysExt).check_factor(fact.L, n)
+    SparseExt.check_factor(fact.L, n)
     return SparseLDL{T, typeof(proto), typeof(gram), typeof(fact)}(
         gram, fact, fact_L(fact), fact_perm(fact), inv.(fact.d), similar(proto, T, n)
     )
@@ -137,7 +145,7 @@ end
 
 function PureQPBase.factorize!(ls::SparseLDL{T}, prob, wt)::Bool where {T}
     P, A = prob.P, prob.A
-    Ext = Base.get_extension(PureQPBase, :PureQPBaseSparseArraysExt)
+    Ext = SparseExt
     if !Ext.describes(ls.gram, P, A)
         # `update!` replaced P or A with one storing entries elsewhere, so both the slot map
         # and the analysis built on its pattern are stale.
@@ -264,7 +272,7 @@ function PureQPBase.ldl_kkt_backend(
     end
     ldl_factorize!(M, fact)
     any(iszero, fact.d) && return nothing
-    Base.get_extension(PureQPBase, :PureQPBaseSparseArraysExt).check_factor(fact.L, n + m)
+    SparseExt.check_factor(fact.L, n + m)
     v = similar(proto, T, n + m)
     return LDLKKT{T, typeof(v), typeof(gram), typeof(fact)}(
         gram, fact, fact_L(fact), fact_perm(fact), inv.(fact.d), v
@@ -272,7 +280,7 @@ function PureQPBase.ldl_kkt_backend(
 end
 
 function PureQPBase.factorize!(ls::LDLKKT{T}, prob, wt)::Bool where {T}
-    Ext = Base.get_extension(PureQPBase, :PureQPBaseSparseArraysExt)
+    Ext = SparseExt
     P, A = prob.P, prob.A
     if !Ext.describes(ls.gram, P, A)
         # `update!` replaced P or A with one storing entries elsewhere, so the slot map and
@@ -288,7 +296,7 @@ function PureQPBase.factorize!(ls::LDLKKT{T}, prob, wt)::Bool where {T}
     any(iszero, d) && return false
     ls.L = fact_L(ls.fact)
     ls.perm = fact_perm(ls.fact)
-    Base.get_extension(PureQPBase, :PureQPBaseSparseArraysExt).check_factor(ls.L, prob.n + prob.m)
+    SparseExt.check_factor(ls.L, prob.n + prob.m)
     length(ls.dinv) == length(d) || resize!(ls.dinv, length(d))
     ls.dinv .= inv.(d)
     return true

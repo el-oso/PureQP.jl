@@ -314,7 +314,7 @@ for (fname, elty) in ((:dsytrf_, :Float64), (:ssytrf_, :Float32))
             work = Vector{$elty}(undef, 1)
             info = Ref{LinearAlgebra.BlasInt}()
             ccall(
-                (LinearAlgebra.BLAS.@blasfunc($fname), LinearAlgebra.BLAS.libblastrampoline), Cvoid,
+                (LinearAlgebra.BLAS.@blasfunc($fname), libblastrampoline), Cvoid,
                 (
                     Ref{UInt8}, Ref{LinearAlgebra.BlasInt}, Ptr{$elty}, Ref{LinearAlgebra.BlasInt},
                     Ptr{LinearAlgebra.BlasInt}, Ptr{$elty}, Ref{LinearAlgebra.BlasInt},
@@ -335,7 +335,7 @@ for (fname, elty) in ((:dsytrf_, :Float64), (:ssytrf_, :Float32))
             iszero(dim) && return LinearAlgebra.BlasInt(0)
             info = Ref{LinearAlgebra.BlasInt}()
             ccall(
-                (LinearAlgebra.BLAS.@blasfunc($fname), LinearAlgebra.BLAS.libblastrampoline), Cvoid,
+                (LinearAlgebra.BLAS.@blasfunc($fname), libblastrampoline), Cvoid,
                 (
                     Ref{UInt8}, Ref{LinearAlgebra.BlasInt}, Ptr{$elty}, Ref{LinearAlgebra.BlasInt},
                     Ptr{LinearAlgebra.BlasInt}, Ptr{$elty}, Ref{LinearAlgebra.BlasInt},

@@ -12,6 +12,11 @@ the algorithms (`OperatorSplitting` and `InteriorPoint`) and is the package most
 module PureQPBase
 
 using LinearAlgebra
+# Named rather than reached through `LinearAlgebra.BLAS.`: on Julia 1.12 a dotted path in a
+# `ccall` library slot lowers to `getproperty` calls the optimizer leaves in the foreign-call
+# node, so every LAPACK call through it costs two dynamic dispatches and a symbol lookup.
+# LinearAlgebra's own LAPACK wrappers import the name for the same reason.
+using LinearAlgebra.BLAS: libblastrampoline
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_contract, @assert_noalloc, @assert_trim_compatible
 
@@ -58,18 +63,24 @@ export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURA
 # The calls an algorithm makes into a backend while it iterates, checked on a small problem
 # for every backend this module defines. `solve_system!` and `solve_multiplier!` run every
 # iteration, `refactor_weights!` every time the weights move, and `factorize!` every time the
-# interior-point method bumps its regularization. `KroneckerReduced`'s `factorize!` is the one
-# checked for `--trim` only: it eigendecomposes `AᵢᵀAᵢ`, which allocates, and it runs only
-# when `P`, `A` or `σ` change, since no interior-point rung selects that backend. The
-# preconditioners' `ldiv!` runs once per conjugate-gradient iteration. These checks report
-# rather than throw; `test/strictmode_tests.jl` proves the same signatures with
-# StrictModeTest.
+# interior-point method bumps its regularization. The preconditioners' `ldiv!` runs once per
+# conjugate-gradient iteration. These checks report rather than throw;
+# `test/strictmode_tests.jl` proves the same signatures with StrictModeTest.
+#
+# Two exemptions, and each is a different reason. `KroneckerReduced`'s `factorize!`
+# eigendecomposes `AᵢᵀAᵢ`, which allocates; it runs only when `P`, `A` or `σ` change, and no
+# interior-point rung selects that backend. `DiagonalLowRank`'s two are exempt from the scan
+# and from it alone: AllocCheck proves both allocate nothing, while the value-free scan reads
+# typed IR, which still holds allocations LLVM goes on to delete, and reports them. Asserting
+# them here would warn every caller of this package about a guarantee the proof already
+# settles in their favour. `test/strictmode_tests.jl` proves them like the rest.
 let
     function check(ls, prob, wt)
         bx, bz, x, z = ones(prob.n), ones(prob.m), zeros(prob.n), zeros(prob.m)
-        ls isa KroneckerReduced || @assert_noalloc factorize!(ls, prob, wt)
+        scanned = !(ls isa DiagonalLowRank)
+        ls isa KroneckerReduced || scanned && @assert_noalloc factorize!(ls, prob, wt)
         @assert_trim_compatible factorize!(ls, prob, wt)
-        @assert_noalloc refactor_weights!(ls, prob, wt)
+        scanned && @assert_noalloc refactor_weights!(ls, prob, wt)
         @assert_trim_compatible refactor_weights!(ls, prob, wt)
         @assert_noalloc solve_system!(ls, prob, wt, bx, bz, x, z)
         @assert_trim_compatible solve_system!(ls, prob, wt, bx, bz, x, z)

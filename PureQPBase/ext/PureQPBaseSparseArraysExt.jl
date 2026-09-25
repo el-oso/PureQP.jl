@@ -660,7 +660,7 @@ function PureQPBase.solve_system!(ls::SparseKKT{T}, prob, wt, rhs_x, rhs_z, x, z
         work[i] = p <= n ? rhs_x[p] : rhs_z[p - n]
     end
     ldl_forward!(work, ls.L, N)
-    work .*= ls.dinv
+    PureQPBase.scale_by!(work, ls.dinv)
     ldl_backward!(work, ls.L, N)
     # And scatter straight into the outputs. The eliminated multiplier gives `z̃` without
     # another product with `A`.
@@ -697,7 +697,7 @@ function PureQPBase.solve_multiplier!(
         work[i] = p <= n ? rhs_x[p] : rhs_z[p - n]
     end
     ldl_forward!(work, ls.L, N)
-    work .*= ls.dinv
+    PureQPBase.scale_by!(work, ls.dinv)
     ldl_backward!(work, ls.L, N)
     for i in 1:N
         p = perm[i]
