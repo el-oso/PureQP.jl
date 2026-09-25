@@ -16,6 +16,27 @@
 # element type appears in both its first and its vector parameter and the two spellings are
 # ambiguous. `bench/strictmode_audit.jl` checks the loops keep their proof.
 
+"""
+    paired(a, b) -> indices
+
+The indices of `a`, having checked that `b` shares them.
+
+What `eachindex(a, b)` does, minus the part `--trim` cannot follow: its `DimensionMismatch`
+formats the axes through a `join` over a tuple, which juliac's verifier refuses. The message
+here is a constant, and the throw is out of line so the check costs a comparison.
+"""
+@inline function paired(a, b)
+    axes(a) == axes(b) || _axes_mismatch()
+    return eachindex(a)
+end
+
+@inline function paired(a, b, c)
+    (axes(a) == axes(b) && axes(a) == axes(c)) || _axes_mismatch()
+    return eachindex(a)
+end
+
+@noinline _axes_mismatch() = throw(DimensionMismatch("paired arrays must have the same axes"))
+
 "`a x̃ + (1 - a) x`, the relaxation ADMM applies to both `x` and `z`."
 @inline relax(a, tilde, prev) = a * tilde + (one(a) - a) * prev
 

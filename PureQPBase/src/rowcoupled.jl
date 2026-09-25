@@ -102,7 +102,7 @@ function LinearAlgebra.mul!(y::AbstractVector, A::RowCoupled, x::AbstractVector)
     k = coupling_rank(A)
     mul!(view(y, 1:k), A.coupling, x)
     w, cols = A.weights, A.cols
-    for r in eachindex(w, cols)
+    for r in paired(w, cols)
         y[k + r] = w[r] * x[cols[r]]
     end
     return y
@@ -113,7 +113,7 @@ function LinearAlgebra.mul!(y::AbstractVector, At::Adjoint{<:Any, <:RowCoupled},
     k = coupling_rank(A)
     mul!(y, A.coupling', view(x, 1:k))
     w, cols = A.weights, A.cols
-    for r in eachindex(w, cols)
+    for r in paired(w, cols)
         y[cols[r]] += w[r] * x[k + r]
     end
     return y

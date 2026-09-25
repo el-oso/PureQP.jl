@@ -124,7 +124,7 @@ function refresh_core!(ls::DiagonalLowRank{T}, prob, wt)::Bool where {T}
         cinv[j] = c * D[j] * P[j, j] * D[j] + sigma
     end
     w, cols = A.weights, A.cols
-    for r in eachindex(w, cols)
+    for r in paired(w, cols)
         j = cols[r]
         i = k + r
         a = E[i] * w[r] * D[j]

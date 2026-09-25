@@ -156,7 +156,7 @@ function solve_system!(ls::KroneckerReduced, prob, wt, rhs_x, rhs_z, x, z)::Noth
     # A loop, not `ls.X .*= ls.dinv`: an in-place broadcast has `X` on both sides, which
     # leaves an `unaliascopy` branch AllocCheck reports as an allocation. See
     # `PureQPBase/src/elementwise.jl`, which does the same for the vector cases.
-    for i in eachindex(ls.X, ls.dinv)
+    for i in paired(ls.X, ls.dinv)
         ls.X[i] *= ls.dinv[i]
     end
     mul!(ls.Z, ls.Q2, ls.X)           # Q₂ (…)

@@ -185,7 +185,7 @@ function weighted_colmax(::Type{T}, M::ProductOperator, j::Integer, w::AbstractV
     M.probe || no_entries()
     col = probe_column!(M, j)
     r = zero(T)
-    for i in eachindex(col, w)
+    for i in paired(col, w)
         r = max(r, w[i] * abs(T(col[i])))
     end
     return r
@@ -197,7 +197,7 @@ function weighted_colmax_rowmax!(
     M.probe || no_entries()
     col = probe_column!(M, j)
     r = zero(T)
-    for i in eachindex(col, w, e)
+    for i in paired(col, w, e)
         v = abs(T(col[i]))
         r = max(r, w[i] * v)
         e[i] = max(e[i], s * v)

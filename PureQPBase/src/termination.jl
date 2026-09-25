@@ -3,7 +3,7 @@
 "`max|s[i] v[i]|`. See `PureQPBase/src/elementwise.jl` on why there are two schedules."
 @inline function scaled_norm_inf(s::Array{T}, v::Array{T}) where {T}
     r = zero(T)
-    for i in eachindex(s, v)
+    for i in paired(s, v)
         r = max(r, abs(s[i] * v[i]))
     end
     return r
@@ -16,7 +16,7 @@ end
 "`max|v[i] / s[i]|`."
 @inline function invscaled_norm_inf(s::Array{T}, v::Array{T}) where {T}
     r = zero(T)
-    for i in eachindex(s, v)
+    for i in paired(s, v)
         r = max(r, abs(v[i] / s[i]))
     end
     return r

@@ -430,7 +430,7 @@ function gram_upper!(
         R::AbstractMatrix{T}, rowptr::Vector{Int}, colind::Vector{Int},
         nzval::AbstractVector, rho::AbstractVector, E::AbstractVector, D::AbstractVector
     ) where {T}
-    for i in eachindex(rho, E)
+    for i in PureQPBase.paired(rho, E)
         ei = E[i]
         w = rho[i] * ei * ei
         stop = rowptr[i + 1] - 1
@@ -1136,7 +1136,7 @@ function refill!(
     avals = nonzeros(A)
     rowptr, colind, aperm, aslot = g.rowptr, g.colind, g.aperm, g.aslot
     t = 0
-    for i in eachindex(rho, E)
+    for i in PureQPBase.paired(rho, E)
         ei = E[i]
         w = rho[i] * ei * ei
         stop = rowptr[i + 1] - 1
