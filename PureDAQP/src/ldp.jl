@@ -119,7 +119,7 @@ function activate!(ws::LDPWorkspace{T}, r::Integer, side::Int8) where {T}
     # the hot-path guarantee sees whether or not the branch can be reached.
     if ispacked(ws)
         dest = view(ws.Ma, :, k + 1)
-        @simd for i in eachindex(dest, m_r)
+        @simd for i in paired(dest, m_r)
             dest[i] = m_r[i]
         end
     end
@@ -278,7 +278,7 @@ function primal_point!(ws::LDPWorkspace{T}) where {T}
         @inbounds for i in 1:k
             mui = mu[i]
             col = row(ws, ws.active[i])
-            @simd for j in eachindex(uu, col)
+            @simd for j in paired(uu, col)
                 uu[j] += mui * col[j]
             end
         end
@@ -610,7 +610,10 @@ function inner_solve!(
     if iszero(red.eps_prox)
         copyto!(v, f)
     else
-        @. v = f - red.eps_prox * x
+        eps_prox = red.eps_prox
+        @simd for i in paired(v, f, x)
+            v[i] = f[i] - eps_prox * x[i]
+        end
     end
     # `R.L` on an upper-stored Cholesky materializes the transpose, copying the whole factor
     # on every pass; `Rt` solves against the same triangle without copying it.
@@ -656,7 +659,7 @@ function run_daqp!(
         status == LDP_OPTIMAL || return (x, status, total)
         primal!(x, red, v)
         d = zero(T)
-        for i in eachindex(x, xold)
+        for i in paired(x, xold)
             d = max(d, abs(x[i] - xold[i]))
         end
         d < eta_prox && return (x, status, total)
@@ -667,7 +670,15 @@ end
 "Recover the primal point `x = R⁻¹(−u − v)` of the original problem, in place."
 function primal!(x::AbstractVector{T}, red::DAQPReduction{T}, v::AbstractVector{T}) where {T}
     u = red.ws.u
-    @. x = -u - v
-    ldiv!(red.R.U, x)
+    # A loop rather than a broadcast: `Base.Broadcast` keeps an `unaliascopy` branch it
+    # cannot rule out between three buffers of the same type, which is an allocation site
+    # whether or not the branch can be reached.
+    @simd for i in paired(x, u, v)
+        x[i] = -u[i] - v[i]
+    end
+    # `transpose(red.Rt)` is `R.U` recovered from the handle the reduction already holds;
+    # `red.R.U` re-derives it, and on a lower-stored factorization that branch copies the
+    # whole factor.
+    ldiv!(transpose(red.Rt), x)
     return x
 end

@@ -28,7 +28,7 @@ module PureDAQP
 
 using LinearAlgebra
 using TypeContracts: TypeContracts, @contract, @verify
-using StrictMode: @strict_function, @strict
+using StrictMode: @strict_function, @strict, @assert_noalloc, @assert_trim_compatible
 using PureQPBase
 
 import PureQPBase:
@@ -36,7 +36,7 @@ import PureQPBase:
     derivative_ready, setup_backend, algorithm_defaults, element_typed, dimensions,
     QPData, Options, Solution, Status, QPAlgorithm, QPWorkspace, PolishStatus,
     adopt_update!, check_update, has_solution, is_convex, is_materializable, validate,
-    validated_data, validate_update!, check_option_names, settings_tuple
+    validated_data, validate_update!, check_option_names, settings_tuple, paired
 
 export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
 export dimensions, capabilities
@@ -72,6 +72,23 @@ let
     @strict update!(ws; q = q)
     @strict update!(ws; l = l, u = u)
     @strict update_settings!(ws, ActiveSet())
+
+    # The dual active-set loop and the pieces a solve runs around it, on a workspace a solve
+    # has already brought to a state each call is legal in. `solve!` is asserted trim-
+    # compatible but not allocation-free: it reads the clock, and AllocCheck counts the
+    # `jl_hrtime` foreign call as an allocation it cannot see through. Everything under the
+    # clock carries both claims, and `run_daqp!` is the whole iteration. These report rather
+    # than throw; `test/strictmode_tests.jl` proves every kernel with StrictModeTest.
+    red = ws.red
+    @assert_trim_compatible solve!(ws)
+    @assert_noalloc run_daqp!(red, ws.prob.q0, ws.algorithm, ws.options.max_iter)
+    @assert_trim_compatible run_daqp!(red, ws.prob.q0, ws.algorithm, ws.options.max_iter)
+    @assert_noalloc multipliers!(ws.y, red)
+    @assert_trim_compatible multipliers!(ws.y, red)
+    @assert_noalloc build_solution(ws)
+    @assert_trim_compatible build_solution(ws)
+    @assert_noalloc reset_working_set!(red)
+    @assert_trim_compatible reset_working_set!(red)
 end
 
 # Every workspace and algorithm this package defines must satisfy its contract, asserted for
