@@ -11,3 +11,6 @@ PureIPM/bench/results/ipm_matrixfree_spike.json
 
 # Coverage counters, written beside the source by an instrumented run.
 *.cov
+
+# Per-machine StrictMode tier settings; bench/ keeps a tracked one it needs.
+LocalPreferences.toml

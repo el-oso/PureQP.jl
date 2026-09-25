@@ -135,6 +135,13 @@ Cholesky, the inversion, the per-iteration `symv` — is exactly what the dense 
 """
 struct SparseFormedInverse{T <: Real, M <: AbstractMatrix{T}} <: PureQPBase.ReducedInverse
     Rinv::M
+    # `A` by rows, which `gram_upper!` reads and `A`'s own column-major storage cannot give.
+    # It depends on `A` and on nothing else, so it is filled once where the backend is built
+    # and again in [`check_update`](@ref) when `A` is replaced, and every refactorization the
+    # weights ask for reads it without touching it. Vectors, so this stays immutable.
+    rowptr::Vector{Int}
+    colind::Vector{Int}
+    nzval::Vector{T}
 end
 
 "A row of `A` touching this fraction of the columns fills the reduced matrix on its own."
@@ -290,7 +297,12 @@ function PureQPBase.formed_rung(
     PureQPBase.is_materializable(P) || return nothing
     n = prob.n
     Rinv = similar(prob.q0, T, n, n)
-    return (SparseFormedInverse{T, typeof(Rinv)}(Rinv), false)
+    # Grouped here rather than on the first `factorize!`: building it there would leave a
+    # `resize!` on a path every refactorization takes, and a guarantee that holds only after
+    # the first call is not one the analysis can state.
+    ls = SparseFormedInverse{T, typeof(Rinv)}(Rinv, Int[], Int[], T[])
+    csr_rows!(ls, A)
+    return (ls, false)
 end
 
 PureQPBase.backend_name(::SparseFormedInverse) = :sparse_formed
@@ -347,6 +359,61 @@ function csr_rows(A::SparseMatrixCSC{Tv}) where {Tv}
 end
 
 """
+    csr_rows!(ls, A) -> ls
+
+Fill `ls`'s row grouping from `A`, growing its buffers to fit and allocating nothing once they
+already do.
+
+Separate from [`csr_rows`](@ref) because this one runs on the refactorization path: a `ρ`
+retune re-forms the Gram, and rebuilding the grouping there would allocate `O(nnz)` every time
+`ρ` moves.
+"""
+function csr_rows!(ls::SparseFormedInverse{Tv}, A::SparseMatrixCSC) where {Tv}
+    m, n = size(A)
+    rows, vals = rowvals(A), nonzeros(A)
+    nnzA = length(rows)
+    length(ls.rowptr) == m + 1 || resize!(ls.rowptr, m + 1)
+    length(ls.colind) == nnzA || resize!(ls.colind, nnzA)
+    length(ls.nzval) == nnzA || resize!(ls.nzval, nnzA)
+    rowptr, colind, nzval = ls.rowptr, ls.colind, ls.nzval
+    fill!(rowptr, 0)
+    for k in eachindex(rows)
+        rowptr[rows[k]] += 1
+    end
+    total = 1
+    for i in 1:m
+        count = rowptr[i]
+        rowptr[i] = total
+        total += count
+    end
+    rowptr[m + 1] = total
+    # `rowptr` doubles as the running cursor and is shifted back afterwards. That is what the
+    # `copy` in `csr_rows` buys, and the copy is the allocation this path exists to avoid.
+    for j in 1:n
+        for k in nzrange(A, j)
+            i = rows[k]
+            p = rowptr[i]
+            colind[p] = j
+            nzval[p] = vals[k]
+            rowptr[i] = p + 1
+        end
+    end
+    for i in m:-1:2
+        rowptr[i] = rowptr[i - 1]
+    end
+    rowptr[1] = 1
+    return ls
+end
+
+# `A` is being replaced, so the row grouping no longer describes the matrix the solver holds.
+# Rebuilt here, on the `update!` path, rather than left for the next `factorize!`: that one
+# runs whenever `ρ` moves and is where the grouping exists to not be rebuilt.
+function PureQPBase.check_update(ls::SparseFormedInverse, P, A::SparseMatrixCSC)
+    csr_rows!(ls, A)
+    return nothing
+end
+
+"""
     gram_upper!(R, rowptr, colind, nzval, rho, E, D)
 
 Add `Ãᵀ diag(ρ) Ã` to the upper triangle of `R`, where `Ã = diag(E) A diag(D)`.
@@ -384,11 +451,10 @@ function PureQPBase.factorize!(ls::SparseFormedInverse{T}, prob, wt)::Bool where
     R = ls.Rinv
     fill!(R, zero(T))
     if m > 0
-        # Rebuilt rather than cached: `update!` may replace `prob.A`, and a cached grouping
-        # would then describe a matrix the solver no longer holds. It costs O(nnz), against
-        # the O(mn²) product it replaces.
-        rowptr, colind, nzval = csr_rows(A)
-        gram_upper!(R, rowptr, colind, nzval, wt.w, E, D)
+        # Built once and kept: it describes `A`, which only `update!` can replace, and that
+        # clears the flag through `check_update`. A `ρ` retune reaches here too, and rebuilding
+        # the grouping for one of those would allocate `O(nnz)` every time `ρ` moves.
+        gram_upper!(R, ls.rowptr, ls.colind, ls.nzval, wt.w, E, D)
     end
     for j in 1:n
         dj = D[j]
