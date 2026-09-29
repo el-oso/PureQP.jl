@@ -31,32 +31,38 @@ jobs:
           done
           exit $status
 
+  # One job per package, so a package is reported on its own evidence. A base change that
+  # every solver depends on used to fail all four suites in one job and say nothing about
+  # which of them the change actually broke.
   test:
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.package }} - Julia ${{ matrix.version }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        package: [PureQPBase, PureIPM, PureDAQP, PureOSQP]
         version: ['1.12', '1']
-        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
-      # Each package is tested on its own first: PureQPBase that it holds no algorithm and its
-      # backends work, PureIPM the interior-point method with nothing else loaded. PureOSQP
-      # then runs the operator-splitting suite and everything that compares the two, so its
-      # test environment takes the other packages from this checkout.
-      # The solvers depend on the released PureQPBase, so their Project.toml names no path to
-      # it. Without this each suite below would run against whatever version the registry
-      # serves, and a change to the base in this checkout would go untested until after it was
-      # released. Developing it into each environment restores that without a [sources] entry
-      # that would travel into the registered package.
+      # The solvers' own Project.toml names a released PureQPBase, because that is what a
+      # caller installs and the registered package must not carry a path into this
+      # repository. In this checkout the base beside them is the one under test, and a
+      # version bound naming a release that has not been registered yet cannot be satisfied
+      # from the registry at all -- which held every solver's suite hostage to the base's
+      # registration, so the change was only ever tested after it shipped.
+      #
+      # Developing it in writes a [sources] entry into the working copy. It never reaches a
+      # commit: the `sources` job checks the committed file from its own checkout.
+      - name: Take PureQPBase from this checkout
+        if: matrix.package != 'PureQPBase'
+        run: julia --project=${{ matrix.package }} -e 'using Pkg; Pkg.develop(path="PureQPBase")'
       - uses: julia-actions/julia-buildpkg@v1
         with:
-          project: PureQPBase
+          project: ${{ matrix.package }}
       # `check_bounds: yes` is `julia-runtest`'s own default, and is stated here because the
       # suites are the safety net for the `@inbounds` in the hot paths: forced bounds checking
       # neutralizes every one of them, so an index that escaped its range raises a
@@ -64,36 +70,30 @@ jobs:
       # changed would take that net away without a line of this file changing.
       - uses: julia-actions/julia-runtest@v1
         with:
-          project: PureQPBase
-          check_bounds: 'yes'
-      - uses: julia-actions/julia-buildpkg@v1
-        with:
-          project: PureIPM
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          project: PureIPM
-          check_bounds: 'yes'
-      - uses: julia-actions/julia-buildpkg@v1
-        with:
-          project: PureDAQP
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          project: PureDAQP
-          check_bounds: 'yes'
-      - uses: julia-actions/julia-buildpkg@v1
-        with:
-          project: PureOSQP
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          project: PureOSQP
+          project: ${{ matrix.package }}
           check_bounds: 'yes'
       - uses: julia-actions/julia-processcoverage@v1
         with:
           directories: PureOSQP/src,PureOSQP/ext,PureQPBase/src,PureQPBase/ext,PureIPM/src,PureIPM/ext,PureDAQP/src
+      # Each job covers the lines its own suite reached, so the report is only complete once
+      # all of them have been added to the same build.
       - uses: coverallsapp/github-action@v2
         with:
           path-to-lcov: lcov.info
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          flag-name: ${{ matrix.package }}-${{ matrix.version }}
+          parallel: true
+
+  coverage:
+    name: Coverage
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true
 
   docs:
     name: Documentation
