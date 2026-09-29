@@ -294,18 +294,20 @@ function build_solution(ws::OperatorSplittingWorkspace{T}) where {T}
     if ws.status == PRIMAL_INFEASIBLE || ws.status == PRIMAL_INFEASIBLE_INACCURATE
         fill!(sol.x, nan)
         fill!(sol.y, nan)
-        unit_certificate!(sol.prim_inf_cert, ws.yout, prob.E, ws.delta_y, scaled)
-        resize!(sol.dual_inf_cert, 0)
+        unit_certificate!(ws.cert_prim, ws.yout, prob.E, ws.delta_y, scaled)
+        sol.prim_inf_cert = ws.cert_prim
+        sol.dual_inf_cert = ws.cert_none
         return solution_from(ws, T(Inf), nan, nan)
     elseif ws.status == DUAL_INFEASIBLE || ws.status == DUAL_INFEASIBLE_INACCURATE
         fill!(sol.x, nan)
         fill!(sol.y, nan)
-        resize!(sol.prim_inf_cert, 0)
-        unit_certificate!(sol.dual_inf_cert, ws.xout, prob.D, ws.delta_x, scaled)
+        unit_certificate!(ws.cert_dual, ws.xout, prob.D, ws.delta_x, scaled)
+        sol.prim_inf_cert = ws.cert_none
+        sol.dual_inf_cert = ws.cert_dual
         return solution_from(ws, T(-Inf), nan, nan)
     end
-    resize!(sol.prim_inf_cert, 0)
-    resize!(sol.dual_inf_cert, 0)
+    sol.prim_inf_cert = ws.cert_none
+    sol.dual_inf_cert = ws.cert_none
     if !has_solution(ws.status)
         # NON_CONVEX and anything else without a meaningful point: no number here would
         # mean anything, so do not hand back one that looks like a solution.

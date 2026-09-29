@@ -35,7 +35,7 @@ import PureQPBase:
     active_kkt, accelerator_reset!, add!, adopt_settings!, adopt_update!, block_rung,
     check_finite, check_storage, choose_backend, dense_rung,
     empty_solution, eps_prim, eps_dual, eps_duality_gap, factorize!, factors, formed_rung,
-    gap_terms, reserved, unit_certificate!, unscale!,
+    gap_terms, no_certificate, unit_certificate!, unscale!,
     increment!, indirect_backend, indirect_rung, inner_iterations, invscaled_norm_inf,
     is_convex, is_dual_infeasible, is_materializable, is_primal_infeasible, is_scalar_multiple,
     is_symmetric, kkt_rung, kronecker_rung, last_solve_converged, lowrank_rung, mul_A!,
@@ -141,12 +141,8 @@ let
         @assert_noalloc adapt_rho!(ws)
         @assert_trim_compatible adapt_rho!(ws)
         # A solve allocates nothing: the `Solution` it returns is the workspace's own,
-        # refilled. That claim is measured rather than asserted here — `build_solution`
-        # resizes the certificates into capacity reserved at setup and copies into a
-        # `Vector` the caller reads, and `solve!` reads the clock; the scan reads a
-        # `resize!` and a `copyto!` that cannot be proved free of aliasing as allocation
-        # whatever they do at run time. `test/strictmode_tests.jl` measures both at zero
-        # bytes and proves the trim guarantee they can carry.
+        # refilled.
+        @assert_noalloc build_solution(ws)
         @assert_trim_compatible build_solution(ws)
         @assert_trim_compatible solve!(ws)
         return nothing

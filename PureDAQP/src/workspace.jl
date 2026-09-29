@@ -37,6 +37,9 @@ mutable struct ActiveSetWorkspace{
     # `Px`, which the objective, the dual residual and the gap all share. Owned here: the
     # method has no linear-system backend, so there is no problem scratch to borrow.
     const px::V
+    # One entry per constraint row, where a candidate infeasibility certificate is written
+    # back into the caller's own indexing before it is checked.
+    const ycert::V
     # Refilled and handed back by every solve, so a solve allocates nothing at all. Its `x`
     # and `y` are this workspace's own arrays. `Solution` says what that means for a caller
     # holding one across a solve.
@@ -144,7 +147,7 @@ function setup_backend(
         x, y, z,
         UNSOLVED, false, POLISH_NOT_PERFORMED, 0, false,
         (time_ns() - t0) / 1.0e9, 0.0, 0.0,
-        zeros(T, n),
+        zeros(T, n), zeros(T, m),
         # A dual active-set method reports no infeasibility certificate, so neither vector
         # ever grows and neither needs memory reserved for it.
         empty_solution(x, y, T[], T[]),
@@ -169,7 +172,67 @@ function solve!(ws::ActiveSetWorkspace{T}) where {T}
     x, status, iters = run_daqp!(ws.red, prob.q0, alg, ws.options.max_iter)
     ws.iter = iters
     ws.warm = true
+    return finish_solve!(ws, prob, x, status, t0)
+end
 
+"""
+    certifiable(ws) -> Bool
+
+Whether the direction the loop stopped on really proves the problem infeasible.
+
+The loop finds a direction it cannot step along and reports infeasibility. That direction
+lives in the reduced space of `M = A R⁻¹`, and the factorization it comes from is of
+`Mₐ Mₐᵀ`, which carries the conditioning of `A R⁻¹` squared — so the pivot that declared it
+singular can have come from rounding rather than from a dependency among the rows.
+
+The claim is settled where it is stated: against the caller's own data. Written back to one
+entry per row, the direction is a Farkas certificate exactly when `Aᵀy = 0` and the support
+function of `y` over `[l, u]` is negative, and both are checked here directly. This is the
+test the operator-splitting method applies to its own certificates
+([`is_primal_infeasible`](@ref)), which never forms `A R⁻¹` and so never needs a rank
+decision; the tolerance is the solve's own `eps_prim`, because a certificate holding to that
+tolerance is what any numerical method can honestly assert.
+
+It runs once, on the branch that has already decided to report infeasibility, so no solve
+that reaches an answer pays for it.
+"""
+function certifiable(ws::ActiveSetWorkspace{T}) where {T}
+    lw = ws.red.ws
+    prob = ws.prob
+    k = lw.F.k
+    k > 0 || return false
+    y = ws.ycert
+    fill!(y, zero(T))
+    # Back to the caller's rows: the reduction normalized each row of `M` by `scale`, so the
+    # multiplier of row `r` carries that factor back out.
+    for i in 1:k
+        r = lw.active[i]
+        y[r] = lw.p[i] / ws.red.scale[r]
+    end
+    # A certificate's sign is whichever orientation separates; the loop orients its direction
+    # for its own stepping rule, not for this.
+    return separates(ws, y) || separates(ws, (y .= .-y))
+end
+
+"Whether `y` is a Farkas certificate of primal infeasibility for the caller's own data."
+function separates(ws::ActiveSetWorkspace{T}, y) where {T}
+    prob = ws.prob
+    ny = norm_inf(y)
+    ny > DIVISION_TOL(T) || return false
+    # Outside the polar of the recession cone a direction cannot separate at all, and the
+    # support function below would read a bound the row does not have.
+    project_polar_reccone!(y, prob.l0, prob.u0)
+    norm_inf(y) > DIVISION_TOL(T) || return false
+    support_plain(y, prob.l0, prob.u0) < zero(T) || return false
+    mul!(ws.px, transpose(prob.A), y)
+    # Relative to the direction's own size, at the tolerance this algorithm already prices
+    # rows against. A residual below it is a certificate of the problem the caller posed to
+    # the accuracy the caller asked for.
+    return norm_inf(ws.px) < ws.algorithm.primal_tol * norm_inf(y)
+end
+
+"Record the outcome of a pass, whatever it was, and build the result."
+function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
     if status == LDP_OPTIMAL
         copyto!(ws.x, x)
         multipliers!(ws.y, ws.red)
@@ -179,11 +242,29 @@ function solve!(ws::ActiveSetWorkspace{T}) where {T}
         fill!(ws.x, T(NaN))
         fill!(ws.y, T(NaN))
         fill!(ws.z, T(NaN))
-        ws.status = PRIMAL_INFEASIBLE
+        # The loop proves infeasibility by finding a direction the working set cannot move
+        # along. That proof is only worth as much as the factorization it came from, and the
+        # factorization is of `Mₐ Mₐᵀ`, whose conditioning is that of `A R⁻¹` squared. The
+        # claim is checked against the caller's own rows before it is made.
+        if certifiable(ws)
+            ws.status = PRIMAL_INFEASIBLE
+        else
+            ws.status = NUMERICAL_ERROR
+            ws.warm = false
+        end
     elseif status == LDP_ITERATION_LIMIT
         ws.status = MAX_ITER_REACHED
     else
+        # The pass cycled. The iterate it reached is not a point worth reading: it is
+        # wherever the loop was when it stopped making progress.
+        fill!(ws.x, T(NaN))
+        fill!(ws.y, T(NaN))
+        fill!(ws.z, T(NaN))
         ws.status = NUMERICAL_ERROR
+        # The working set it cycled on is still in place. Carried into the next solve it
+        # cycles again, so one bad pass would end every pass after it; the next one starts
+        # from nothing instead.
+        ws.warm = false
     end
     ws.solve_time = (time_ns() - t0) / 1.0e9
     return build_solution(ws)

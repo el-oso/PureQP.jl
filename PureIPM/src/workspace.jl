@@ -158,6 +158,12 @@ mutable struct InteriorPointWorkspace{
     # once rather than indexed element by element.
     xout::V
     yout::V
+    # The certificates a run can report, and the empty vector it reports for the one it
+    # cannot. `build_solution` points the `Solution`'s fields at whichever applies, which
+    # is a pointer store rather than a resize.
+    cert_prim::Vector{T}
+    cert_dual::Vector{T}
+    cert_none::Vector{T}
     # Refilled and handed back by every solve, so a solve allocates nothing at all. Its
     # arrays are plain `Vector`s whatever the workspace was built from: the result is what a
     # caller reads, not a buffer the solver iterates on. `Solution` says what reuse means
@@ -206,10 +212,12 @@ function ipm_workspace(
         0, 0, 0, 0, UNSOLVED, false, true, false, POLISH_NOT_PERFORMED, 0.0, 0.0, 0.0, 0.0,
         algorithm, options,
         buf(n), buf(m),
-        # The certificates are reserved rather than sized: only one of them is reported, and
-        # only by a run that ends infeasible, so their lengths are what a solve sets.
+        Vector{T}(undef, m), Vector{T}(undef, n), no_certificate(T),
+        # A fresh run has proved no infeasibility, so both certificate fields start empty;
+        # `build_solution` points them at the filled buffers when one applies.
         empty_solution(
-            Vector{T}(undef, n), Vector{T}(undef, m), reserved(T, m), reserved(T, n)
+            Vector{T}(undef, n), Vector{T}(undef, m),
+            no_certificate(T), no_certificate(T)
         ),
     )
     return ws

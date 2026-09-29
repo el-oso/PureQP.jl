@@ -34,7 +34,7 @@ import PureQPBase:
     active_kkt, add!, adopt_settings!, adopt_update!, block_rung,
     check_finite, check_storage, choose_backend, dense_rung,
     empty_solution, eps_prim, eps_dual, eps_duality_gap, factorize!, factors, formed_rung,
-    gap_terms, reserved, unit_certificate!, unscale!,
+    gap_terms, no_certificate, unit_certificate!, unscale!,
     increment!, indirect_backend, indirect_rung, inner_iterations, invscaled_norm_inf,
     is_convex, is_dual_infeasible, is_materializable, is_primal_infeasible, is_scalar_multiple,
     is_symmetric, kkt_rung, kronecker_rung, last_solve_converged, lowrank_rung, mul_A!,
@@ -113,6 +113,7 @@ let
         @assert_trim_compatible stalled!(ws, bound)
         @assert_noalloc check_termination(ws, false, false)
         @assert_trim_compatible check_termination(ws, false, false)
+        @assert_noalloc build_solution(ws)
         @assert_trim_compatible build_solution(ws)
         @assert_trim_compatible solve!(ws)
         return nothing

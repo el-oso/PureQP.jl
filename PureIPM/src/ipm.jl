@@ -829,22 +829,24 @@ function build_solution(ws::InteriorPointWorkspace{T}) where {T}
     sol = ws.sol
     nan = T(NaN)
     # The certificates carry the outcome in their length: a run reports the one its status
-    # names and empties the other, and the memory for both is reserved at setup.
+    # names and hands back the workspace's empty vector for the other.
     if ws.status == PRIMAL_INFEASIBLE || ws.status == PRIMAL_INFEASIBLE_INACCURATE
         fill!(sol.x, nan)
         fill!(sol.y, nan)
-        unit_certificate!(sol.prim_inf_cert, ws.yout, prob.E, ws.cert_y, true)
-        resize!(sol.dual_inf_cert, 0)
+        unit_certificate!(ws.cert_prim, ws.yout, prob.E, ws.cert_y, true)
+        sol.prim_inf_cert = ws.cert_prim
+        sol.dual_inf_cert = ws.cert_none
         return ipm_solution(ws, T(Inf), nan, nan)
     elseif ws.status == DUAL_INFEASIBLE || ws.status == DUAL_INFEASIBLE_INACCURATE
         fill!(sol.x, nan)
         fill!(sol.y, nan)
-        resize!(sol.prim_inf_cert, 0)
-        unit_certificate!(sol.dual_inf_cert, ws.xout, prob.D, ws.cert_x, true)
+        unit_certificate!(ws.cert_dual, ws.xout, prob.D, ws.cert_x, true)
+        sol.prim_inf_cert = ws.cert_none
+        sol.dual_inf_cert = ws.cert_dual
         return ipm_solution(ws, T(-Inf), nan, nan)
     end
-    resize!(sol.prim_inf_cert, 0)
-    resize!(sol.dual_inf_cert, 0)
+    sol.prim_inf_cert = ws.cert_none
+    sol.dual_inf_cert = ws.cert_none
     if !has_solution(ws.status)
         fill!(sol.x, nan)
         fill!(sol.y, nan)

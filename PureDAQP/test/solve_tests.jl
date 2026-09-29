@@ -170,3 +170,53 @@ end
         @test abs(dot(A[2, :], sol.x) - b[2]) < 1.0e-9
     end
 end
+
+@testitem "a feasible problem is never reported infeasible, however ill conditioned" begin
+    using PureDAQP, LinearAlgebra, Random
+
+    #=
+    `M = A R⁻¹` here is conditioned past what the working set's Gram matrix can carry, so a
+    pivot of its `LDLᵀ` collapses from rounding and the step along the resulting direction
+    finds nothing to block it. Taken at face value that is a proof of infeasibility — a
+    claim about the problem, from a factorization that had stopped being trustworthy. The
+    problem is feasible: `x0` below satisfies every row with room to spare.
+
+    What the size of the residual cannot settle, the certificate itself can. Measured, a
+    genuinely infeasible problem with an ill-conditioned `P` produces a *larger* `‖Mₐᵀp‖`
+    (about 5e-4) than this case does (3e-5), so no threshold on it separates them. The
+    direction written back to the caller's rows either separates `[l, u]` or it does not,
+    and here it does not.
+    =#
+    rng = MersenneTwister(5)
+    n, m = 30, 200
+    U, _ = qr(randn(rng, n, n))
+    V, _ = qr(randn(rng, m, m))
+    # Spectra chosen so that `cond(A R^-1)` reaches about 1e17: the working set's Gram
+    # matrix squares that, which is where a pivot collapses from rounding alone.
+    A = Matrix(V)[:, 1:n] * Diagonal(exp10.(range(0, -14; length = n))) * Matrix(U)'
+    W, _ = qr(randn(rng, n, n))
+    P = Matrix(Symmetric(W * Diagonal(exp10.(range(0, -8; length = n))) * W'))
+    q = randn(rng, n)
+    x0 = randn(rng, n)
+    b = A * x0
+    # `x0` satisfies every row with room to spare, so a feasible point demonstrably exists.
+    l = b .- 1.0
+    u = b .+ 1.0
+    @test iszero(maximum(max.(A * x0 .- u, l .- A * x0, 0.0)))
+
+    sol = solve(P, q, A, l, u, ActiveSet())
+    @test sol.status != PRIMAL_INFEASIBLE
+    # It cannot solve this either; what it must not do is claim the problem has no solution.
+    @test sol.status == NUMERICAL_ERROR
+    @test all(isnan, sol.x)
+end
+
+@testitem "a genuinely infeasible problem is still reported infeasible" begin
+    using PureDAQP, LinearAlgebra
+
+    # Two rows on the same variable with disjoint bounds: no x satisfies both.
+    P = Matrix(1.0I, 2, 2)
+    A = [1.0 0.0; 1.0 0.0]
+    sol = solve(P, [0.0, 0.0], A, [1.0, -5.0], [2.0, -4.0], ActiveSet())
+    @test sol.status == PRIMAL_INFEASIBLE
+end

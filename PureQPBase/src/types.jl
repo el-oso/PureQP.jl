@@ -214,14 +214,17 @@ mutable struct Solution{T <: Real}
 end
 
 """
-    reserved(T, n) -> Vector{T}
+    no_certificate(T) -> Vector{T}
 
-An empty `Vector{T}` that can grow to `n` elements without allocating.
+The empty vector a workspace hands back for a certificate the run did not produce.
 
-`resize!` up to `n` and back reuses the memory reserved here, which is what lets a workspace
-hand back a field whose length depends on how a run ended without allocating during the run.
+A `Solution`'s certificate fields say by their length which infeasibility a run proved, and
+a run that proved neither reports both empty. Storing one empty vector per workspace and
+pointing the field at it keeps that contract without resizing anything during a solve:
+growing a vector back is an allocation the proof cannot see past, even when the memory is
+already there.
 """
-reserved(::Type{T}, n::Integer) where {T} = resize!(Vector{T}(undef, n), 0)
+no_certificate(::Type{T}) where {T} = T[]
 
 """
     empty_solution(x, y, prim_cert, dual_cert) -> Solution
@@ -270,21 +273,18 @@ end
     unit_certificate!(dest, scratch, s, src, scaled) -> dest
 
 Write `s ⊙ src` — or `src` itself when the problem was not equilibrated — into `dest`,
-normalized to unit `∞`-norm, resizing `dest` to the length `src` needs.
+normalized to unit `∞`-norm.
 
 A certificate proves an infeasibility direction, so only its direction carries meaning and
-any positive multiple of it does as well. `dest` is reserved by the workspace, so the
-resize reuses memory rather than taking any.
+any positive multiple of it does as well.
 
-The product runs in `scratch`, a workspace buffer of the solver's own array type and of the
-same length as `src`, and `dest` is a `Vector` the caller reads: an array that forbids
-scalar indexing is scaled where it lives and copied across once, rather than indexed
-element by element.
+The product runs in `scratch`, a workspace buffer of the solver's own array type, and
+`dest` is a `Vector` the caller reads: an array that forbids scalar indexing is scaled
+where it lives and copied across once, rather than indexed element by element. All three
+have the length the workspace gave them at setup.
 """
 function unit_certificate!(dest::Vector{T}, scratch, s, src, scaled::Bool) where {T}
-    axes(scratch) == axes(src) ||
-        throw(DimensionMismatch("the certificate scratch must match the vector it scales"))
-    resize!(dest, length(src))
+    (axes(scratch) == axes(src) && length(dest) == length(src)) || _certificate_mismatch()
     if scaled
         multiply!(scratch, s, src)
     else
@@ -295,9 +295,16 @@ function unit_certificate!(dest::Vector{T}, scratch, s, src, scaled::Bool) where
     for i in eachindex(dest)
         nc = max(nc, abs(dest[i]))
     end
-    nc > zero(T) && (dest ./= nc)
+    if nc > zero(T)
+        for i in eachindex(dest)
+            dest[i] /= nc
+        end
+    end
     return dest
 end
+
+@noinline _certificate_mismatch() =
+    throw(DimensionMismatch("the certificate buffers must match the vector they scale"))
 
 # The keyword forms (`warm_start!(ws; x, y)`, `update!(ws; q, l, u, P, A)`,
 # `update_settings!(ws; kwargs...)`) are checked through their positional signature, which is
