@@ -42,50 +42,38 @@ struct LDPWorkspace{T <: Real}
     u::Vector{T}     # primal point of the least-distance problem, Mₐᵀμ
     g::Vector{T}     # scratch: products against the active rows
     Mv::Vector{T}    # scratch: M * v
-    # The active rows of `M`, packed contiguously in working-set order, `n × kmax`. The same
-    # rows live scattered through the columns of `Mt`; gathered here, the two products the
-    # loop takes against the working set are single matrix-vector products rather than one
-    # short BLAS call per active row, which is where the small sizes are won.
-    Ma::Matrix{T}
+    # The working set, as the `QR` of its rows. `Q` holds them orthonormalized in working-set
+    # order, so a product against the working set is one matrix-vector call rather than one
+    # short BLAS call per row, and the dependency test reads `|R_ii|`, which carries the
+    # conditioning of the rows once rather than twice. `qrset.jl` says why that matters.
+    W::WorkingSetQR{T}
     price::Vector{T} # scratch: M * u, every row at once
+    # The norm each row of `M` was divided by. Pricing multiplies it back, so a row is
+    # compared against the tolerance in the units the caller stated its bounds in.
+    scale::Vector{T}
     v::Vector{T}     # reduced linear term, rebuilt at the start of every pass
     xbuf::Vector{T}  # primal iterate, and the vector `run_daqp!` returns
     xold::Vector{T}  # proximal centre of the previous pass
-    F::GramLDL{T}
 end
 
-function LDPWorkspace(Mt::Matrix{T}, iseq::AbstractVector{Bool}) where {T <: Real}
+function LDPWorkspace(Mt::Matrix{T}, iseq::AbstractVector{Bool}, scale::Vector{T}) where {T <: Real}
     n, m = size(Mt)
     kmax = min(m, n) + 1
     return LDPWorkspace{T}(
         Mt, zeros(T, m), zeros(T, m), convert(Vector{Bool}, iseq), zeros(Int8, m),
         zeros(Int, kmax), zeros(Int, m), zeros(T, kmax), zeros(T, kmax), zeros(T, kmax),
         zeros(T, n), zeros(T, kmax), zeros(T, m),
-        Matrix{T}(undef, n, kmax >= PACKED_KMIN ? kmax : 0), zeros(T, m),
-        zeros(T, n), zeros(T, n), zeros(T, n), GramLDL{T}(kmax)
+        WorkingSetQR{T}(n, kmax), zeros(T, m), scale,
+        zeros(T, n), zeros(T, n), zeros(T, n)
     )
 end
 
-"""
-Smallest working-set capacity for which the packed block is worth keeping.
-
-Gathering the active rows turns the loop's two products against the working set into single
-matrix-vector products, which from about eight active rows up runs two to three times faster
-than one short call per row. Below that a matrix-vector call costs more than the products it
-performs, and the copying that keeps the block current is not repaid. A solve holds about
-half its capacity in the working set on average, so the capacity has to be twice the point
-where the products themselves break even.
-"""
-const PACKED_KMIN = 16
 
 "Row `r` of the constraint matrix, contiguous because the matrix is stored transposed."
 @inline row(ws::LDPWorkspace, r::Integer) = view(ws.Mt, :, r)
 
-"Whether this workspace keeps the active rows gathered; see [`PACKED_KMIN`](@ref)."
-@inline ispacked(ws::LDPWorkspace) = !isempty(ws.Ma)
-
 "The working set, as the live prefix of the preallocated buffer."
-@inline activeset(ws::LDPWorkspace) = view(ws.active, 1:ws.F.k)
+@inline activeset(ws::LDPWorkspace) = view(ws.active, 1:nactive(ws.W))
 
 "The bound row `j` is held at, given the side it entered on."
 @inline target(ws::LDPWorkspace, j::Integer) = ws.side[j] == SIDE_LOWER ? ws.lo[j] : ws.hi[j]
@@ -100,29 +88,17 @@ Multiplying by this makes both cases read `musign * μ ≥ 0`.
 @inline musign(ws::LDPWorkspace{T}, j::Integer) where {T} =
     ws.side[j] == SIDE_UPPER ? -one(T) : one(T)
 
-"Put row `r` into the working set at `side`, extending the factorization."
+"""
+Put row `r` into the working set at `side`, extending the factorization.
+
+The row goes in whatever its residual against the rows already held: a dependent row is
+exactly the one the method needs in the set, because the direction its dependency admits is
+how the pass either drops a blocking row or proves the problem infeasible. Which rows are
+dependent is then [`first_dependent`](@ref)'s question, asked of `|R_ii|`.
+"""
 function activate!(ws::LDPWorkspace{T}, r::Integer, side::Int8) where {T}
-    k = ws.F.k
-    m_r = row(ws, r)
-    g = view(ws.g, 1:k)
-    if ispacked(ws)
-        mul!(g, transpose(view(ws.Ma, :, 1:k)), m_r)
-    else
-        @inbounds for j in 1:k
-            g[j] = dot(row(ws, ws.active[j]), m_r)
-        end
-    end
-    add_row!(ws.F, g, dot(m_r, m_r))
-    # The entering row joins the packed block at the position it takes in the working set.
-    # An explicit loop rather than `copyto!`: between two views of a matrix that checks
-    # whether they alias and copies the source if it cannot tell, which is an allocation site
-    # the hot-path guarantee sees whether or not the branch can be reached.
-    if ispacked(ws)
-        dest = view(ws.Ma, :, k + 1)
-        @simd for i in paired(dest, m_r)
-            dest[i] = m_r[i]
-        end
-    end
+    k = nactive(ws.W)
+    add_row!(ws.W, row(ws, r))
     ws.active[k + 1] = r
     ws.mu[k + 1] = zero(T)
     ws.side[r] = side
@@ -132,15 +108,11 @@ end
 
 "Take the `i`-th working-set row back out."
 function deactivate!(ws::LDPWorkspace, i::Integer)
-    k = ws.F.k
+    k = nactive(ws.W)
     r = ws.active[i]
-    remove_row!(ws.F, i)
-    # Close the gap in the packed block. Columns `i+1:k` sit in one contiguous run of
-    # storage, so the whole tail moves as a single block rather than column by column.
-    if ispacked(ws) && i < k
-        n = size(ws.Ma, 1)
-        copyto!(ws.Ma, (i - 1) * n + 1, ws.Ma, i * n + 1, (k - i) * n)
-    end
+    # The factorization closes its own gap: deleting a column returns the columns after it to
+    # triangular form with a sweep of rotations, so the order below matches it.
+    remove_row!(ws.W, i)
     for j in i:(k - 1)
         ws.active[j] = ws.active[j + 1]
         ws.mu[j] = ws.mu[j + 1]
@@ -163,7 +135,7 @@ An equality row never blocks: its multiplier is free in sign.
 function step_and_drop!(ws::LDPWorkspace{T}, p::AbstractVector{T}, zero_tol::T) where {T}
     alpha = typemax(T)
     blocking = 0
-    for i in 1:ws.F.k
+    for i in 1:nactive(ws.W)
         r = ws.active[i]
         ws.iseq[r] && continue
         # Feasibility is `musign * mu >= 0`, so the step blocks when `musign * p < 0`.
@@ -175,24 +147,11 @@ function step_and_drop!(ws::LDPWorkspace{T}, p::AbstractVector{T}, zero_tol::T) 
         end
     end
     iszero(blocking) && return false
-    for i in 1:ws.F.k
+    for i in 1:nactive(ws.W)
         ws.mu[i] += alpha * p[i]
     end
     deactivate!(ws, blocking)
     return true
-end
-
-"Index of the first zero pivot in the working set's factorization, or 0."
-@inline function first_singular_pivot(F::GramLDL{T}, zero_tol::T) where {T}
-    # `@inbounds` throughout the steps below: they index `1:F.k`, and the factorization's
-    # buffers are allocated to the largest working set the problem admits, so `F.k` never
-    # reaches their end. `eachindex` does not stand in for it here -- measured on the
-    # multiplier step, it is slower than the bare loop, because the views carry their checks
-    # into the loop body and block the vectorization the annotation buys.
-    @inbounds for i in 1:F.k
-        F.D[i] <= zero_tol && return i
-    end
-    return 0
 end
 
 """
@@ -202,8 +161,8 @@ Walk the null direction of a singular working set and drop the first row that bl
 `false` when nothing blocks, which is what makes the problem infeasible.
 """
 function singular_step!(ws::LDPWorkspace{T}, singular::Int, zero_tol::T) where {T}
-    p = view(ws.p, 1:ws.F.k)
-    singular_direction!(p, ws.F, singular)
+    p = view(ws.p, 1:nactive(ws.W))
+    null_direction!(p, ws.W, singular)
     # `singular_direction!` puts `+1` at the dependent row. Signed multipliers make the two
     # sides asymmetric, so that `+1` is a blocking candidate for a row held at its upper
     # bound — and blocking on it would drop the row that just entered, which pricing would
@@ -227,17 +186,47 @@ Solve `Mₐ Mₐᵀ μ* = tₐ` for the bounds the working set is held at, into 
 the point dual feasible. An equality row is held whatever the sign.
 """
 function working_set_multipliers!(ws::LDPWorkspace{T}) where {T}
-    k = ws.F.k
+    k = nactive(ws.W)
     mus = view(ws.mu_star, 1:k)
     @inbounds for i in 1:k
         mus[i] = target(ws, ws.active[i])
     end
-    solve_gram!(ws.F, mus)
+    solve_gram!(ws.W, mus)
+    tol = multiplier_noise(ws, mus)
     @inbounds for i in 1:k
         r = ws.active[i]
-        !ws.iseq[r] && musign(ws, r) * mus[i] < 0 && return false
+        !ws.iseq[r] && musign(ws, r) * mus[i] < -tol && return false
     end
     return true
+end
+
+"""
+    multiplier_noise(ws, mus) -> T
+
+How far from zero a multiplier has to be for its sign to mean anything.
+
+The multipliers come from `Mₐ Mₐᵀ μ = t`, whose conditioning is that of `Mₐ` squared, so
+they carry a relative error of about `cond(Mₐ)² eps`. The factorization already holds an
+estimate of that: the ratio of the largest and smallest diagonal entries of `R` bounds
+`cond(Mₐ)`, and the multipliers carry its square. Tested against exact zero instead, a
+multiplier that is indistinguishable from zero decides which row leaves the working set, and
+the row it drops re-enters on the next pass.
+"""
+function multiplier_noise(ws::LDPWorkspace{T}, mus) where {T}
+    k = nactive(ws.W)
+    k > 0 || return zero(T)
+    R = ws.W.qr.R
+    rmin = typemax(T)
+    rmax = zero(T)
+    @inbounds for i in 1:k
+        r = abs(R[i, i])
+        r > zero(T) || continue
+        rmin = min(rmin, r)
+        rmax = max(rmax, r)
+    end
+    (rmax > zero(T) && rmin < typemax(T)) || return zero(T)
+    ratio = rmax / rmin
+    return 10 * k * eps(T) * ratio * ratio * maximum(abs, mus)
 end
 
 """
@@ -247,7 +236,7 @@ Step from `ws.mu` toward the multipliers just solved for, dropping the first row
 reaches zero. `false` when nothing blocks the step.
 """
 function step_toward_multipliers!(ws::LDPWorkspace{T}, zero_tol::T) where {T}
-    k = ws.F.k
+    k = nactive(ws.W)
     p = view(ws.p, 1:k)
     mus, mu = ws.mu_star, ws.mu
     @inbounds @simd for i in 1:k
@@ -262,7 +251,7 @@ end
 Adopt the multipliers just solved for and form the primal point `u = Mₐᵀ μ` from them.
 """
 function primal_point!(ws::LDPWorkspace{T}) where {T}
-    k = ws.F.k
+    k = nactive(ws.W)
     mu, mus = ws.mu, ws.mu_star
     # An explicit loop rather than `copyto!`: between two views of a vector that checks
     # whether they alias and copies the source if it cannot tell, which is an allocation
@@ -270,19 +259,7 @@ function primal_point!(ws::LDPWorkspace{T}) where {T}
     @inbounds @simd for i in 1:k
         mu[i] = mus[i]
     end
-    if ispacked(ws)
-        mul!(ws.u, view(ws.Ma, :, 1:k), view(ws.mu, 1:k))
-    else
-        uu = ws.u
-        fill!(uu, zero(T))
-        @inbounds for i in 1:k
-            mui = mu[i]
-            col = row(ws, ws.active[i])
-            @simd for j in paired(uu, col)
-                uu[j] += mui * col[j]
-            end
-        end
-    end
+    active_product!(ws.u, ws.W, ws.mu, ws.g)
     return ws
 end
 
@@ -304,9 +281,14 @@ function entering_row(ws::LDPWorkspace{T}, primal_tol::T, bland::Bool) where {T}
     # Not `@simd`: this is an argmax search, and the `slot` test skips the working set.
     @inbounds for r in 1:m
         iszero(ws.slot[r]) || continue
-        rr = ws.price[r]
-        over = rr - ws.hi[r]
-        under = ws.lo[r] - rr
+        # Priced in the caller's own units. `finish_reduction` divided each row by its norm,
+        # and those norms span five orders here, so a violation that is at the tolerance in
+        # the normalized rows is that much larger in the problem the caller posed: the row
+        # that is worst after scaling is not the row that is worst to them.
+        sr = ws.scale[r]
+        rr = ws.price[r] * sr
+        over = rr - ws.hi[r] * sr
+        under = ws.lo[r] * sr - rr
         if over > worst
             worst = bland ? primal_tol : over
             entering = r
@@ -343,9 +325,9 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
     zero_tol, primal_tol = alg.zero_tol, alg.primal_tol
     bland_after = 4 * (size(ws.Mt, 2) + 1)
     for iter in 1:max_iter
-        # Every step reads `ws.F.k` for itself: dropping and adding a row both change it, so
+        # Every step reads `nactive(ws.W)` for itself: dropping and adding a row both change it, so
         # the working set's size does not survive an iteration.
-        singular = first_singular_pivot(ws.F, zero_tol)
+        singular = first_dependent(ws.W, zero_tol)
         if !iszero(singular)
             singular_step!(ws, singular, zero_tol) || return (LDP_INFEASIBLE, iter)
             continue
@@ -523,7 +505,7 @@ function finish_reduction(
         bl[j] = blower[j] / s
     end
 
-    ws = LDPWorkspace(Mt, iseq)
+    ws = LDPWorkspace(Mt, iseq, scale)
     Rt = transpose(R.U)
     return DAQPReduction{T, typeof(R), typeof(Rt)}(R, Rt, bu, bl, eps_prox, ws, scale)
 end
@@ -567,8 +549,8 @@ solve then starts where a fresh setup would.
 """
 function reset_working_set!(red::DAQPReduction)
     ws = red.ws
-    while ws.F.k > 0
-        deactivate!(ws, ws.F.k)
+    while nactive(ws.W) > 0
+        deactivate!(ws, nactive(ws.W))
     end
     for j in eachindex(ws.iseq)
         ws.iseq[j] && activate!(ws, j, SIDE_UPPER)

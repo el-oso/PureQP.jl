@@ -19,9 +19,18 @@ function build_solution(ws::ActiveSetWorkspace{T}) where {T}
         # `Px` serves the objective, the dual residual and the gap, and `ws.z` already holds
         # `Ax` from the solve. Asking for either again is the same matrix product repeated.
         obj, prim, dual, gap = report(ws)
-    else
-        obj = ws.status == PRIMAL_INFEASIBLE ? T(Inf) : T(-Inf)
+    elseif ws.status == PRIMAL_INFEASIBLE
+        # The conventional objective of an empty feasible set.
+        obj = T(Inf)
         prim = dual = gap = T(NaN)
+    elseif ws.status == DUAL_INFEASIBLE
+        obj = T(-Inf)
+        prim = dual = gap = T(NaN)
+    else
+        # A run that reached no conclusion: hitting the iteration limit, or a factorization
+        # that stopped being trustworthy. An infinity here would read as a verdict on the
+        # problem -- `-Inf` is what an unbounded one reports -- and no verdict was reached.
+        obj = prim = dual = gap = T(NaN)
     end
     sol = ws.sol
     sol.status = ws.status

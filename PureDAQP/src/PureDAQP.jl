@@ -27,6 +27,8 @@ active at the solution.
 module PureDAQP
 
 using LinearAlgebra
+using UpdatableFactorizations: UpdatableFactorizations, UpdatableQR, try_insert_column!,
+    delete_column!
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_function, @strict, @assert_noalloc, @assert_trim_compatible,
     @assert_typestable
@@ -53,7 +55,7 @@ export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURA
 # `settings.jl` first: the loop takes its tolerances as an `ActiveSet`, so the type has to
 # exist before the methods that name it.
 include("settings.jl")
-include("ldl.jl")
+include("qrset.jl")
 include("ldp.jl")
 include("workspace.jl")
 include("solution.jl")
