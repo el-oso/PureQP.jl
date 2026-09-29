@@ -83,11 +83,12 @@ function Optimizer end
 # enough to solve here over every backend its ladder reaches from PureQPBase's own source.
 # `factorize_newton!` refactorizes every iteration and, on a regularization bump, rebuilds
 # the factorization after `set_regularization!` changes `σ`. A solve allocates nothing: the
-# `Solution` it returns is the workspace's own, refilled. `build_solution` resizes the
-# certificates into capacity reserved at setup, and `solve!` reads the clock; AllocCheck can
-# prove neither, so `test/strictmode_tests.jl` measures those two rather than proving them.
-# These checks report rather than throw; that file proves the same signatures with
-# StrictModeTest.
+# `Solution` it returns is the workspace's own, refilled. That claim is measured rather than
+# asserted here — `build_solution` resizes the certificates into capacity reserved at setup
+# and copies into a `Vector` the caller reads, and `solve!` reads the clock; the scan reads a
+# `resize!` and a `copyto!` that cannot be proved free of aliasing as allocation whatever
+# they do at run time. These checks report rather than throw; `test/strictmode_tests.jl`
+# measures both at zero bytes and proves the same signatures with StrictModeTest.
 let
     function check(ws)
         solve!(ws)
@@ -112,7 +113,6 @@ let
         @assert_trim_compatible stalled!(ws, bound)
         @assert_noalloc check_termination(ws, false, false)
         @assert_trim_compatible check_termination(ws, false, false)
-        @assert_noalloc build_solution(ws)
         @assert_trim_compatible build_solution(ws)
         @assert_trim_compatible solve!(ws)
         return nothing

@@ -227,21 +227,22 @@ function update!(
         ws::ActiveSetWorkspace{T}; q = nothing, l = nothing, u = nothing, P = nothing, A = nothing
     ) where {T}
     t0 = time_ns()
-    prob = ws.prob
-    validate_update!(prob, NoBackend(); P, A, q, l, u)
-    ws.prob = adopt_update!(prob; P, A, q, l, u)
-    prob = ws.prob
+    validate_update!(ws.prob, NoBackend(); P, A, q, l, u)
+    ws.prob = adopt_update!(ws.prob; P, A, q, l, u)
+    # Bound once. The comprehension below closes over this name, and a captured variable
+    # that is also reassigned is boxed -- an allocation on every call, including the ones
+    # that never reach the branch holding the comprehension.
+    data = ws.prob
     if !isnothing(P) || !isnothing(A)
-        m = prob.m
-        iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
+        iseq = [data.l0[i] == data.u0[i] for i in 1:data.m]
         ws.red = reduce_qp(
-            convert(Matrix{T}, prob.P), convert(Matrix{T}, prob.A),
-            convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
+            convert(Matrix{T}, data.P), convert(Matrix{T}, data.A),
+            convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
             iseq; eps_prox = ws.algorithm.eps_prox
         )
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)
-        rebuild_bounds!(ws.red, prob.u0, prob.l0)
+        rebuild_bounds!(ws.red, data.u0, data.l0)
     end
     ws.update_time += (time_ns() - t0) / 1.0e9
     return ws

@@ -28,7 +28,8 @@ module PureDAQP
 
 using LinearAlgebra
 using TypeContracts: TypeContracts, @contract, @verify
-using StrictMode: @strict_function, @strict, @assert_noalloc, @assert_trim_compatible
+using StrictMode: @strict_function, @strict, @assert_noalloc, @assert_trim_compatible,
+    @assert_typestable
 using PureQPBase
 
 import PureQPBase:
@@ -68,9 +69,16 @@ let
     u = [1.0, 0.7, 0.7]
     # `setup` builds the workspace, so it allocates by contract and carries no such claim.
     ws = setup(P, q, A, l, u, ActiveSet())
-    @strict solve!(ws)
-    @strict update!(ws; q = q)
-    @strict update!(ws; l = l, u = u)
+    # `solve!` is type-stable and allocates nothing, but the allocation claim is measured
+    # rather than scanned: it reads the clock, and the `jl_hrtime` foreign call behind
+    # `time_ns` is opaque to both the scan and AllocCheck.
+    @assert_typestable solve!(ws)
+    # `update!` allocates on one branch only: replacing `P` or `A` builds a new reduction,
+    # which is the work `setup` does. The branches a re-solve loop takes -- a new `q`, or
+    # new `l` and `u` -- allocate nothing, which `test/strictmode_tests.jl` measures. The
+    # scan reads the whole method, so it sees the reduction branch whichever call is made.
+    @assert_typestable update!(ws; q = q)
+    @assert_typestable update!(ws; l = l, u = u)
     @strict update_settings!(ws, ActiveSet())
 
     # The dual active-set loop and the pieces a solve runs around it, on a workspace a solve
@@ -87,7 +95,8 @@ let
     @assert_trim_compatible multipliers!(ws.y, red)
     @assert_noalloc build_solution(ws)
     @assert_trim_compatible build_solution(ws)
-    @assert_noalloc reset_working_set!(red)
+    # Allocation-free, but only the proof sees it: the scan reads the working set's
+    # `fill!` over a view as an allocation. `test/strictmode_tests.jl` proves it.
     @assert_trim_compatible reset_working_set!(red)
 end
 

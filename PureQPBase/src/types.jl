@@ -276,20 +276,21 @@ A certificate proves an infeasibility direction, so only its direction carries m
 any positive multiple of it does as well. `dest` is reserved by the workspace, so the
 resize reuses memory rather than taking any.
 
-The product runs in `scratch`, a workspace buffer of the solver's own array type, and
-`dest` is a `Vector` the caller reads: an array that forbids scalar indexing is scaled
-where it lives and copied across once, rather than indexed element by element.
+The product runs in `scratch`, a workspace buffer of the solver's own array type and of the
+same length as `src`, and `dest` is a `Vector` the caller reads: an array that forbids
+scalar indexing is scaled where it lives and copied across once, rather than indexed
+element by element.
 """
 function unit_certificate!(dest::Vector{T}, scratch, s, src, scaled::Bool) where {T}
-    n = length(src)
-    resize!(dest, n)
-    work = view_n(scratch, n)
+    axes(scratch) == axes(src) ||
+        throw(DimensionMismatch("the certificate scratch must match the vector it scales"))
+    resize!(dest, length(src))
     if scaled
-        multiply!(work, s, src)
+        multiply!(scratch, s, src)
     else
-        copyto!(work, src)
+        copyto!(scratch, src)
     end
-    copyto!(dest, work)
+    copyto!(dest, scratch)
     nc = zero(T)
     for i in eachindex(dest)
         nc = max(nc, abs(dest[i]))
@@ -297,9 +298,6 @@ function unit_certificate!(dest::Vector{T}, scratch, s, src, scaled::Bool) where
     nc > zero(T) && (dest ./= nc)
     return dest
 end
-
-"The first `n` entries of `v`, as a view, when `v` is longer than the vector being built."
-@inline view_n(v, n::Integer) = length(v) == n ? v : view(v, firstindex(v):(firstindex(v) + n - 1))
 
 # The keyword forms (`warm_start!(ws; x, y)`, `update!(ws; q, l, u, P, A)`,
 # `update_settings!(ws; kwargs...)`) are checked through their positional signature, which is

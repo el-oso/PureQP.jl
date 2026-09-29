@@ -141,10 +141,12 @@ let
         @assert_noalloc adapt_rho!(ws)
         @assert_trim_compatible adapt_rho!(ws)
         # A solve allocates nothing: the `Solution` it returns is the workspace's own,
-        # refilled. `build_solution` resizes the certificates into capacity reserved at
-        # setup, and `solve!` reads the clock; AllocCheck can prove neither, so
-        # `test/strictmode_tests.jl` measures these two rather than proving them.
-        @assert_noalloc build_solution(ws)
+        # refilled. That claim is measured rather than asserted here — `build_solution`
+        # resizes the certificates into capacity reserved at setup and copies into a
+        # `Vector` the caller reads, and `solve!` reads the clock; the scan reads a
+        # `resize!` and a `copyto!` that cannot be proved free of aliasing as allocation
+        # whatever they do at run time. `test/strictmode_tests.jl` measures both at zero
+        # bytes and proves the trim guarantee they can carry.
         @assert_trim_compatible build_solution(ws)
         @assert_trim_compatible solve!(ws)
         return nothing

@@ -70,8 +70,18 @@ end
     X = randn(n, n)
     A = randn(m, n)
     b = A * randn(n)
-    ws = setup(Matrix(X'X / n + I), randn(n), A, b .- rand(m), b .+ rand(m), ActiveSet())
+    q = randn(n)
+    l = b .- rand(m)
+    u = b .+ rand(m)
+    ws = setup(Matrix(X'X / n + I), q, A, l, u, ActiveSet())
     @test iszero(resolve_bytes(ws))
+
+    # The updates a re-solve loop makes carry the same guarantee. Replacing `P` or `A` does
+    # not: that branch builds a new reduction, which is what `setup` allocates.
+    update_q_bytes(w, qq) = (update!(w; q = qq); @allocated update!(w; q = qq))
+    update_lu_bytes(w, ll, uu) = (update!(w; l = ll, u = uu); @allocated update!(w; l = ll, u = uu))
+    @test iszero(update_q_bytes(ws, q))
+    @test iszero(update_lu_bytes(ws, l, u))
 end
 
 @testitem "the dual active-set proofs fail on code that allocates or cannot be trimmed" begin
