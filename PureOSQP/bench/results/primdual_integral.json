@@ -7,12 +7,12 @@
       "kappa": 100.0,
       "iter": 75,
       "status": "SOLVED",
-      "trapezoid": 7.009043727332474e-6,
-      "logmean": 1.7917470664115508e-6,
-      "ratio": 0.2556335979792011,
-      "seconds_off": 9.3356e-5,
-      "seconds_on": 9.4398e-5,
-      "overhead_percent": 1.116157504606008
+      "trapezoid": 7.263494518770581e-6,
+      "logmean": 1.8341722099661635e-6,
+      "ratio": 0.25251925298852096,
+      "seconds_off": 9.7464e-5,
+      "seconds_on": 9.3717e-5,
+      "overhead_percent": -3.844496429450872
     },
     {
       "case": "moderate",
@@ -20,12 +20,12 @@
       "kappa": 1.0e6,
       "iter": 175,
       "status": "SOLVED",
-      "trapezoid": 4.445077014281764e-6,
-      "logmean": 2.9921515843080553e-6,
-      "ratio": 0.673138299897719,
-      "seconds_off": 0.000185308,
-      "seconds_on": 0.000187803,
-      "overhead_percent": 1.3464070628359304
+      "trapezoid": 4.353275545367855e-6,
+      "logmean": 2.978877768452443e-6,
+      "ratio": 0.6842842217102812,
+      "seconds_off": 0.000183847,
+      "seconds_on": 0.000185129,
+      "overhead_percent": 0.6973189663143753
     },
     {
       "case": "ill conditioned",
@@ -33,12 +33,12 @@
       "kappa": 1.0e9,
       "iter": 50000,
       "status": "MAX_ITER_REACHED",
-      "trapezoid": 1.973227548096994e-5,
-      "logmean": 1.5102942822078364e-5,
-      "ratio": 0.7653928629084789,
-      "seconds_off": 0.025495246,
-      "seconds_on": 0.025338982,
-      "overhead_percent": -0.6129142664479503
+      "trapezoid": 2.0039777415629995e-5,
+      "logmean": 1.5713167416033592e-5,
+      "ratio": 0.7840988994108352,
+      "seconds_off": 0.02710261,
+      "seconds_on": 0.027124622,
+      "overhead_percent": 0.08121727021863645
     },
     {
       "case": "larger",
@@ -46,52 +46,52 @@
       "kappa": 10000.0,
       "iter": 150,
       "status": "SOLVED",
-      "trapezoid": 0.000880477776792079,
-      "logmean": 0.0005308526926616967,
-      "ratio": 0.6029143570162536,
-      "seconds_off": 0.002016582,
-      "seconds_on": 0.002023215,
-      "overhead_percent": 0.32892290023416315
+      "trapezoid": 0.0008768661564651236,
+      "logmean": 0.000544225386369554,
+      "ratio": 0.6206481825726615,
+      "seconds_off": 0.002144992,
+      "seconds_on": 0.002108653,
+      "overhead_percent": -1.6941321925676323
     }
   ],
   "eps": 1.0e-9,
-  "julia_version": "1.12.7",
+  "julia_version": "1.13.1",
   "max_iter": 50000,
   "sampling": [
     {
       "check_termination": 25,
       "iter": 75,
-      "trapezoid": 6.967586962790204e-6,
-      "logmean": 1.7109939753195845e-6,
-      "ratio": 0.24556478224914882
+      "trapezoid": 7.1132084327031754e-6,
+      "logmean": 1.8134328997187704e-6,
+      "ratio": 0.2549388109283375
     },
     {
       "check_termination": 10,
       "iter": 60,
-      "trapezoid": 3.202473764068744e-6,
-      "logmean": 1.5059172696086081e-6,
-      "ratio": 0.47023563050063516
+      "trapezoid": 3.63487912441673e-6,
+      "logmean": 1.6982350565635291e-6,
+      "ratio": 0.46720537284332286
     },
     {
       "check_termination": 5,
       "iter": 55,
-      "trapezoid": 2.0680581166075194e-6,
-      "logmean": 1.3890540618636004e-6,
-      "ratio": 0.6716707092072588
+      "trapezoid": 2.2417951389541507e-6,
+      "logmean": 1.5115083005131096e-6,
+      "ratio": 0.6742401543515985
     },
     {
       "check_termination": 2,
       "iter": 52,
-      "trapezoid": 2.0383185714195856e-6,
-      "logmean": 1.7813887831240913e-6,
-      "ratio": 0.8739501313003513
+      "trapezoid": 2.1827887218355317e-6,
+      "logmean": 1.919761802726999e-6,
+      "ratio": 0.8794995977039178
     },
     {
       "check_termination": 1,
       "iter": 51,
-      "trapezoid": 2.4849699584583304e-6,
-      "logmean": 2.3025182371406176e-6,
-      "ratio": 0.9265778965670453
+      "trapezoid": 2.576932301732162e-6,
+      "logmean": 2.390219407366713e-6,
+      "ratio": 0.9275445093222106
     }
   ]
 }

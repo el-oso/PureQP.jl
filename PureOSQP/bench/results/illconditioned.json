@@ -7,7 +7,7 @@
       "kappa": "10000.0",
       "linsys": "auto",
       "obj_val": "300.96734032010073",
-      "seconds": "0.0097124715",
+      "seconds": "0.009668729000000001",
       "shape": "dense",
       "status": "SOLVED",
       "words": "45150"
@@ -18,7 +18,7 @@
       "kappa": "10000.0",
       "linsys": "kkt",
       "obj_val": "300.9673403201038",
-      "seconds": "0.027761644000000002",
+      "seconds": "0.027775498000000003",
       "shape": "dense",
       "status": "SOLVED",
       "words": "180300"
@@ -29,7 +29,7 @@
       "kappa": "10000.0",
       "linsys": "indirect",
       "obj_val": "300.96764275926023",
-      "seconds": "0.09514177900000001",
+      "seconds": "0.09788856100000001",
       "shape": "dense",
       "status": "SOLVED",
       "words": "0"
@@ -40,7 +40,7 @@
       "kappa": "10000.0",
       "linsys": "auto",
       "obj_val": "164.59506149427767",
-      "seconds": "0.003375106",
+      "seconds": "0.0033814920000000003",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "7650"
@@ -51,7 +51,7 @@
       "kappa": "10000.0",
       "linsys": "dense",
       "obj_val": "164.595061494277",
-      "seconds": "0.00828324",
+      "seconds": "0.008206384",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "45150"
@@ -62,7 +62,7 @@
       "kappa": "10000.0",
       "linsys": "kkt",
       "obj_val": "164.5950614942756",
-      "seconds": "0.026485821000000003",
+      "seconds": "0.024800902000000003",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "180300"
@@ -73,7 +73,7 @@
       "kappa": "10000.0",
       "linsys": "indirect",
       "obj_val": "164.5951815088322",
-      "seconds": "0.021777317000000004",
+      "seconds": "0.022339234000000003",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "0"
@@ -84,7 +84,7 @@
       "kappa": "1.0e8",
       "linsys": "auto",
       "obj_val": "298.4944062365985",
-      "seconds": "0.015498215000000001",
+      "seconds": "0.015955806",
       "shape": "dense",
       "status": "SOLVED",
       "words": "45150"
@@ -95,7 +95,7 @@
       "kappa": "1.0e8",
       "linsys": "kkt",
       "obj_val": "298.4944062185969",
-      "seconds": "0.0530958735",
+      "seconds": "0.0529381865",
       "shape": "dense",
       "status": "SOLVED",
       "words": "180300"
@@ -106,7 +106,7 @@
       "kappa": "1.0e8",
       "linsys": "indirect",
       "obj_val": "323.88789769161264",
-      "seconds": "8.003637372",
+      "seconds": "8.248884058",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "0"
@@ -117,7 +117,7 @@
       "kappa": "1.0e8",
       "linsys": "auto",
       "obj_val": "440.3258195797117",
-      "seconds": "0.008796395",
+      "seconds": "0.008923184",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "7650"
@@ -128,7 +128,7 @@
       "kappa": "1.0e8",
       "linsys": "dense",
       "obj_val": "440.32581955711487",
-      "seconds": "0.016994587000000002",
+      "seconds": "0.0171385195",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "45150"
@@ -139,7 +139,7 @@
       "kappa": "1.0e8",
       "linsys": "kkt",
       "obj_val": "440.325819583188",
-      "seconds": "0.115878169",
+      "seconds": "0.11248587900000001",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "180300"
@@ -150,7 +150,7 @@
       "kappa": "1.0e8",
       "linsys": "indirect",
       "obj_val": "454.33493318648055",
-      "seconds": "2.0330370440000003",
+      "seconds": "2.064717822",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED",
       "words": "0"
@@ -161,7 +161,7 @@
       "kappa": "1.0e10",
       "linsys": "auto",
       "obj_val": "344.7154615983896",
-      "seconds": "0.35365791700000004",
+      "seconds": "0.34339402350000003",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "45150"
@@ -172,7 +172,7 @@
       "kappa": "1.0e10",
       "linsys": "kkt",
       "obj_val": "344.71546451133077",
-      "seconds": "1.6960125990000001",
+      "seconds": "1.6500518990000002",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "180300"
@@ -183,7 +183,7 @@
       "kappa": "1.0e10",
       "linsys": "indirect",
       "obj_val": "2173.3705394733015",
-      "seconds": "7.9848605180000005",
+      "seconds": "7.924516951",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "0"
@@ -194,7 +194,7 @@
       "kappa": "1.0e10",
       "linsys": "auto",
       "obj_val": "616.8675989733454",
-      "seconds": "0.07244201900000001",
+      "seconds": "0.074041458",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "7650"
@@ -205,7 +205,7 @@
       "kappa": "1.0e10",
       "linsys": "dense",
       "obj_val": "616.8676017529194",
-      "seconds": "0.10592520700000001",
+      "seconds": "0.10638016500000001",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "45150"
@@ -216,7 +216,7 @@
       "kappa": "1.0e10",
       "linsys": "kkt",
       "obj_val": "616.867601808275",
-      "seconds": "1.1873019710000001",
+      "seconds": "1.1603905595000001",
       "shape": "blocks of 50",
       "status": "SOLVED",
       "words": "180300"
@@ -227,7 +227,7 @@
       "kappa": "1.0e10",
       "linsys": "indirect",
       "obj_val": "2347.126547634499",
-      "seconds": "2.0202869640000003",
+      "seconds": "2.060620165",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED",
       "words": "0"
@@ -238,7 +238,7 @@
       "kappa": "1.0e12",
       "linsys": "auto",
       "obj_val": "1552.327628664453",
-      "seconds": "0.35332174650000003",
+      "seconds": "0.346006906",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "45150"
@@ -249,7 +249,7 @@
       "kappa": "1.0e12",
       "linsys": "kkt",
       "obj_val": "1552.309333683739",
-      "seconds": "1.6836446305000001",
+      "seconds": "1.6408366185",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "180300"
@@ -260,7 +260,7 @@
       "kappa": "1.0e12",
       "linsys": "indirect",
       "obj_val": "82617.01786517758",
-      "seconds": "7.946722408",
+      "seconds": "7.996793012",
       "shape": "dense",
       "status": "MAX_ITER_REACHED",
       "words": "0"
@@ -271,7 +271,7 @@
       "kappa": "1.0e12",
       "linsys": "auto",
       "obj_val": "1180.2702897126544",
-      "seconds": "0.1041726055",
+      "seconds": "0.106804165",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED",
       "words": "7650"
@@ -282,7 +282,7 @@
       "kappa": "1.0e12",
       "linsys": "dense",
       "obj_val": "1180.2707038829953",
-      "seconds": "0.147657174",
+      "seconds": "0.149032307",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED",
       "words": "45150"
@@ -293,7 +293,7 @@
       "kappa": "1.0e12",
       "linsys": "kkt",
       "obj_val": "1180.2681054362215",
-      "seconds": "1.700686517",
+      "seconds": "1.6759253295",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED",
       "words": "180300"
@@ -304,14 +304,14 @@
       "kappa": "1.0e12",
       "linsys": "indirect",
       "obj_val": "35168.27727699167",
-      "seconds": "2.009858704",
+      "seconds": "2.110693564",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED",
       "words": "0"
     }
   ],
   "eps": 1.0e-6,
-  "julia_version": "1.13.0",
+  "julia_version": "1.13.1",
   "kappas": [
     10000.0,
     1.0e8,

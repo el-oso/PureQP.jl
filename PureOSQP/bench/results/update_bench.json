@@ -1,66 +1,66 @@
 {
-  "julia_version": "1.13.0",
-  "pureblas_commit": "unknown",
+  "julia_version": "1.13.1",
+  "pureblas_commit": "absent",
   "results": [
     {
       "dobj_osqp": 6.083199508910981e-14,
-      "dobj_pureblas": 9.314006759829484e-14,
+      "dobj_pureblas": null,
       "m": 20,
       "n": 10,
       "refactorizations": 8,
       "steps": 20,
-      "t_fresh": 0.001372307,
-      "t_osqp": 0.001740691,
-      "t_pureblas": 0.000744935,
-      "t_update": 0.000963917
+      "t_fresh": 0.00140655,
+      "t_osqp": 0.001756168,
+      "t_pureblas": null,
+      "t_update": 0.001003781
     },
     {
       "dobj_osqp": 1.7493730950572647e-12,
-      "dobj_pureblas": 1.8125614944348256e-11,
+      "dobj_pureblas": null,
       "m": 50,
       "n": 25,
       "refactorizations": 14,
       "steps": 20,
-      "t_fresh": 0.00529962,
-      "t_osqp": 0.010243911,
-      "t_pureblas": 0.002183326,
-      "t_update": 0.002562912
+      "t_fresh": 0.005825655,
+      "t_osqp": 0.010276129,
+      "t_pureblas": null,
+      "t_update": 0.002865879
     },
     {
       "dobj_osqp": 3.7983515459583905e-14,
-      "dobj_pureblas": 2.137179897981685e-15,
+      "dobj_pureblas": null,
       "m": 100,
       "n": 50,
       "refactorizations": 7,
       "steps": 20,
-      "t_fresh": 0.019435359,
-      "t_osqp": 0.060066574,
-      "t_pureblas": 0.011745442,
-      "t_update": 0.012725389
+      "t_fresh": 0.020040294,
+      "t_osqp": 0.06247154,
+      "t_pureblas": null,
+      "t_update": 0.013341013
     },
     {
       "dobj_osqp": 3.353210876741251e-13,
-      "dobj_pureblas": 1.4202986673636267e-13,
+      "dobj_pureblas": null,
       "m": 200,
       "n": 100,
       "refactorizations": 3,
       "steps": 20,
-      "t_fresh": 0.069086959,
-      "t_osqp": 0.523520972,
-      "t_pureblas": 0.068510613,
-      "t_update": 0.074987442
+      "t_fresh": 0.079725705,
+      "t_osqp": 0.530712615,
+      "t_pureblas": null,
+      "t_update": 0.075754804
     },
     {
       "dobj_osqp": 2.8222714520788013e-15,
-      "dobj_pureblas": 1.5287303698760207e-15,
+      "dobj_pureblas": null,
       "m": 400,
       "n": 200,
       "refactorizations": 1,
       "steps": 20,
-      "t_fresh": 0.322859286,
-      "t_osqp": 2.602862588,
-      "t_pureblas": 0.289003333,
-      "t_update": 0.311163548
+      "t_fresh": 0.333778093,
+      "t_osqp": 2.618012892,
+      "t_pureblas": null,
+      "t_update": 0.297481293
     }
   ],
   "steps": 20

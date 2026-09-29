@@ -1,0 +1,32 @@
+# The repository as one Pkg workspace. Every project in it resolves the others from this
+# checkout, so a package under test is built against the sibling beside it rather than the
+# sibling the registry serves.
+#
+# This is not a package and is never registered. It carries no name, uuid or version, and
+# nothing here reaches a release: each member keeps its own Project.toml, its own [compat],
+# and its own registration.
+#
+# What it replaces is a [sources] entry per environment, pointing at a relative path. Those
+# had to be written into projects that are registered, removed again before release, and
+# re-added by the resolver whenever it ran; the version bound a solver declares on
+# PureQPBase names a release, and until that release is registered no environment could
+# satisfy it from the registry at all. A member of a workspace is resolved from the
+# workspace, so the bound describes what a caller installs without describing how this
+# repository builds.
+#
+# `bench` and `docs` are deliberately not members. A workspace shares one manifest, so every
+# member's bounds must hold at once, and those two carry comparison solvers that cannot:
+# `OSQP.jl` needs `MathOptInterface 0.8` where these packages need `1`, and the `OSQP_jll`
+# the C comparison links against is a major version the wrapper refuses. They keep naming
+# the four by path, which costs nothing -- neither is registered, so no path of theirs can
+# reach a release.
+# The test environments are not members either. `Pkg.test` builds one by adding the package
+# under test to its environment implicitly; a member is a project in its own right, and as one
+# it loses that, so every `using` of the package it tests fails.
+[workspace]
+projects = [
+    "PureQPBase",
+    "PureOSQP",
+    "PureIPM",
+    "PureDAQP",
+]

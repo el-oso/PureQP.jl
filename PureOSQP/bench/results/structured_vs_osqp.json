@@ -7,15 +7,15 @@
       "n": 200,
       "m": 200,
       "backend": "block",
-      "backend_sparse": "cholesky",
+      "backend_sparse": "sparse_formed",
       "iter": 175,
       "density_percent": 12.5,
-      "structured_seconds": 0.001342667,
-      "sparse_seconds": 0.002237981,
-      "osqp_seconds": 0.002549209,
-      "structured_vs_osqp": 1.8986159636008035,
-      "sparse_vs_osqp": 1.1390664174539462,
-      "structured_vs_sparse": 1.6668176100254195
+      "structured_seconds": 0.001403214,
+      "sparse_seconds": 0.002020207,
+      "osqp_seconds": 0.002511873,
+      "structured_vs_osqp": 1.7900854752019293,
+      "sparse_vs_osqp": 1.2433740700829172,
+      "structured_vs_sparse": 1.4396998604631936
     },
     {
       "case": "tridiagonal",
@@ -25,12 +25,12 @@
       "backend_sparse": "ldlfactorizations",
       "iter": 75,
       "density_percent": 0.25,
-      "structured_seconds": 0.000186891,
-      "sparse_seconds": 0.00046500200000000006,
-      "osqp_seconds": 0.000584546,
-      "structured_vs_osqp": 3.1277375582558817,
-      "sparse_vs_osqp": 1.2570827652354182,
-      "structured_vs_sparse": 2.488091989448395
+      "structured_seconds": 0.00019127,
+      "sparse_seconds": 0.00045518800000000003,
+      "osqp_seconds": 0.000581937,
+      "structured_vs_osqp": 3.0424896742824283,
+      "sparse_vs_osqp": 1.2784541771751452,
+      "structured_vs_sparse": 2.3798191038845613
     },
     {
       "case": "banded",
@@ -40,12 +40,12 @@
       "backend_sparse": "ldlfactorizations",
       "iter": 75,
       "density_percent": 0.499375,
-      "structured_seconds": 0.000855354,
-      "sparse_seconds": 0.000660208,
-      "osqp_seconds": 0.0006576030000000001,
-      "structured_vs_osqp": 0.7688080023008019,
-      "sparse_vs_osqp": 0.9960542738046193,
-      "structured_vs_sparse": 0.771853524973286
+      "structured_seconds": 0.00085431,
+      "sparse_seconds": 0.0006448560000000001,
+      "osqp_seconds": 0.000654603,
+      "structured_vs_osqp": 0.7662359096814974,
+      "sparse_vs_osqp": 1.0151150024191447,
+      "structured_vs_sparse": 0.7548267022509394
     },
     {
       "case": "low-rank",
@@ -55,29 +55,29 @@
       "backend_sparse": "ldl_kkt",
       "iter": 75,
       "density_percent": 0.746268656716418,
-      "structured_seconds": 0.000224932,
-      "sparse_seconds": 0.0005146850000000001,
-      "osqp_seconds": 0.000534322,
-      "structured_vs_osqp": 2.3754823680045525,
-      "sparse_vs_osqp": 1.0381534336535938,
-      "structured_vs_sparse": 2.288180427862643
+      "structured_seconds": 0.000239561,
+      "sparse_seconds": 0.000494992,
+      "osqp_seconds": 0.000534216,
+      "structured_vs_osqp": 2.22997900326013,
+      "sparse_vs_osqp": 1.0792416847140964,
+      "structured_vs_sparse": 2.0662461752956447
     },
     {
       "case": "kronecker",
       "n": 400,
       "m": 400,
       "backend": "kronecker",
-      "backend_sparse": "cholesky",
+      "backend_sparse": "sparse_formed",
       "iter": 250,
       "density_percent": 100.0,
-      "structured_seconds": 0.0010587305,
-      "sparse_seconds": 0.054618589,
-      "osqp_seconds": 0.119729923,
-      "structured_vs_osqp": 113.0881966657237,
-      "sparse_vs_osqp": 2.192109411687658,
-      "structured_vs_sparse": 51.58875558983141
+      "structured_seconds": 0.0009569740000000001,
+      "sparse_seconds": 0.140372934,
+      "osqp_seconds": 0.11843887250000001,
+      "structured_vs_osqp": 123.7639397726584,
+      "sparse_vs_osqp": 0.8437443681272632,
+      "structured_vs_sparse": 146.6841669679636
     }
   ],
   "eps": 1.0e-6,
-  "julia_version": "1.13.0"
+  "julia_version": "1.13.1"
 }

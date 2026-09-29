@@ -10,11 +10,11 @@ concurrency:
   cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 
 jobs:
-  # A [sources] entry in a registered package's Project.toml points at a path that exists only
-  # in this repository, so it must not reach main. It is the ordinary way to work on a branch,
-  # where the solvers are built against the PureQPBase beside them rather than the released
-  # one; the test environments carry that link permanently and are not registered, which is
-  # what keeps the suites running against this checkout without it.
+  # A [sources] entry in a registered package's Project.toml points at a path that exists
+  # only in this repository, so it must not reach a release. Nothing needs one: the
+  # repository is a Pkg workspace and its members resolve each other from the checkout, so
+  # this is an invariant rather than a cleanup step, and an entry appearing here means a
+  # resolver wrote one back.
   sources:
     name: No path sources in the registered packages
     runs-on: ubuntu-latest
@@ -48,18 +48,10 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
-      # The solvers' own Project.toml names a released PureQPBase, because that is what a
-      # caller installs and the registered package must not carry a path into this
-      # repository. In this checkout the base beside them is the one under test, and a
-      # version bound naming a release that has not been registered yet cannot be satisfied
-      # from the registry at all -- which held every solver's suite hostage to the base's
-      # registration, so the change was only ever tested after it shipped.
-      #
-      # Developing it in writes a [sources] entry into the working copy. It never reaches a
-      # commit: the `sources` job checks the committed file from its own checkout.
-      - name: Take PureQPBase from this checkout
-        if: matrix.package != 'PureQPBase'
-        run: julia --project=${{ matrix.package }} -e 'using Pkg; Pkg.develop(path="PureQPBase")'
+      # Nothing links the packages here. The repository is a Pkg workspace (see the root
+      # Project.toml), so every member resolves the others from this checkout: a solver is
+      # built against the PureQPBase beside it, whatever version bound it declares for the
+      # release a caller installs.
       - uses: julia-actions/julia-buildpkg@v1
         with:
           project: ${{ matrix.package }}

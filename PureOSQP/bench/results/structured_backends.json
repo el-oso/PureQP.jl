@@ -4,135 +4,135 @@
     {
       "backend": "diagonal",
       "bw": "0",
-      "dense_setup": "0.000230274",
-      "dense_total": "0.000496737",
+      "dense_setup": "0.00016061300000000002",
+      "dense_total": "0.00041867900000000003",
       "iter": "75",
       "n": "100",
       "name": "Diagonal, Diagonal",
-      "setup": "1.3094e-5",
-      "total": "3.3072000000000005e-5"
+      "setup": "6.803e-6",
+      "total": "2.8243e-5"
     },
     {
       "backend": "tridiagonal",
       "bw": "1",
-      "dense_setup": "0.00023156600000000003",
-      "dense_total": "0.000549606",
-      "iter": "100",
+      "dense_setup": "0.000169399",
+      "dense_total": "0.00042495",
+      "iter": "75",
       "n": "100",
       "name": "SymTridiagonal, Diagonal",
-      "setup": "1.7383e-5",
-      "total": "6.5183e-5"
+      "setup": "1.1256e-5",
+      "total": "4.8932000000000005e-5"
     },
     {
       "backend": "banded",
       "bw": "2",
-      "dense_setup": "0.00023347100000000001",
-      "dense_total": "0.000499602",
+      "dense_setup": "0.000188996",
+      "dense_total": "0.00046460500000000004",
       "iter": "75",
       "n": "100",
       "name": "SymTridiagonal, Tridiagonal",
-      "setup": "3.0778e-5",
-      "total": "0.00016300800000000002"
+      "setup": "2.5649e-5",
+      "total": "0.000161604"
     },
     {
       "backend": "diagonal",
       "bw": "0",
-      "dense_setup": "0.005371917",
-      "dense_total": "0.007029827000000001",
-      "iter": "50",
+      "dense_setup": "0.0043742220000000005",
+      "dense_total": "0.0100438095",
+      "iter": "75",
       "n": "400",
       "name": "Diagonal, Diagonal",
-      "setup": "4.9614e-5",
-      "total": "8.448900000000001e-5"
+      "setup": "2.4696000000000002e-5",
+      "total": "8.977900000000001e-5"
     },
     {
       "backend": "tridiagonal",
       "bw": "1",
-      "dense_setup": "0.0054033910000000004",
-      "dense_total": "0.012113335000000001",
+      "dense_setup": "0.004588430500000001",
+      "dense_total": "0.011805048000000002",
       "iter": "100",
       "n": "400",
       "name": "SymTridiagonal, Diagonal",
-      "setup": "6.509300000000001e-5",
-      "total": "0.00023325"
+      "setup": "4.219e-5",
+      "total": "0.000222529"
     },
     {
       "backend": "banded",
       "bw": "2",
-      "dense_setup": "0.005370424",
-      "dense_total": "0.0112632025",
+      "dense_setup": "0.004641816",
+      "dense_total": "0.010396419",
       "iter": "75",
       "n": "400",
       "name": "SymTridiagonal, Tridiagonal",
-      "setup": "0.00011441500000000001",
-      "total": "0.0006233650000000001"
+      "setup": "8.274600000000001e-5",
+      "total": "0.0006045390000000001"
     },
     {
       "backend": "diagonal",
       "bw": "0",
-      "dense_setup": "0.05522988450000001",
-      "dense_total": "0.0693813615",
-      "iter": "50",
+      "dense_setup": "0.052449024000000004",
+      "dense_total": "0.109286909",
+      "iter": "75",
       "n": "1000",
       "name": "Diagonal, Diagonal",
-      "setup": "0.00011691",
-      "total": "0.00020205100000000002"
+      "setup": "5.3241e-5",
+      "total": "0.00021501500000000001"
     },
     {
       "backend": "tridiagonal",
       "bw": "1",
-      "dense_setup": "0.055680669",
-      "dense_total": "0.12627870400000002",
+      "dense_setup": "0.0528964235",
+      "dense_total": "0.11486907300000002",
       "iter": "100",
       "n": "1000",
       "name": "SymTridiagonal, Diagonal",
-      "setup": "0.00015576400000000002",
-      "total": "0.0005736420000000001"
+      "setup": "9.532900000000001e-5",
+      "total": "0.000536211"
     },
     {
       "backend": "banded",
       "bw": "2",
-      "dense_setup": "0.0556359595",
-      "dense_total": "0.1237744525",
-      "iter": "100",
+      "dense_setup": "0.052453409000000006",
+      "dense_total": "0.1115017545",
+      "iter": "75",
       "n": "1000",
       "name": "SymTridiagonal, Tridiagonal",
-      "setup": "0.000276882",
-      "total": "0.001947401"
+      "setup": "0.000191802",
+      "total": "0.0014859200000000002"
     },
     {
       "backend": "diagonal",
       "bw": "0",
-      "dense_setup": "0.39348241500000003",
-      "dense_total": "0.48820925400000004",
-      "iter": "50",
+      "dense_setup": "0.357232203",
+      "dense_total": "0.753302094",
+      "iter": "75",
       "n": "2000",
       "name": "Diagonal, Diagonal",
-      "setup": "0.000230174",
-      "total": "0.000401467"
+      "setup": "9.865600000000001e-5",
+      "total": "0.00042265650000000005"
     },
     {
       "backend": "tridiagonal",
       "bw": "1",
-      "dense_setup": "0.38888867450000003",
-      "dense_total": "0.8307136595000001",
+      "dense_setup": "0.3560086505",
+      "dense_total": "0.7955472250000001",
       "iter": "100",
       "n": "2000",
       "name": "SymTridiagonal, Diagonal",
-      "setup": "0.000306117",
-      "total": "0.001145259"
+      "setup": "0.00018156200000000002",
+      "total": "0.001067762"
     },
     {
       "backend": "banded",
       "bw": "2",
-      "dense_setup": "0.38385832200000003",
-      "dense_total": "0.7775361635000001",
-      "iter": "75",
+      "dense_setup": "0.35273312700000004",
+      "dense_total": "0.8025283870000001",
+      "iter": "100",
       "n": "2000",
       "name": "SymTridiagonal, Tridiagonal",
-      "setup": "0.0005489045",
-      "total": "0.0030810480000000003"
+      "setup": "0.000374315",
+      "total": "0.0037832490000000002"
     }
   ],
-  "julia_version": "1.12.7"
+  "julia_version": "1.13.1"
 }
