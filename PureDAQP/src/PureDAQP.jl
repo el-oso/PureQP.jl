@@ -19,10 +19,11 @@ recursive LDLᵀ updates*, IEEE Transactions on Automatic Control 67(8):4362-436
 that paper's Algorithm 2 as the proximal-point outer loop. The reference implementation is
 MIT-licensed and was read alongside the paper.
 
-Unlike the other algorithms in this repository it reads `P` and `A` as dense matrices and
-exploits neither sparsity nor declared structure: the reduction forms `A R⁻¹`, which is dense
-whatever `A` was. It is at its best where an active-set method always is, with few rows
-active at the solution.
+It needs a `P` it can factor, which rules out an operator supplying products only, and it reads
+a sparse `P` or `A` into a dense matrix. A dense pair reduces to `A R⁻¹` formed once; a
+structured or unmaterialized one is held as `A` and the factor of `P` in their own forms, and
+each row and each product is derived from them. It is at its best where an active-set method
+always is, with few rows active at the solution.
 """
 module PureDAQP
 
@@ -40,7 +41,9 @@ import PureQPBase:
     QPData, Options, Solution, Status, QPAlgorithm, QPWorkspace, PolishStatus,
     adopt_update!, check_update, has_solution, is_convex, is_materializable, validate,
     validated_data, validate_update!, check_option_names, settings_tuple, paired,
-    empty_solution, norm_inf, support_plain, project_polar_reccone!, DIVISION_TOL
+    empty_solution, norm_inf, support_plain, project_polar_reccone!, DIVISION_TOL,
+    has_cholesky_factor, cholesky_factor, scalar_diagonal, dense_row!,
+    BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator
 
 export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
 export dimensions, capabilities
@@ -81,22 +84,40 @@ let
     @strict update!(ws; l = l, u = u)
     @strict update_settings!(ws, ActiveSet())
 
+    # The same on a Kronecker pair, which reduces to `ImplicitRows` over a `KroneckerCholesky`
+    # and so puts different code in the iteration: a row is a product and a solve rather than a
+    # view, and pricing is a solve and a product rather than one `gemv`.
+    Pk = KroneckerOperator([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0])
+    Ak = KroneckerOperator([1.0 0.5; 0.0 1.0; 1.0 1.0], [1.0 0.0; 0.5 1.0])
+    qk = [1.0, 1.0, 0.5, -0.5]
+    lk, uk = fill(-1.0, 6), fill(1.0, 6)
+    wsk = setup(Pk, qk, Ak, lk, uk, ActiveSet())
+    @strict solve!(wsk)
+
     # The dual active-set loop and the pieces a solve runs around it, on a workspace a solve
     # has already brought to a state each call is legal in. `solve!` is asserted trim-
     # compatible but not allocation-free: it reads the clock, and AllocCheck counts the
     # `jl_hrtime` foreign call as an allocation it cannot see through. Everything under the
     # clock carries both claims, and `run_daqp!` is the whole iteration. These report rather
     # than throw; `test/strictmode_tests.jl` proves every kernel with StrictModeTest.
-    red = ws.red
-    @assert_trim_compatible solve!(ws)
-    @assert_noalloc run_daqp!(red, ws.prob.q0, ws.algorithm, ws.options.max_iter)
-    @assert_trim_compatible run_daqp!(red, ws.prob.q0, ws.algorithm, ws.options.max_iter)
-    @assert_noalloc multipliers!(ws.y, red)
-    @assert_trim_compatible multipliers!(ws.y, red)
-    @assert_noalloc build_solution(ws)
-    @assert_trim_compatible build_solution(ws)
-    @assert_noalloc reset_working_set!(red)
-    @assert_trim_compatible reset_working_set!(red)
+    #
+    # A function rather than a loop over the two workspaces: each call specializes on one
+    # concrete workspace type, where a loop would hand every assertion their union.
+    function proofs(w)
+        red = w.red
+        @assert_trim_compatible solve!(w)
+        @assert_noalloc run_daqp!(red, w.prob.q0, w.algorithm, w.options.max_iter)
+        @assert_trim_compatible run_daqp!(red, w.prob.q0, w.algorithm, w.options.max_iter)
+        @assert_noalloc multipliers!(w.y, red)
+        @assert_trim_compatible multipliers!(w.y, red)
+        @assert_noalloc build_solution(w)
+        @assert_trim_compatible build_solution(w)
+        @assert_noalloc reset_working_set!(red)
+        @assert_trim_compatible reset_working_set!(red)
+        return nothing
+    end
+    proofs(ws)
+    proofs(wsk)
 end
 
 # Every workspace and algorithm this package defines must satisfy its contract, asserted for

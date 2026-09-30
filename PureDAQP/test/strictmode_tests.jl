@@ -1,5 +1,5 @@
 @testitem "a dual active-set iteration allocates nothing and trims, proved" begin
-    using PureDAQP, StrictMode, StrictModeTest, LinearAlgebra, Random
+    using PureDAQP, PureQPBase, StrictMode, StrictModeTest, LinearAlgebra, Random
 
     # A disabled tier prints exactly like a clean one.
     StrictMode.assert_enabled()
@@ -15,8 +15,19 @@
     # A problem `eps_prox > 0` reaches, so the proximal-point outer loop is compiled too.
     Psing = Matrix(Diagonal([ones(n - 2); zeros(2)]))
 
-    for (Pk, alg) in ((P, ActiveSet()), (Psing, ActiveSet(; eps_prox = 1.0e-5)))
-        ws = setup(Pk, q, A, l, u, alg)
+    # A Kronecker pair, which reduces to `ImplicitRows` over a `KroneckerCholesky`: a row is a
+    # product and a solve rather than a view into memory, and pricing is a solve and a product
+    # rather than one `gemv`, so the iteration runs different code under the same guarantee.
+    Pkron = PureQPBase.KroneckerOperator([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0])
+    Akron = PureQPBase.KroneckerOperator([1.0 0.5; 0.0 1.0; 1.0 1.0], [1.0 0.0; 0.5 1.0])
+    qkron, lkron, ukron = [1.0, 1.0, 0.5, -0.5], fill(-1.0, 6), fill(1.0, 6)
+
+    for (Pk, Ak, qk, lk, uk, alg) in (
+            (P, A, q, l, u, ActiveSet()),
+            (Psing, A, q, l, u, ActiveSet(; eps_prox = 1.0e-5)),
+            (Pkron, Akron, qkron, lkron, ukron, ActiveSet()),
+        )
+        ws = setup(Pk, qk, Ak, lk, uk, alg)
         # A full solve compiles every specialization the loop reaches on this data.
         solve!(ws)
         W = typeof(ws)
@@ -55,7 +66,7 @@
 end
 
 @testitem "a warm re-solve allocates nothing at run time" begin
-    using PureDAQP, LinearAlgebra, Random
+    using PureDAQP, PureQPBase, LinearAlgebra, Random
 
     # Measured inside a function so the workspace is a local with a known type; read as a
     # global of the test module, the call itself would allocate. The static proofs above
@@ -82,6 +93,19 @@ end
     update_lu_bytes(w, ll, uu) = (update!(w; l = ll, u = uu); @allocated update!(w; l = ll, u = uu))
     @test iszero(update_q_bytes(ws, q))
     @test iszero(update_lu_bytes(ws, l, u))
+
+    # A reduction that holds `A` and `R` rather than `A R⁻¹` derives each row from a product and
+    # a transposed solve, and prices with a solve and a product, inside the same guarantee. Both
+    # pairings of it: an operator `A` against a factor in `P`'s own form, and against a dense
+    # triangular one.
+    Pk = PureQPBase.KroneckerOperator([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0])
+    Ak = PureQPBase.KroneckerOperator([1.0 0.5; 0.0 1.0; 1.0 1.0], [1.0 0.0; 0.5 1.0])
+    qk, lk, uk = [1.0, 1.0, 0.5, -0.5], fill(-1.0, 6), fill(1.0, 6)
+    for Pany in (Pk, kron([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0]))
+        implicit = PureDAQP.setup(Pany, qk, Ak, lk, uk, ActiveSet())
+        @test implicit.red.ws.M isa PureDAQP.ImplicitRows
+        @test iszero(resolve_bytes(implicit))
+    end
 end
 
 @testitem "the dual active-set proofs fail on code that allocates or cannot be trimmed" begin

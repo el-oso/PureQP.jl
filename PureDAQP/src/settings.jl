@@ -39,10 +39,11 @@ The method reduces the problem to a least-distance problem, `min ‖u‖²` subj
 with `M = A R⁻¹` for the Cholesky factor `R` of `P` (or of `P + εI`), and solves that by
 maintaining an `LDLᵀ` of the Gram matrix of the working set under rank-one updates.
 
-Two consequences follow from that reduction and are not settings you can turn off. `M` is
-dense whatever `A` was, so **this algorithm ignores sparsity and declared structure**; and
-because the working set is tracked one side at a time, each two-sided row becomes two rows
-internally.
+Two consequences follow from that reduction and are not settings you can turn off. `P` must
+have a Cholesky factor, so an operator that supplies products only is refused by name; and
+**a sparse `P` or `A` is read into a dense matrix**, since the factor and the row reads are
+dense either way. A structured or unmaterialized pair is not: `M` is then held as `A` and `R`
+rather than formed, and each row and each product is derived from them.
 
 `linsys` is refused other than `:auto` and `:dense`: the method has no choice of backend to
 make. `scaling` must be `0` — the reduction does its own row normalization.

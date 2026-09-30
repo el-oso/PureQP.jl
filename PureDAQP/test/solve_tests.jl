@@ -478,3 +478,205 @@ end
     other = copy(PureQPBase.solve!(smaller))
     @test_throws "must match the source" PureQPBase.copyto!(other, third)
 end
+
+@testitem "a Kronecker pair reaches the dense pair's answer without forming either" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    P1, P2, A1, A2, q, l, u = kron_problem(11)
+    Pop, Aop = kron_operator_pair(P1, P2, A1, A2)
+    ws = PureDAQP.setup(Pop, q, Aop, l, u, ActiveSet(); max_iter = 20_000)
+    implicit = PureQPBase.solve!(ws)
+    dense = solve(kron(P1, P2), q, kron(A1, A2), l, u, ActiveSet(); max_iter = 20_000)
+    @test implicit.status == SOLVED
+    @test dense.status == SOLVED
+    # The two forms factor `P` differently and reach the same answer to the accuracy the
+    # conditioning leaves: `cond(A) = 2.4e11` here, so the agreement stops in the sixth digit
+    # and bit-for-bit is neither expected nor asserted.
+    @test abs(implicit.obj_val - dense.obj_val) <= 1.0e-6 * abs(dense.obj_val)
+    # Feasible and stationary in the caller's own rows, measured against the size of the point:
+    # `‖x‖` reaches about 1e6 here, because the smallest singular value of `A` is 1e-11 and the
+    # objective keeps falling along directions the rows barely constrain.
+    r = kron(A1, A2) * implicit.x
+    scale = norm(implicit.x, Inf)
+    @test maximum(max.(r .- u, l .- r)) < 1.0e-10 * scale
+    @test implicit.prim_res < 1.0e-10 * scale
+    @test implicit.dual_res < 1.0e-10
+
+    # Neither operand reached an `m × n` array: the whole workspace is smaller than the reduced
+    # matrix the dense pair holds for the same problem.
+    @test Base.summarysize(ws) < length(A1) * length(A2) * sizeof(Float64)
+end
+
+@testitem "a Kronecker A with a dense P solves like the pair it stands for" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, Random
+
+    # A dense `R` against an operator `A`: the reduction holds the two of them, so this is the
+    # implicit form with the dense factor rather than the Kronecker one.
+    rng = MersenneTwister(31)
+    n1, n2, m1, m2 = 4, 3, 5, 4
+    n, m = n1 * n2, m1 * m2
+    A1, A2 = randn(rng, m1, n1), randn(rng, m2, n2)
+    G = randn(rng, n, n)
+    P = Matrix(Symmetric(G' * G + n * I))
+    q = randn(rng, n)
+    Aop = PureQPBase.KroneckerOperator(A1, A2)
+    b = Aop * randn(rng, n)
+    l, u = b .- rand(rng, m), b .+ rand(rng, m)
+    implicit = solve(P, q, Aop, l, u, ActiveSet())
+    dense = solve(P, q, kron(A1, A2), l, u, ActiveSet())
+    @test implicit.status == SOLVED
+    @test dense.status == SOLVED
+    @test implicit.x ≈ dense.x atol = 1.0e-8
+    @test implicit.y ≈ dense.y atol = 1.0e-8
+end
+
+@testitem "the reduction's storage does not grow with the number of rows" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps
+
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    # Rows are added at a fixed variable count, and the workspace is asked how much bigger it
+    # got. A reduction that formed `A R⁻¹` would grow by `Δm · n` entries; the bound is twice
+    # that, so no materializing path can pass, and an implicit one grows only by the length-`m`
+    # vectors the loop holds and by the second Kronecker factor's own rows.
+    P1, P2, A1, A2, q, = kron_problem(11)
+    Pop = PureQPBase.KroneckerOperator(P1, P2)
+    n = size(Pop, 1)
+    bound(w1, w4) = let dm = size(w4.prob.A, 1) - size(w1.prob.A, 1)
+        (Base.summarysize(w4) - Base.summarysize(w1), dm * 2n * sizeof(Float64))
+    end
+    # `max_iter = 1` because the question is what `setup` holds, not what a solve reaches.
+    function kron_ws(reps)
+        Aop = PureQPBase.KroneckerOperator(A1, reduce(vcat, (A2 for _ in 1:reps)))
+        b = Aop * ones(n)
+        return PureDAQP.setup(Pop, q, Aop, b .- 1, b .+ 1, ActiveSet(); max_iter = 1)
+    end
+    grew, allowed = bound(kron_ws(1), kron_ws(4))
+    @test grew < allowed
+
+    # The same with `A` an opaque map over the Kronecker apply, which is the shape a caller who
+    # has only products passes. It reaches the reduction as a `ProductOperator`, read one row
+    # at a time through one adjoint product each.
+    function map_ws(reps)
+        Ak = PureQPBase.KroneckerOperator(A1, reduce(vcat, (A2 for _ in 1:reps)))
+        mr, nr = size(Ak)
+        fm = LinearMap{Float64}(
+            (y, x) -> mul!(y, Ak, x), (y, x) -> mul!(y, adjoint(Ak), x), mr, nr
+        )
+        b = Ak * ones(nr)
+        return PureDAQP.setup(Pop, q, fm, b .- 1, b .+ 1, ActiveSet(); max_iter = 1)
+    end
+    w1 = map_ws(1)
+    @test w1.prob.A isa PureQPBase.ProductOperator
+    grew, allowed = bound(w1, map_ws(4))
+    @test grew < allowed
+end
+
+@testitem "an infeasible problem read through products is still reported infeasible" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps
+
+    # The infeasibility proof is checked against the caller's own rows, which needs `Aᵀy`. An
+    # operator that supplies products only answers that product and refuses to be read entry by
+    # entry, so a proof drawn on such an `A` has to be settled through the product.
+    P = PureQPBase.KroneckerOperator(Matrix(1.0I, 2, 2), Matrix(1.0I, 2, 2))
+    # Rows 1 and 2 are the same row of `A` with disjoint bounds: no x satisfies both.
+    A = [1.0 0.0 0.0 0.0; 1.0 0.0 0.0 0.0; 0.0 1.0 0.0 0.0; 0.0 0.0 1.0 0.0]
+    fm = LinearMap{Float64}(
+        (y, x) -> mul!(y, A, x), (y, x) -> mul!(y, adjoint(A), x), 4, 4
+    )
+    l, u = [1.0, -5.0, -1.0, -1.0], [2.0, -4.0, 1.0, 1.0]
+    ws = PureDAQP.setup(P, zeros(4), fm, l, u, ActiveSet())
+    @test ws.prob.A isa PureQPBase.ProductOperator
+    @test PureQPBase.solve!(ws).status == PRIMAL_INFEASIBLE
+end
+
+@testitem "both working sets reach the same answer on a Kronecker pair" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    # Well conditioned, because the Gram representation squares the conditioning of `A R⁻¹` and
+    # its pivots collapse from rounding alone on the ill-conditioned instance above.
+    P1, P2, A1, A2, q, l, u = kron_problem(
+        12; n1 = 6, n2 = 5, m1 = 7, m2 = 6, condP = 10.0, condA = 100.0
+    )
+    Pop, Aop = kron_operator_pair(P1, P2, A1, A2)
+    rows = solve(Pop, q, Aop, l, u, ActiveSet(; working_set = :rows); max_iter = 50_000)
+    gram = solve(Pop, q, Aop, l, u, ActiveSet(; working_set = :gram); max_iter = 50_000)
+    @test rows.status == SOLVED
+    @test gram.status == SOLVED
+    @test rows.obj_val ≈ gram.obj_val atol = 1.0e-9
+    @test rows.x ≈ gram.x atol = 1.0e-7
+end
+
+@testitem "a feasible Kronecker problem is never reported infeasible" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, Random
+
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    # The rank decision is made on `|R_ii|` of the `QR` of `Mₐᵀ` whether the rows come from
+    # memory or from a product and a solve, so the implicit reduction must survive the same
+    # conditioning the dense one does. The claim is the weaker one either must meet: a point
+    # satisfies every row with room to spare, so the problem must never be reported infeasible.
+    P1, P2, A1, A2, q, = kron_problem(
+        13; n1 = 12, n2 = 12, m1 = 16, m2 = 16, condP = 1.0e8, condA = 1.0e14
+    )
+    Pop, Aop = kron_operator_pair(P1, P2, A1, A2)
+    n, m = size(Aop, 2), size(Aop, 1)
+    x0 = randn(MersenneTwister(14), n)
+    b = Aop * x0
+    l, u = b .- 1.0, b .+ 1.0
+    @test iszero(maximum(max.(b .- u, l .- b, 0.0)))
+
+    sol = solve(Pop, q, Aop, l, u, ActiveSet(); max_iter = 50_000)
+    @test sol.status != PRIMAL_INFEASIBLE
+    @test sol.status == SOLVED
+    r = Aop * sol.x
+    @test maximum(max.(r .- u, l .- r)) < 1.0e-6
+    obj(x) = 0.5 * dot(x, Pop * x) + dot(q, x)
+    @test obj(sol.x) <= obj(x0)
+end
+
+@testitem "what the reduction has no factor of is refused by name" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps
+
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    P1, P2, A1, A2, q, l, u = kron_problem(
+        15; n1 = 5, n2 = 4, m1 = 6, m2 = 5, condP = 10.0, condA = 50.0
+    )
+    Pop, Aop = kron_operator_pair(P1, P2, A1, A2)
+    n = size(Pop, 1)
+
+    # An operator that supplies products only has no Cholesky factor, whatever it declares
+    # about itself, and the message names every form that has one.
+    Pd = kron(P1, P2)
+    opaque = LinearMap{Float64}(
+        (y, x) -> mul!(y, Pd, x), n, n; issymmetric = true, isposdef = true
+    )
+    err = try
+        PureDAQP.setup(opaque, q, Aop, l, u, ActiveSet())
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("needs a P it can factor", err.msg)
+    @test occursin("KroneckerOperator", err.msg)
+    @test occursin("OperatorSplitting()", err.msg)
+
+    # `P1 ⊗ P2 + εI` is not a Kronecker product, so the proximal-point shift has no Kronecker
+    # factor to be the factor of.
+    @test_throws "is not a Kronecker product" PureDAQP.setup(
+        Pop, q, Aop, l, u, ActiveSet(; eps_prox = 1.0e-6)
+    )
+
+    # The reduction is held concretely, so its representation is fixed at setup.
+    ws = PureDAQP.setup(Pop, q, Aop, l, u, ActiveSet())
+    @test PureQPBase.solve!(ws).status == SOLVED
+    @test_throws "must keep the representation" PureQPBase.update!(ws; P = Pd)
+    @test_throws "must keep the representation" PureQPBase.update!(ws; A = kron(A1, A2))
+    # Replacing them with operators of the same representation is the supported path.
+    PureQPBase.update!(ws; P = PureQPBase.KroneckerOperator(P1, P2))
+    @test PureQPBase.solve!(ws).status == SOLVED
+end

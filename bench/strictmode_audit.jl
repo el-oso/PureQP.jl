@@ -542,15 +542,26 @@ end
 # `solve_ldp!` is the whole loop, and it is proved here like the rest: it takes its
 # tolerances as an `ActiveSet` rather than as keywords, which is a signature
 # `test_signatures` can state.
-let
-    Random.seed!(1)
-    n, m = 12, 30
-    X = randn(n, n)
-    P = Matrix(X'X / n + I)
-    A = randn(m, n)
-    b = A * randn(n)
-    q = randn(n)
-    ws = PureDAQP.setup(P, q, A, b .- rand(m), b .+ rand(m), PureDAQP.ActiveSet())
+#
+# Twice over, because the reduction reads its rows two ways. A dense pair holds `A R⁻¹` and
+# reads a row as a view into it; any other pair holds `A` and `R` and derives each row from a
+# product and a transposed solve, which is different code under the same guarantee.
+for (Pin, Ain) in (
+        let
+            Random.seed!(1)
+            n, m = 12, 30
+            X = randn(n, n)
+            (Matrix(X'X / n + I), randn(m, n))
+        end,
+        (
+            PureQPBase.KroneckerOperator([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0]),
+            PureQPBase.KroneckerOperator([1.0 0.5; 0.0 1.0; 1.0 1.0], [1.0 0.0; 0.5 1.0]),
+        ),
+    )
+    n, m = size(Ain, 2), size(Ain, 1)
+    q = collect(range(-1.0, 1.0; length = n))
+    b = Ain * collect(range(0.1, 0.9; length = n))
+    ws = PureDAQP.setup(Pin, q, Ain, b .- 0.5, b .+ 0.5, PureDAQP.ActiveSet())
     PureDAQP.solve!(ws)          # compile every specialization before analysing it
 
     red = ws.red
@@ -558,6 +569,7 @@ let
     W = lw.W
     LW = typeof(lw)
     WT = typeof(W)
+    MR = typeof(lw.M)
     T = Float64
     # The views the loop actually passes, so the analysed signature is the one that runs.
     PV = typeof(view(lw.p, 1:1))
@@ -574,6 +586,8 @@ let
         (PureDAQP.remove_row!, (WT, Int), :hot, nothing),
         (PureDAQP.solve_gram!, (WT, PV), :hot, nothing),
         (PureDAQP.null_direction!, (PV, WT, Int), :hot, nothing),
+        (PureDAQP.row, (MR, Int), :hot, nothing),
+        (PureDAQP.price!, (Vector{T}, MR, Vector{T}, UnitRange{Int}), :hot, nothing),
         (PureDAQP.set_targets!, (typeof(red), Vector{T}), :hot, nothing),
         (PureDAQP.first_dependent, (WT, T), :hot, nothing),
         (PureDAQP.singular_step!, (LW, Int, T), :hot, nothing),
@@ -585,7 +599,7 @@ let
         (PureDAQP.solve_ldp!, (LW, AT, Int), :hot, nothing),
     ]
 
-    println("PureDAQP (dual active set)")
+    println("PureDAQP (dual active set), rows held as ", nameof(MR))
     for (f, types, tier, measure) in checks
         label = "  " * string(nameof(f))
         try

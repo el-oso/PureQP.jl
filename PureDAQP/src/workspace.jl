@@ -54,7 +54,20 @@ binds its type variables to the method rather than the module, so a parametric d
 has no concrete signature to check and needs the instantiations named.
 """
 const DenseWorkspace{T} = ActiveSetWorkspace{
-    T, Matrix{T}, Matrix{T}, Vector{T}, DAQPReduction{T, Cholesky{T, Matrix{T}}},
+    T, Matrix{T}, Matrix{T}, Vector{T}, DAQPReduction{T, UpperTriangular{T, Matrix{T}}},
+}
+
+"""
+The workspace `solve(P, q, A, l, u, ActiveSet())` builds for a `KroneckerOperator` `P` and a
+`KroneckerOperator` `A`, which reduces to [`ImplicitRows`](@ref) over a
+[`PureQPBase.KroneckerCholesky`](@ref).
+
+The guarantees are stated against this instantiation alongside [`DenseWorkspace`](@ref),
+because holding the operands rather than `A R⁻¹` puts different code in the iteration.
+"""
+const KroneckerWorkspace{T} = ActiveSetWorkspace{
+    T, KroneckerOperator{T, Matrix{T}}, KroneckerOperator{T, Matrix{T}}, Vector{T},
+    DAQPReduction{T, KroneckerCholesky{T}},
 }
 
 function Base.show(io::IO, ws::ActiveSetWorkspace{T}) where {T}
@@ -102,6 +115,39 @@ function refuse_activeset(LS::Symbol, options::Options)
     return nothing
 end
 
+"""
+The representations the reduction reads as they are: a dense matrix, a `Symmetric` of one, and
+the structured and unmaterialized forms the base owns.
+"""
+const ReadDirectly{T} = Union{
+    StridedMatrix{T}, Symmetric{T, <:StridedMatrix{T}}, Diagonal{T}, BlockDiagonal{T},
+    KroneckerOperator{T}, ProductOperator{T},
+}
+
+"""
+    reduction_operand(T, M) -> M or Matrix{T}
+
+`M` itself when the reduction reads it directly, and a dense copy otherwise.
+
+A sparse matrix goes through the dense copy, which is the one place this method forms a matrix:
+the base has no sparse Cholesky factor and no `O(nnz)` row read yet, so a sparse `P` or `A` is
+served by densifying it. So is any representation whose element type is not the solve's.
+"""
+reduction_operand(::Type{T}, M::ReadDirectly{T}) where {T} = M
+
+function reduction_operand(::Type{T}, M::AbstractMatrix) where {T}
+    is_materializable(M) || refuse_unreadable_operand(T)
+    return convert(Matrix{T}, M)
+end
+
+@noinline refuse_unreadable_operand(::Type{T}) where {T} = throw(
+    ArgumentError(
+        "an operator that supplies products only must have the solve's own element type, " *
+            "and this one does not, so it can be neither read nor converted. Build it as a " *
+            "ProductOperator{$T}, or pass P, q, A, l and u in one element type."
+    )
+)
+
 function setup_backend(
         alg::ActiveSet, ::Val{LS}, ::Type{T}, P::AbstractMatrix, q::AbstractVector,
         A::AbstractMatrix, l::AbstractVector, u::AbstractVector, options::Options,
@@ -118,23 +164,17 @@ function setup_backend(
 
     n, m = validate(P, q, A, l, u)
     resolved = element_typed(alg, T, options)
-    is_materializable(P) && is_materializable(A) || throw(
-        ArgumentError(
-            "ActiveSet() needs P and A it can read entry by entry: the reduction forms " *
-                "A / R for the Cholesky factor R of P, which an operator cannot supply."
-        )
-    )
     # Convexity is not checked here: `reduce_qp` factors `P + eps_prox*I` and reports a
     # failure, which is the same question asked once instead of twice.
     # The caller's data and nothing else: this method never forms the scaled products and has
     # no linear-system backend, so it asks for neither the equilibrated copy nor their scratch.
     # `refuse_activeset` has already required `options.scaling` to be zero.
     prob = validated_data(T, n, m, P, q, A, l, u)
-    # `convert` rather than `Matrix{T}`/`Vector{T}`: those copy even when the argument
-    # already has the type asked for, and the reduction only reads this data.
+    # `convert` rather than `Vector{T}`: that copies even when the argument already has the
+    # type asked for, and the reduction only reads this data.
     iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
     red = reduce_qp(
-        convert(Matrix{T}, P), convert(Matrix{T}, A),
+        reduction_operand(T, P), reduction_operand(T, A),
         convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
         iseq; eps_prox = resolved.eps_prox, working_set = resolved.working_set
     )
@@ -242,7 +282,10 @@ function separates(ws::ActiveSetWorkspace{T}, y) where {T}
     project_polar_reccone!(y, prob.l0, prob.u0)
     norm_inf(y) > DIVISION_TOL(T) || return false
     support_plain(y, prob.l0, prob.u0) < zero(T) || return false
-    mul!(ws.px, transpose(prob.A), y)
+    # `adjoint` rather than `transpose`: the element type is real, so the two products are the
+    # same one, and it is the adjoint that an operator supplying products only answers. Asked
+    # for the transpose it falls back to reading entries, which such an operator refuses.
+    mul!(ws.px, adjoint(prob.A), y)
     # Relative to the direction's own size, at the tolerance this algorithm already prices
     # rows against. A residual below it is a certificate of the problem the caller posed to
     # the accuracy the caller asked for.
@@ -288,7 +331,7 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
     return build_solution(ws)
 end
 
-@strict_function signatures = [(DenseWorkspace{Float64},)] function warm_start!(ws::ActiveSetWorkspace{T}; x = nothing, y = nothing) where {T}
+@strict_function signatures = [(DenseWorkspace{Float64},), (KroneckerWorkspace{Float64},)] function warm_start!(ws::ActiveSetWorkspace{T}; x = nothing, y = nothing) where {T}
     prob = ws.prob
     if !isnothing(x)
         length(x) == prob.n || throw(ArgumentError("length(x) must be $(prob.n)"))
@@ -306,7 +349,7 @@ end
     return ws
 end
 
-@strict_function signatures = [(DenseWorkspace{Float64},)] function cold_start!(ws::ActiveSetWorkspace{T}) where {T}
+@strict_function signatures = [(DenseWorkspace{Float64},), (KroneckerWorkspace{Float64},)] function cold_start!(ws::ActiveSetWorkspace{T}) where {T}
     fill!(ws.x, zero(T))
     fill!(ws.y, zero(T))
     fill!(ws.z, zero(T))
@@ -334,12 +377,18 @@ function update!(
     data = ws.prob
     if !isnothing(P) || !isnothing(A)
         iseq = [data.l0[i] == data.u0[i] for i in 1:data.m]
-        ws.red = reduce_qp(
-            convert(Matrix{T}, data.P), convert(Matrix{T}, data.A),
+        red = reduce_qp(
+            reduction_operand(T, data.P), reduction_operand(T, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
             iseq; eps_prox = ws.algorithm.eps_prox,
             working_set = ws.algorithm.working_set
         )
+        # The reduction's type follows from how `P` and `A` are represented, and the workspace
+        # holds it concretely, so a replacement in another representation has no reduction this
+        # workspace can hold. Refused here rather than at the assignment, which would report it
+        # as a failed `convert`.
+        red isa typeof(ws.red) || refuse_changed_representation(typeof(ws.red), typeof(red))
+        ws.red = red
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)
         # A row that has just become an equality, or stopped being one, is held on different
@@ -351,6 +400,12 @@ function update!(
     ws.update_time += (time_ns() - t0) / 1.0e9
     return ws
 end
+
+@noinline refuse_changed_representation(held, given) = throw(
+    ArgumentError(
+        lazy"update! cannot change how P or A is represented: this workspace holds a $held, and the replacement data reduces to a $given. Build a new workspace with setup."
+    )
+)
 
 """
     update_settings!(ws; kwargs...) -> ws

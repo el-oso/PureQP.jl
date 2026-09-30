@@ -5,6 +5,103 @@ const SIDE_UPPER = Int8(1)
 const SIDE_LOWER = Int8(-1)
 
 """
+    DenseRows(Mt)
+
+The reduced constraint matrix `M = A R⁻¹`, row-normalized, stored transposed as `n × m`.
+
+Every kernel of the loop reads one *row* of `M`, which as a column of `Mt` is contiguous. Held
+the other way round each read is strided, BLAS drops to its scalar path, and every element
+costs a cache line.
+"""
+struct DenseRows{T <: Real}
+    Mt::Matrix{T}
+end
+
+"""
+    ImplicitRows(A, R, Rt, scale, rowbuf, tmp)
+
+The reduced constraint matrix `M = A R⁻¹`, row-normalized, as its two operands rather than as
+an `m × n` array.
+
+    M[r, :] = R⁻ᵀ(Aᵀ e_r) / scale[r]          M u = (A (R⁻¹u)) ./ scale
+
+so a row costs one [`PureQPBase.dense_row!`](@ref) and one transposed solve, and pricing costs
+one solve and one product of `A`. Storage is `A`'s own plus a handful of length-`n` and
+length-`m` vectors, whatever `m` is.
+
+`rowbuf` is the vector [`row`](@ref) hands back, so only one row is readable at a time; `tmp`
+carries `R⁻¹u` into the product. Both are overwritten by every call, and `R` and `A` may keep
+scratch of their own, so one of these must not be read from two tasks at once.
+"""
+struct ImplicitRows{T <: Real, MA <: AbstractMatrix{T}, F, FT}
+    A::MA
+    R::F
+    # `transpose(R)`, held rather than formed per row: the wrapper is a heap allocation on
+    # Julia 1.13 for a triangular `R`, and a row is read every iteration.
+    Rt::FT
+    scale::Vector{T}
+    rowbuf::Vector{T}
+    tmp::Vector{T}
+end
+
+"How many variables the reduced rows have."
+nvars(M::DenseRows) = size(M.Mt, 1)
+nvars(M::ImplicitRows) = size(M.A, 2)
+
+"How many reduced rows there are."
+nreduced(M::DenseRows) = size(M.Mt, 2)
+nreduced(M::ImplicitRows) = size(M.A, 1)
+
+"Row `r` of the reduced constraint matrix, as a dense length-`n` vector."
+@inline row(M::DenseRows, r::Integer) = view(M.Mt, :, r)
+
+function row(M::ImplicitRows{T}, r::Integer) where {T}
+    buf = M.rowbuf
+    dense_row!(buf, M.A, r)
+    ldiv!(M.Rt, buf)
+    s = M.scale[r]
+    @simd for i in eachindex(buf)
+        buf[i] /= s
+    end
+    return buf
+end
+
+"""
+    price!(dest, M, u, rows) -> dest
+
+Write `(M u)[rows]` into `dest[rows]`.
+
+[`DenseRows`](@ref) prices the rows asked for and no others. [`ImplicitRows`](@ref) prices
+every row whatever `rows` was: `M u = A(R⁻¹u) ./ scale` reaches all of them for the price of
+one, so a window saves nothing, and pricing all of them leaves the row a caller selects inside
+the window the same row it would have selected from a windowed product.
+"""
+function price!(
+        dest::AbstractVector{T}, M::DenseRows{T}, u::AbstractVector{T}, rows::UnitRange{Int}
+    ) where {T}
+    if length(rows) == size(M.Mt, 2)
+        mul!(dest, transpose(M.Mt), u)
+    else
+        mul!(view(dest, rows), transpose(view(M.Mt, :, rows)), u)
+    end
+    return dest
+end
+
+function price!(
+        dest::AbstractVector{T}, M::ImplicitRows{T}, u::AbstractVector{T}, ::UnitRange{Int}
+    ) where {T}
+    tmp = M.tmp
+    copyto!(tmp, u)
+    ldiv!(M.R, tmp)
+    mul!(dest, M.A, tmp)
+    scale = M.scale
+    @simd for j in eachindex(dest, scale)
+        dest[j] /= scale[j]
+    end
+    return dest
+end
+
+"""
 State for one two-sided least-distance problem, `lo ≤ Mu ≤ hi`.
 
 A row is in the working set at one of its two bounds, and `side` records which. Its
@@ -21,11 +118,11 @@ of an iteration.
 """
 # Immutable: nothing here is ever rebound. Every field is a buffer written through, and the
 # live size lives in `F.k`, which is why that one stays in a mutable struct of its own.
-struct LDPWorkspace{T <: Real, WS}
-    # Stored transposed, `n × m`: every kernel here reads one *row* of `M`, which as a
-    # column of `Mt` is contiguous. Held the other way round each read is strided, BLAS
-    # drops to its scalar path, and every element costs a cache line.
-    Mt::Matrix{T}
+struct LDPWorkspace{T <: Real, WS, MR}
+    # The reduced constraint matrix, read one row at a time through `row` and priced as a whole
+    # through `price!`. `DenseRows` holds it; `ImplicitRows` holds `A` and `R` instead, so
+    # nothing here scales with `m·n`. Concrete once instantiated, so neither costs a dispatch.
+    M::MR
     hi::Vector{T}    # upper target, recomputed whenever `v` changes
     lo::Vector{T}
     iseq::Vector{Bool}
@@ -60,13 +157,11 @@ struct LDPWorkspace{T <: Real, WS}
     xold::Vector{T}  # proximal centre of the previous pass
 end
 
-function LDPWorkspace(
-        Mt::Matrix{T}, iseq::AbstractVector{Bool}, scale::Vector{T}, W
-    ) where {T <: Real}
-    n, m = size(Mt)
+function LDPWorkspace(M, iseq::AbstractVector{Bool}, scale::Vector{T}, W) where {T <: Real}
+    n, m = nvars(M), nreduced(M)
     kmax = min(m, n) + 1
-    return LDPWorkspace{T, typeof(W)}(
-        Mt, zeros(T, m), zeros(T, m), convert(Vector{Bool}, iseq), zeros(Int8, m),
+    return LDPWorkspace{T, typeof(W), typeof(M)}(
+        M, zeros(T, m), zeros(T, m), convert(Vector{Bool}, iseq), zeros(Int8, m),
         zeros(Int, kmax), zeros(Int, m), zeros(T, kmax), zeros(T, kmax), zeros(T, kmax),
         zeros(T, n), zeros(T, kmax), zeros(T, m),
         W, zeros(T, m), zeros(Int, 1), scale,
@@ -89,8 +184,8 @@ function build_working_set(kind::Symbol, ::Type{T}, n::Integer, kmax::Integer) w
 end
 
 
-"Row `r` of the constraint matrix, contiguous because the matrix is stored transposed."
-@inline row(ws::LDPWorkspace, r::Integer) = view(ws.Mt, :, r)
+"Row `r` of the reduced constraint matrix the workspace runs on."
+@inline row(ws::LDPWorkspace, r::Integer) = row(ws.M, r)
 
 "The working set, as the live prefix of the preallocated buffer."
 @inline activeset(ws::LDPWorkspace) = view(ws.active, 1:nactive(ws.W))
@@ -380,7 +475,7 @@ function entering_row(
     # Not `@simd`: this is an argmax search, and the `slot` test skips the working set.
     @inbounds for r in rows
         iszero(ws.slot[r]) || continue
-        # Priced in the caller's own units. `finish_reduction` divided each row by its norm,
+        # Priced in the caller's own units. The reduction divided each row by its norm,
         # and those norms span five orders here, so a violation that is at the tolerance in
         # the normalized rows is that much larger in the problem the caller posed: the row
         # that is worst after scaling is not the row that is worst to them.
@@ -422,7 +517,7 @@ a signature `test_signatures` can state.
 """
 function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where {T}
     zero_tol, primal_tol = alg.zero_tol, alg.primal_tol
-    m = size(ws.Mt, 2)
+    m = nreduced(ws.M)
     bland_after = 4 * (m + 1)
     # How many rows one iteration examines, and the row it starts at. `chunk = m` examines
     # every row, which is what `scan = :all` asks for and what leaves the entering row the
@@ -461,11 +556,11 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
         entering, entering_side = 0, SIDE_UPPER
         if !bland && chunk < m
             window = scan:min(scan + chunk - 1, m)
-            mul!(view(ws.price, window), transpose(view(ws.Mt, :, window)), ws.u)
+            price!(ws.price, ws.M, ws.u, window)
             entering, entering_side = entering_row(ws, primal_tol, false, window)
         end
         if iszero(entering)
-            mul!(ws.price, transpose(ws.Mt), ws.u)
+            price!(ws.price, ws.M, ws.u, 1:m)
             entering, entering_side = entering_row(ws, primal_tol, bland, 1:m)
             iszero(entering) && return (LDP_OPTIMAL, iter)
         end
@@ -491,124 +586,87 @@ with the caller's bounds in the same scaling, and the working state.
 Only the targets change between proximal-point iterations, so `R`, `M` and the `LDLᵀ` of the
 working set are all reused.
 """
-struct DAQPReduction{T <: Real, F <: Cholesky, FT, WS}
+struct DAQPReduction{T <: Real, F, FT, WS, MR}
+    # `R` is in `P`'s own form, whatever [`PureQPBase.cholesky_factor`](@ref) handed back for
+    # it: an `UpperTriangular` for a matrix, a `Diagonal`, a block-diagonal or Kronecker factor
+    # for those. Only the two solves below are asked of it.
     R::F
-    # `transpose(R.U)`, kept rather than formed per pass. It solves against the stored
-    # triangle without copying it, but the wrapper itself is a heap allocation on Julia 1.13,
-    # once per solve in a loop that has none otherwise.
+    # `transpose(R)`, kept rather than formed per pass. It solves against the stored factor
+    # without copying it, but the wrapper itself is a heap allocation on Julia 1.13, once per
+    # solve in a loop that has none otherwise.
     Rt::FT
     bu::Vector{T}     # the caller's bounds, divided by the row norms
     bl::Vector{T}
     eps_prox::T
-    ws::LDPWorkspace{T, WS}
+    ws::LDPWorkspace{T, WS, MR}
     scale::Vector{T}  # the row norm each row was divided by
 end
 
 """
-    reduce_qp(H, A, bupper, blower, iseq; eps_prox) -> DAQPReduction
+    reduce_qp(P, A, bupper, blower, iseq; eps_prox) -> DAQPReduction
 
-Factor `H + εI` and transform the constraints into `lo ≤ Mu ≤ hi` with `M = A R⁻¹`.
+Factor `P + εI` and transform the constraints into `lo ≤ Mu ≤ hi` with `M = A R⁻¹`.
 
-With `eps_prox = 0` this needs `H ≻ 0`. Any `ε > 0` makes `H + εI` positive definite for
-`H ⪰ 0`, which is what lets the proximal-point loop take a singular `H`, an LP being the
+With `eps_prox = 0` this needs `P ≻ 0`. Any `ε > 0` makes `P + εI` positive definite for
+`P ⪰ 0`, which is what lets the proximal-point loop take a singular `P`, an LP being the
 extreme case.
+
+`R` comes back in `P`'s own form, so a `P` that is not a dense matrix is never formed. `M` is
+formed only when both `A` and `R` are dense; otherwise the reduction holds the two of them and
+answers rows and products from them ([`ImplicitRows`](@ref)).
 """
 function reduce_qp(
-        H::AbstractMatrix{T}, A::AbstractMatrix{T},
+        P::AbstractMatrix{T}, A::AbstractMatrix{T},
         bupper::AbstractVector{T}, blower::AbstractVector{T},
         iseq::AbstractVector{Bool}; eps_prox::T = zero(T), working_set::Symbol = :rows
     ) where {T <: Real}
-    n = size(H, 1)
-    m = size(A, 1)
-    # `H = μI` has the Cholesky factor `√μ I`, so the reduction `A R⁻¹` is a scaling rather
-    # than a triangular solve. Worth testing for because it is the shape of every problem
-    # whose objective is a plain squared norm. The test leaves the general case alone: it
-    # stops at the first entry that disqualifies `H`, which for a dense `H` is the first
-    # off-diagonal one.
-    mu = scalar_diagonal(H)
-    if !isnothing(mu)
-        s = sqrt(mu + eps_prox)
-        s > 0 || throw(
-            ArgumentError(
-                "P is not positive definite, which ActiveSet() needs when eps_prox = 0, " *
-                    "because the reduction factors it. Pass eps_prox > 0 to run proximal-point " *
-                    "iterations instead, which accept a positive semidefinite P."
-            )
-        )
-        Mr = Matrix{T}(undef, m, n)
-        copyto!(Mr, A)
-        rmul!(Mr, one(T) / s)
-        R = Cholesky(Matrix{T}(s * I, n, n), 'U', 0)
-        return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m, working_set)
-    end
-    # Symmetrize into one buffer. `(H + H') / 2` reads pleasantly and allocates four
-    # matrices to produce one, which is most of what a small solve costs.
-    Hs = Matrix{T}(undef, n, n)
-    for j in 1:n, i in 1:n
-        Hs[i, j] = (H[i, j] + H[j, i]) / 2
-    end
-    if !iszero(eps_prox)
-        for i in 1:n
-            Hs[i, i] += eps_prox
-        end
-    end
-    # `check = false` so an indefinite `H` is a value to test rather than an exception to
-    # catch, and so this one factorization also answers the convexity question: factoring it
-    # twice, once to check and once to use, is most of what setup costs. `cholesky!` works in
-    # the buffer just filled, which is not needed afterwards.
-    R = cholesky!(Symmetric(Hs), NoPivot(); check = false)
-    issuccess(R) || throw(
-        ArgumentError(
-            iszero(eps_prox) ?
-                "P is not positive definite, which ActiveSet() needs when eps_prox = 0, " *
-                "because the reduction factors it. Pass eps_prox > 0 to run proximal-point " *
-                "iterations instead, which accept a positive semidefinite P." :
-                "P + eps_prox*I is not positive definite, so P is not positive semidefinite " *
-                "and the problem is not convex."
-        )
+    has_cholesky_factor(P) || refuse_unfactorable_P()
+    # One factorization answers the convexity question as well as supplying `R`: factoring
+    # twice, once to check and once to use, is most of what setup costs.
+    R = cholesky_factor(P, eps_prox)
+    return build_reduction(R, A, bupper, blower, iseq, eps_prox, working_set)
+end
+
+"Refuse a `P` the reduction has no factor of, naming every form that has one."
+@noinline refuse_unfactorable_P() = throw(
+    ArgumentError(
+        "ActiveSet() needs a P it can factor: the reduction forms A R⁻¹ for the Cholesky " *
+            "factor R of P, and an operator that supplies products only has no such factor. " *
+            "Pass P as a matrix, a Diagonal, a BlockDiagonal, a KroneckerOperator, or a " *
+            "LinearMaps kron or blockdiag of matrices; or solve with OperatorSplitting(), " *
+            "which needs no factor of P."
     )
-    # `M = A R⁻¹`, solved with the triangle on the right of the constraint matrix. Each step
-    # of that substitution scales and subtracts whole columns of `M`, which are contiguous
-    # and carry no dependence within a column; solving `R⁻ᵀ Aᵀ` instead makes every entry a
-    # short dot product against the entries above it, and runs well under half the speed.
-    Mr = Matrix{T}(undef, m, n)
-    copyto!(Mr, A)
-    rdiv!(Mr, R.U)
-    return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m, working_set)
-end
-
-"""
-    scalar_diagonal(H) -> μ or nothing
-
-`μ` when `H` is `μI`, and `nothing` otherwise.
-
-Stops at the first entry that rules it out, so a dense `H` costs one comparison rather than a
-pass over the matrix.
-"""
-function scalar_diagonal(H::AbstractMatrix{T}) where {T}
-    n = size(H, 1)
-    n == size(H, 2) || return nothing
-    mu = H[1, 1]
-    for j in 1:n, i in 1:n
-        if i == j
-            H[i, j] == mu || return nothing
-        else
-            iszero(H[i, j]) || return nothing
-        end
-    end
-    return mu
-end
+)
 
 """
 Normalize the rows of `M = A R⁻¹` and pack the reduction around them.
 
-Shared by the two ways of forming `M`, because normalization is what makes `primal_tol` mean
-the same thing on every row however that row happened to be scaled.
+A dense `A` against a dense triangular `R` forms `M` once and reads it from memory afterwards.
+Every other pair keeps `A` and `R` and derives each row and each product from them, which is
+what makes the storage independent of `m·n`.
 """
-function finish_reduction(
-        R, Mr::Matrix{T}, bupper::AbstractVector{T}, blower::AbstractVector{T},
-        iseq::AbstractVector{Bool}, eps_prox::T, n::Int, m::Int, kind::Symbol
+function build_reduction(
+        R::UpperTriangular{T, <:StridedMatrix}, A::StridedMatrix{T},
+        bupper::AbstractVector{T}, blower::AbstractVector{T},
+        iseq::AbstractVector{Bool}, eps_prox::T, kind::Symbol
     ) where {T}
+    m, n = size(A)
+    Mr = Matrix{T}(undef, m, n)
+    copyto!(Mr, A)
+    s = scalar_diagonal(R)
+    if isnothing(s)
+        # `M = A R⁻¹`, solved with the triangle on the right of the constraint matrix. Each
+        # step of that substitution scales and subtracts whole columns of `M`, which are
+        # contiguous and carry no dependence within a column; solving `R⁻ᵀ Aᵀ` instead makes
+        # every entry a short dot product against the entries above it, and runs well under
+        # half the speed.
+        rdiv!(Mr, R)
+    else
+        # `R = sI`, the factor of `P = s²I`, so the reduction is a scaling rather than a
+        # triangular solve. Worth the test because it is the shape of every objective that is
+        # a plain squared norm.
+        rmul!(Mr, one(T) / s)
+    end
     # The rows are written out to `Mt` in the layout the loop reads, so the transpose costs no
     # pass of its own.
     Mt = Matrix{T}(undef, n, m)
@@ -627,18 +685,48 @@ function finish_reduction(
         nrm = (isfinite(sq) && sq > 0) ? sqrt(sq) : norm(view(Mr, j, :))
         # A row of `A` in the kernel of `R⁻ᵀ` normalizes to nothing; it is taken unscaled,
         # which is what a scale of one means.
+        sj = nrm > 0 ? nrm : one(T)
+        scale[j] = sj
+        @simd ivdep for i in 1:n
+            Mt[i, j] = Mr[j, i] / sj
+        end
+        bu[j] = bupper[j] / sj
+        bl[j] = blower[j] / sj
+    end
+    return pack_reduction(R, DenseRows(Mt), bu, bl, iseq, scale, eps_prox, n, m, kind)
+end
+
+function build_reduction(
+        R, A::AbstractMatrix{T}, bupper::AbstractVector{T}, blower::AbstractVector{T},
+        iseq::AbstractVector{Bool}, eps_prox::T, kind::Symbol
+    ) where {T}
+    m, n = size(A)
+    # Every scale is one until the loop below writes it, so the row read back there is the
+    # unnormalized one whose norm is that scale.
+    scale = ones(T, m)
+    M = ImplicitRows(A, R, transpose(R), scale, Vector{T}(undef, n), Vector{T}(undef, n))
+    bu = Vector{T}(undef, m)
+    bl = Vector{T}(undef, m)
+    for j in 1:m
+        nrm = norm(row(M, j))
+        # A row of `A` in the kernel of `R⁻ᵀ` normalizes to nothing; it is taken unscaled,
+        # which is what a scale of one means.
         s = nrm > 0 ? nrm : one(T)
         scale[j] = s
-        @simd ivdep for i in 1:n
-            Mt[i, j] = Mr[j, i] / s
-        end
         bu[j] = bupper[j] / s
         bl[j] = blower[j] / s
     end
+    return pack_reduction(R, M, bu, bl, iseq, scale, eps_prox, n, m, kind)
+end
 
-    ws = LDPWorkspace(Mt, iseq, scale, build_working_set(kind, T, n, min(m, n) + 1))
-    Rt = transpose(R.U)
-    return DAQPReduction{T, typeof(R), typeof(Rt), typeof(ws.W)}(
+"Wrap the working state around a factor and a reduced constraint matrix."
+function pack_reduction(
+        R, M, bu::Vector{T}, bl::Vector{T}, iseq::AbstractVector{Bool}, scale::Vector{T},
+        eps_prox::T, n::Int, m::Int, kind::Symbol
+    ) where {T}
+    ws = LDPWorkspace(M, iseq, scale, build_working_set(kind, T, n, min(m, n) + 1))
+    Rt = transpose(R)
+    return DAQPReduction{T, typeof(R), typeof(Rt), typeof(ws.W), typeof(M)}(
         R, Rt, bu, bl, eps_prox, ws, scale
     )
 end
@@ -653,7 +741,7 @@ With `x = R⁻¹(−u − v)`, the caller's `bl ≤ Ax ≤ bu` becomes
 """
 function set_targets!(red::DAQPReduction{T}, v::AbstractVector{T}) where {T}
     ws = red.ws
-    mul!(ws.Mv, transpose(ws.Mt), v)
+    price!(ws.Mv, ws.M, v, 1:nreduced(ws.M))
     for j in eachindex(ws.hi)
         ws.hi[j] = -(red.bl[j] + ws.Mv[j])
         ws.lo[j] = -(red.bu[j] + ws.Mv[j])
@@ -739,8 +827,8 @@ function inner_solve!(
             v[i] = f[i] - eps_prox * x[i]
         end
     end
-    # `R.L` on an upper-stored Cholesky materializes the transpose, copying the whole factor
-    # on every pass; `Rt` solves against the same triangle without copying it.
+    # The held transpose, rather than one formed here: the wrapper is a heap allocation on
+    # Julia 1.13, and it solves against the same stored factor either way.
     ldiv!(red.Rt, v)
     set_targets!(red, v)
     status, iters = solve_ldp!(red.ws, alg, max_iter)
@@ -800,9 +888,8 @@ function primal!(x::AbstractVector{T}, red::DAQPReduction{T}, v::AbstractVector{
     @simd for i in paired(x, u, v)
         x[i] = -u[i] - v[i]
     end
-    # `transpose(red.Rt)` is `R.U` recovered from the handle the reduction already holds;
-    # `red.R.U` re-derives it, and on a lower-stored factorization that branch copies the
-    # whole factor.
+    # `transpose(red.Rt)` unwraps to `red.R` itself, which is what makes this the untransposed
+    # solve against the same stored factor.
     ldiv!(transpose(red.Rt), x)
     return x
 end
