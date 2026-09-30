@@ -88,8 +88,11 @@ Multiplying by this makes both cases read `musign * μ ≥ 0`.
 @inline musign(ws::LDPWorkspace{T}, j::Integer) where {T} =
     ws.side[j] == SIDE_UPPER ? -one(T) : one(T)
 
+# `lazy` defers the interpolation past the call graph trim verifies, which an eagerly built
+# message does not: it lowers to a `string` call whose argument tuple inference despecializes
+# to an `Any` vararg.
 @noinline _nonfinite_row(r::Integer) =
-    throw(ArgumentError("row $r of the reduced constraint matrix is not finite"))
+    throw(ArgumentError(lazy"row $r of the reduced constraint matrix is not finite"))
 
 """
 Put row `r` into the working set at `side`, extending the factorization.
@@ -127,15 +130,15 @@ function deactivate!(ws::LDPWorkspace, i::Integer)
 end
 
 """
-    step_and_drop!(ws, p, zero_tol) -> Bool
+    blocking_step(ws, p, zero_tol) -> (alpha, blocking)
 
-Move the multipliers along `p` until the first one reaches zero from its feasible side, then
-drop that row. `false` when nothing blocks, which on the singular branch means the problem
-is infeasible.
+How far the multipliers move along `p` before one reaches zero from its feasible side, and
+which row of the working set it is. `blocking` is 0 when nothing blocks, and `alpha` is then
+meaningless.
 
 An equality row never blocks: its multiplier is free in sign.
 """
-function step_and_drop!(ws::LDPWorkspace{T}, p::AbstractVector{T}, zero_tol::T) where {T}
+function blocking_step(ws::LDPWorkspace{T}, p::AbstractVector{T}, zero_tol::T) where {T}
     alpha = typemax(T)
     blocking = 0
     for i in 1:nactive(ws.W)
@@ -149,11 +152,69 @@ function step_and_drop!(ws::LDPWorkspace{T}, p::AbstractVector{T}, zero_tol::T) 
             blocking = i
         end
     end
+    return alpha, blocking
+end
+
+"""
+    step_and_drop!(ws, p, zero_tol) -> Bool
+
+Move the multipliers along `p` until the first one reaches zero from its feasible side, then
+drop that row. `false` when nothing blocks, which on the singular branch means the problem
+is infeasible.
+"""
+function step_and_drop!(ws::LDPWorkspace{T}, p::AbstractVector{T}, zero_tol::T) where {T}
+    alpha, blocking = blocking_step(ws, p, zero_tol)
     iszero(blocking) && return false
     for i in 1:nactive(ws.W)
         ws.mu[i] += alpha * p[i]
     end
     deactivate!(ws, blocking)
+    return true
+end
+
+"""
+    full_set_step!(ws, r, side, zero_tol) -> Bool
+
+Step toward row `r` when the working set already spans every variable.
+
+`r` cannot be added: the factored matrix is `n × k` and the factorization needs more rows
+than columns. Nor should it be. With `k = n` the row is a combination of the rows held
+whatever residual it would have shown, because `n + 1` rows in `n` variables always admit
+one, so there is nothing for [`first_dependent`](@ref) to discover and no `R[n+1, n+1]` for
+it to read. What the singular branch wants from such a row is the direction its dependency
+opens, and that needs no place in the factorization: `Mₐᵀ` is square and of full rank here,
+so `c = Mₐ⁻ᵀ m_r` is the combination and `[c; -1]` spans the null space of the rows held
+together with `r`.
+
+Only the first `k` entries of that direction move a stored multiplier. The last belongs to
+`r`, whose multiplier would grow from zero, and the orientation below is what keeps it from
+blocking the step immediately -- [`singular_step!`](@ref) applies the same one, for the same
+reason.
+
+`r` then takes the place the dropped row leaves. It has to: the direction is in the null
+space of the rows held *together with* `r`, so it is only the pair of moves that holds
+`Mₐᵀμ` still. Moving the stored multipliers while discarding `r`'s own would shift the dual
+point by `alpha * m_r`, and the run stops converging.
+"""
+function full_set_step!(ws::LDPWorkspace{T}, r::Integer, side::Int8, zero_tol::T) where {T}
+    k = nactive(ws.W)
+    p = view(ws.p, 1:k)
+    # `ldiv!` reads its right-hand side without writing to it, so the row of `M` is safe to
+    # pass directly.
+    ldiv!(p, ws.W.qr, row(ws, r))
+    if side != SIDE_UPPER
+        for i in eachindex(p)
+            p[i] = -p[i]
+        end
+    end
+    alpha, blocking = blocking_step(ws, p, zero_tol)
+    iszero(blocking) && return false
+    for i in 1:k
+        ws.mu[i] += alpha * p[i]
+    end
+    deactivate!(ws, blocking)
+    activate!(ws, r, side)
+    ws.mu[nactive(ws.W)] = side == SIDE_UPPER ? -alpha : alpha
     return true
 end
 
@@ -331,7 +392,7 @@ a signature `test_signatures` can state.
 """
 function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where {T}
     zero_tol, primal_tol = alg.zero_tol, alg.primal_tol
-    m = size(ws.Mt, 2)
+    nvar, m = size(ws.Mt)
     bland_after = 4 * (m + 1)
     # The pricing window, and the row it starts at. An eighth of the rows is wide enough that
     # a violated row is usually in it and narrow enough to be worth the narrowing; the floor
@@ -378,7 +439,15 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
             iszero(entering) && return (LDP_OPTIMAL, iter)
         end
         scan = entering == m ? 1 : entering + 1
-        activate!(ws, entering, entering_side)
+        if nactive(ws.W) == nvar
+            # The set already spans every variable, so the entering row is dependent by
+            # counting and is stepped toward rather than added. A row drops, and pricing
+            # reaches this row again with room to hold it.
+            full_set_step!(ws, entering, entering_side, zero_tol) ||
+                return (LDP_INFEASIBLE, iter)
+        else
+            activate!(ws, entering, entering_side)
+        end
     end
     return (LDP_ITERATION_LIMIT, max_iter)
 end

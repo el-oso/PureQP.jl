@@ -1,64 +1,19 @@
 {
-  "blas_threads": 1,
-  "cpu": "znver5",
   "host": "neuromancer",
-  "julia": "1.12.7",
-  "note": "setup+solve, median of 20; clock unpinned on this host, treat as indicative",
+  "julia": "1.13.1",
+  "blas_threads": 1,
+  "tool": "Chairmarks, seconds=4, median reported",
+  "daqp_jl": "0.9.2",
+  "daqp_jll": "0.9.0+0",
+  "puredaqp": "0.1.2",
+  "measures": "setup and solve together, cold",
+  "note": "clock unpinned on this host; indicative, not a gate",
   "rows": [
-    {
-      "alloc_bytes": 377336,
-      "allocs": 151,
-      "iters": 59,
-      "libdaqp_ms": 0.160944,
-      "m": 100,
-      "n": 50,
-      "puredaqp_ms": 0.149172,
-      "rel_err_vs_libdaqp": 5.090252736331513e-16,
-      "speedup": 1.0789156141903307
-    },
-    {
-      "alloc_bytes": 1426904,
-      "allocs": 151,
-      "iters": 134,
-      "libdaqp_ms": 1.3308319999999998,
-      "m": 200,
-      "n": 100,
-      "puredaqp_ms": 0.8193659999999999,
-      "rel_err_vs_libdaqp": 8.945990244114218e-16,
-      "speedup": 1.6242216543034491
-    },
-    {
-      "alloc_bytes": 5565160,
-      "allocs": 173,
-      "iters": 270,
-      "libdaqp_ms": 9.708774,
-      "m": 400,
-      "n": 200,
-      "puredaqp_ms": 4.090861,
-      "rel_err_vs_libdaqp": 1.0433374250789405e-15,
-      "speedup": 2.373283765935826
-    },
-    {
-      "alloc_bytes": 16813896,
-      "allocs": 201,
-      "iters": 289,
-      "libdaqp_ms": 36.192352,
-      "m": 400,
-      "n": 400,
-      "puredaqp_ms": 10.662142,
-      "rel_err_vs_libdaqp": 1.2414829247198667e-15,
-      "speedup": 3.3944728929702865
-    },
-    {
-      "alloc_bytes": 37697624,
-      "allocs": 201,
-      "iters": 464,
-      "libdaqp_ms": 127.21529000000001,
-      "m": 600,
-      "n": 600,
-      "puredaqp_ms": 35.803305,
-      "rel_err_vs_libdaqp": 1.2279828519875638e-15,
-      "speedup": 3.5531716974173198
-    }
+    {"n": 10, "m": 20, "iters": 14, "puredaqp_ms": 0.011141, "libdaqp_ms": 0.005524, "speedup": 0.495796, "rel_err_vs_libdaqp": 5.800e-16, "alloc_bytes": 14704},
+    {"n": 25, "m": 50, "iters": 48, "puredaqp_ms": 0.058410, "libdaqp_ms": 0.033012, "speedup": 0.565177, "rel_err_vs_libdaqp": 1.081e-15, "alloc_bytes": 54656},
+    {"n": 50, "m": 100, "iters": 97, "puredaqp_ms": 0.232417, "libdaqp_ms": 0.228500, "speedup": 0.983147, "rel_err_vs_libdaqp": 1.954e-15, "alloc_bytes": 185584},
+    {"n": 100, "m": 200, "iters": 225, "puredaqp_ms": 1.338852, "libdaqp_ms": 1.890033, "speedup": 1.411682, "rel_err_vs_libdaqp": 4.915e-15, "alloc_bytes": 685584},
+    {"n": 200, "m": 400, "iters": 843, "puredaqp_ms": 12.095528, "libdaqp_ms": 14.482986, "speedup": 1.197384, "rel_err_vs_libdaqp": 6.239e-15, "alloc_bytes": 2645064},
+    {"n": 400, "m": 800, "iters": 1820, "puredaqp_ms": 97.434043, "libdaqp_ms": 132.748195, "speedup": 1.362442, "rel_err_vs_libdaqp": 1.066e-14, "alloc_bytes": 10406536}
   ]
 }

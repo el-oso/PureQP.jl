@@ -555,31 +555,33 @@ let
 
     red = ws.red
     lw = red.ws
-    F = lw.F
+    W = lw.W
     LW = typeof(lw)
-    FT = typeof(F)
+    WT = typeof(W)
     T = Float64
     # The views the loop actually passes, so the analysed signature is the one that runs.
     PV = typeof(view(lw.p, 1:1))
-    GV = typeof(view(lw.g, 1:1))
+    MV = typeof(PureDAQP.row(lw, 1))
 
     AT = typeof(ws.algorithm)
 
     checks = Any[
         (PureDAQP.activate!, (LW, Int, Int8), :hot, nothing),
         (PureDAQP.deactivate!, (LW, Int), :hot, nothing),
+        (PureDAQP.blocking_step, (LW, PV, T), :hot, nothing),
         (PureDAQP.step_and_drop!, (LW, PV, T), :hot, nothing),
-        (PureDAQP.add_row!, (FT, GV, T), :hot, nothing),
-        (PureDAQP.remove_row!, (FT, Int), :hot, nothing),
-        (PureDAQP.solve_gram!, (FT, PV), :hot, nothing),
-        (PureDAQP.singular_direction!, (PV, FT, Int), :hot, nothing),
+        (PureDAQP.add_row!, (WT, MV), :hot, nothing),
+        (PureDAQP.remove_row!, (WT, Int), :hot, nothing),
+        (PureDAQP.solve_gram!, (WT, PV), :hot, nothing),
+        (PureDAQP.null_direction!, (PV, WT, Int), :hot, nothing),
         (PureDAQP.set_targets!, (typeof(red), Vector{T}), :hot, nothing),
-        (PureDAQP.first_singular_pivot, (FT, T), :hot, nothing),
+        (PureDAQP.first_dependent, (WT, T), :hot, nothing),
         (PureDAQP.singular_step!, (LW, Int, T), :hot, nothing),
+        (PureDAQP.full_set_step!, (LW, Int, Int8, T), :hot, nothing),
         (PureDAQP.working_set_multipliers!, (LW,), :hot, nothing),
         (PureDAQP.step_toward_multipliers!, (LW, T), :hot, nothing),
         (PureDAQP.primal_point!, (LW,), :hot, nothing),
-        (PureDAQP.entering_row, (LW, T, Bool), :hot, nothing),
+        (PureDAQP.entering_row, (LW, T, Bool, UnitRange{Int}), :hot, nothing),
         (PureDAQP.solve_ldp!, (LW, AT, Int), :hot, nothing),
     ]
 

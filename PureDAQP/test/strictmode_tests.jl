@@ -37,7 +37,7 @@
                 (PureDAQP.solve_ldp!, (LW, ALG, Int)),
                 (PureDAQP.primal_point!, (LW,)),
                 (PureDAQP.working_set_multipliers!, (LW,)),
-                (PureDAQP.entering_row, (LW, Float64, Bool)),
+                (PureDAQP.entering_row, (LW, Float64, Bool, UnitRange{Int})),
                 (PureDAQP.activate!, (LW, Int, Int8)),
                 (PureDAQP.deactivate!, (LW, Int)),
                 (PureDAQP.step_and_drop!, (LW, V, Float64)),

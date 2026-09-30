@@ -46,13 +46,11 @@ end
     using PureDAQP, LinearAlgebra, Random
     import DAQP
 
-    # Sized past `PACKED_KMIN`, so the working set is held as a packed block and the loop
-    # takes its products against that rather than one row at a time. The smaller random
-    # problems above stay under that capacity and never reach this path.
+    # Larger than the random problems above, so the working set grows deep enough for the
+    # factorization to be rebuilt by many updates rather than a handful.
     rng = MersenneTwister(77)
     for _ in 1:25
         n, m = rand(rng, 18:40), rand(rng, 30:70)
-        @test min(n, m) + 1 >= PureDAQP.PACKED_KMIN
         Q = qr(randn(rng, n, n)).Q
         H = Matrix(Symmetric(Q * Diagonal(exp10.(range(0, 2; length = n))) * Q'))
         f = randn(rng, n)
@@ -175,17 +173,17 @@ end
     using PureDAQP, LinearAlgebra, Random
 
     #=
-    `M = A R⁻¹` here is conditioned past what the working set's Gram matrix can carry, so a
-    pivot of its `LDLᵀ` collapses from rounding and the step along the resulting direction
-    finds nothing to block it. Taken at face value that is a proof of infeasibility — a
-    claim about the problem, from a factorization that had stopped being trustworthy. The
-    problem is feasible: `x0` below satisfies every row with room to spare.
+    `cond(A R⁻¹)` reaches about 1e17 here. A working set held as the `LDLᵀ` of `Mₐ Mₐᵀ`
+    squares that, so its pivots collapse from rounding alone and the step along the
+    resulting direction finds nothing to block it — which, taken at face value, is a proof
+    of infeasibility drawn from a factorization that had stopped being trustworthy. Held as
+    the `QR` of `Mₐᵀ` the conditioning enters once rather than twice, and the rank decision
+    is made on `|R_ii|` rather than on a difference of squares, so the working set stays
+    sound and the problem is solved rather than given up on.
 
-    What the size of the residual cannot settle, the certificate itself can. Measured, a
-    genuinely infeasible problem with an ill-conditioned `P` produces a *larger* `‖Mₐᵀp‖`
-    (about 5e-4) than this case does (3e-5), so no threshold on it separates them. The
-    direction written back to the caller's rows either separates `[l, u]` or it does not,
-    and here it does not.
+    The claim under test is the weaker one either representation must meet: the problem is
+    feasible, `x0` satisfies every row with room to spare, and it must never be reported
+    infeasible.
     =#
     rng = MersenneTwister(5)
     n, m = 30, 200
@@ -206,9 +204,20 @@ end
 
     sol = solve(P, q, A, l, u, ActiveSet())
     @test sol.status != PRIMAL_INFEASIBLE
-    # It cannot solve this either; what it must not do is claim the problem has no solution.
-    @test sol.status == NUMERICAL_ERROR
-    @test all(isnan, sol.x)
+    @test sol.status == SOLVED
+    # Feasible in the caller's own rows, with room to spare inside the unit band the bounds
+    # leave, and stationary there: `P x + Aᵀy + q` vanishes. Both are measured against the
+    # data as given, not against the reduction.
+    r = A * sol.x
+    @test maximum(max.(r .- u, l .- r)) < 1.0e-6
+    @test sol.prim_res < 1.0e-6
+    @test sol.dual_res < 1.0e-8
+    # `‖x‖` reaches about 1e6, which is the problem and not a symptom: the smallest
+    # eigenvalue of `P` is 1e-8 and the smallest singular value of `A` is 1e-14, so the
+    # objective keeps falling along directions the rows barely constrain. It lands far below
+    # the feasible point the fixture was built around.
+    obj(x) = 0.5 * x' * P * x + q' * x
+    @test obj(sol.x) < obj(x0)
 end
 
 @testitem "a genuinely infeasible problem is still reported infeasible" begin
@@ -241,4 +250,57 @@ end
     @test sol.status == SOLVED
     r = A * sol.x
     @test maximum(max.(r .- u, l .- r)) < 1.0e-9
+end
+
+@testitem "a warm start does not drift on a degenerate problem" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, Random, Statistics
+
+    # Constraints that are exact combinations of others make a singular working set the
+    # normal case rather than the exception, and a warm start carries the factorization from
+    # one solve to the next, so an error in it compounds over a run. Each warm answer is
+    # checked against a cold solve of the same data.
+    #
+    # The shape is taken from darnstrom/daqp's 13_warm_start_drift.
+    n, mi, md, solves = 30, 60, 40, 300
+    rng = MersenneTwister(1)
+    H = Matrix(Diagonal(2 .+ rand(rng, n)))
+    for i in 1:n, j in 1:(i - 1)
+        v = 0.3 * randn(rng) / n
+        H[i, j] += v
+        H[j, i] += v
+    end
+    Ai = randn(rng, mi, n)
+    C = zeros(md, mi)
+    for d in 1:md, _ in 1:3
+        C[d, rand(rng, 1:mi)] += randn(rng)
+    end
+    A = vcat(Matrix(1.0I, n, n), Ai, C * Ai)
+    m = size(A, 1)
+    f0 = 20 .* randn(rng, n)
+    bnd = 0.2 .* rand(rng, mi)
+    bu0 = vcat(ones(n), bnd, [0.3 * sum(abs.(C[d, :]) .* bnd) for d in 1:md])
+    l = vcat(-bu0[1:n], fill(-Inf, m - n))
+
+    perturbed() = (
+        f0 .* (1 .+ 0.3 .* randn(rng, n)),
+        vcat(bu0[1:n], bu0[(n + 1):end] .* (1 .+ 0.05 .* randn(rng, m - n))),
+    )
+
+    alg = ActiveSet()
+    q, u = perturbed()
+    ws = PureDAQP.setup(H, q, A, l, u, alg; max_iter = 20_000)
+    @test PureQPBase.solve!(ws).status == SOLVED
+
+    for _ in 1:solves
+        q, u = perturbed()
+        PureQPBase.update!(ws; q, l, u)
+        warm = PureQPBase.solve!(ws)
+        cold = solve(H, q, A, l, u, alg; max_iter = 20_000)
+        @test warm.status == SOLVED
+        @test cold.status == SOLVED
+        # The working set carried between solves must not move the answer.
+        @test maximum(abs, warm.x .- cold.x) < 1.0e-6
+        r = A * warm.x
+        @test maximum(max.(r .- u, l .- r)) < 1.0e-8
+    end
 end
