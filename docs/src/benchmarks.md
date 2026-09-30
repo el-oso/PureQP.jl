@@ -157,21 +157,27 @@ are in `PureOSQP/bench/results/solvers.json`.
 
 | n | m | PureOSQP | libosqp 1.0 | PureDAQP | DAQP | PureIPM | Clarabel |
 |---|---|---|---|---|---|---|---|
-| 10 | 20 | 0.099 ms | 0.164 ms | 0.0043 ms | **0.0034 ms** | 0.067 ms | 0.127 ms |
-| 25 | 50 | 0.169 ms | 0.538 ms | **0.032 ms** | 0.035 ms | 0.306 ms | 0.641 ms |
-| 50 | 100 | 0.500 ms | 2.13 ms | **0.145 ms** | 0.207 ms | 1.16 ms | 2.88 ms |
-| 100 | 200 | 4.74 ms | 35.9 ms | **0.886 ms** | 1.88 ms | 5.15 ms | 17.1 ms |
-| 200 | 400 | 8.17 ms | 76.1 ms | **6.42 ms** | 16.1 ms | 29.5 ms | 112 ms |
-| 100 | 50 | 0.299 ms | 1.04 ms | **0.113 ms** | 0.360 ms | 1.09 ms | 6.07 ms |
+| 10 | 20 | 0.089 ms | 0.163 ms | 0.008 ms | **0.003 ms** | 0.066 ms | 0.121 ms |
+| 25 | 50 | 0.163 ms | 0.532 ms | 0.043 ms | **0.035 ms** | 0.296 ms | 0.631 ms |
+| 50 | 100 | 0.487 ms | 2.13 ms | **0.162 ms** | 0.207 ms | 1.14 ms | 2.87 ms |
+| 100 | 200 | 4.51 ms | 34.9 ms | **1.20 ms** | 1.87 ms | 5.06 ms | 17.0 ms |
+| 200 | 400 | 8.18 ms | 76.3 ms | **11.6 ms** | 16.0 ms | 28.9 ms | 108 ms |
+| 100 | 50 | 0.297 ms | 1.03 ms | **0.147 ms** | 0.356 ms | 1.08 ms | 6.02 ms |
 
 libosqp and Clarabel read sparse matrices, so each is timed from sparse copies built
 beforehand. Both DAQP implementations read dense ones, which is what they are built for.
 
 **An active-set method wins this shape.** These are dense problems with few rows active at
 the solution, which is what an active-set method is for: a few expensive steps, then it stops
-at the exact vertex. PureDAQP is the fastest solver here at every size from `n = 25` up, and
-beats the C implementation it follows by 1.11× to 3.19×, the margin widening with size. PureIPM
-beats Clarabel at every size, by 1.9× to 5.6×.
+at the exact vertex. PureDAQP is the fastest solver here from `n = 50` up and beats the C
+implementation it follows by 1.28× to 2.42×; below that the fixed cost of a solve dominates a
+run of a dozen iterations and DAQP's is smaller. PureIPM beats Clarabel at every size, by
+1.9× to 5.6×.
+
+These are the figures for the default `working_set = :qr`, which trades 1.2×–1.5× for a rank
+test that holds on an ill-conditioned reduction; `:gram` is the faster setting and the
+section on [choosing a working set](#Choosing-a-working-set-for-the-active-set-method) gives
+both and says when each is right.
 
 For repeated small solves, [`setup`](@ref) with [`update!`](@ref) and [`solve!`](@ref) pays
 the fixed cost once and warm starts from the previous working set, which is a different
@@ -184,6 +190,54 @@ only one of the three that takes an operator it can only multiply by.
 The six solutions agree to about `1e-4`, which is expected at `eps_abs = eps_rel = 1e-6`.
 The active-set and interior-point solvers stop at exact optimality conditions; ADMM stops when
 its residuals fall below the tolerance.
+
+## Choosing a working set for the active-set method
+
+[`ActiveSet`](@ref) keeps its working set in one of two forms, chosen with
+`working_set`. `:qr` factors the active rows themselves and decides dependence on `|R_ii|`;
+`:gram` factors their Gram matrix `Mₐ Mₐᵀ` and decides it on a pivot of the `LDLᵀ`. Reproduce
+with `julia --project=bench bench/working_set_choice.jl`; samples are in
+`bench/results/working_set_choice.json`. Single-threaded BLAS.
+
+**Well conditioned: `:gram` is faster, and the paths are identical.**
+
+| n | m | `:gram` | `:qr` | iterations | `:qr` cost |
+|---|---|---|---|---|---|
+| 25 | 50 | 0.039 ms | 0.057 ms | 47 / 47 | 1.48× |
+| 50 | 100 | 0.189 ms | 0.233 ms | 99 / 99 | 1.23× |
+| 100 | 200 | 1.048 ms | 1.236 ms | 214 / 214 | 1.18× |
+| 200 | 400 | 9.631 ms | 12.028 ms | 817 / 817 | 1.25× |
+
+The iteration counts are equal row for row here, so on these problems the whole difference is
+what one iteration costs. A row entering the Gram form is one rank-one extension against the
+`k` values already held; entering the `QR` means orthogonalizing the row against every row
+held, and a row leaving means a sweep of rotations over the factor. The counts are not
+guaranteed to match — the pivots differ in their last digits, so a row priced at the
+tolerance can enter one and not the other — but the answers agree.
+
+**Ill conditioned: `:gram` cannot decide rank, and stops.**
+
+| case | `:gram` | `:qr` |
+|---|---|---|
+| `cond(A R⁻¹) ≈ 1e17`, 30 variables, 200 rows | `NUMERICAL_ERROR` | `SOLVED`, violation 1.2e-06 |
+
+The Gram matrix has the condition number of `Mₐ` squared, and the pivot that decides
+dependence is formed by cancellation, so below roughly `sqrt(k·eps)` it cannot separate a
+dependent row from an independent one. The problem here is feasible and `:qr` solves it.
+
+**What does not separate them: rows that are exact combinations of others.**
+
+| case | `:gram` | `:qr` |
+|---|---|---|
+| 40 of 130 rows are combinations of the rest | `SOLVED`, violation 1.7e-13 | `SOLVED`, violation 7.4e-14 |
+
+A dependent row is not the same difficulty as an ill-conditioned one. Both forms carry the
+dependent row and walk the direction it opens; they differ only in whether they can *see* a
+dependency that rounding has blurred.
+
+So: `:qr` is the default because a wrong infeasibility claim is worse than a slower solve, and
+nothing about a problem announces in advance that its reduction is well conditioned. Choose
+`:gram` when you have measured that yours are, and the 1.2×–1.5× matters.
 
 ## Choosing a representation
 

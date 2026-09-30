@@ -56,6 +56,36 @@ end
 @inline nactive(W::WorkingSetQR) = W.qr.n
 
 """
+The most rows this representation can hold.
+
+The factored matrix is `n × k` and the factorization requires more rows than columns, so this
+is `n`. A working set that reaches it has one row per variable and spans the whole space;
+[`full_set_step!`](@ref) is what the method does with a row that wants in after that.
+"""
+@inline maxrows(W::WorkingSetQR) = W.qr.m
+
+"""
+    conditioning(W) -> T
+
+An estimate of `cond(Mₐ)`, or zero when the working set gives none.
+
+The ratio of the largest and smallest diagonal entries of `R` bounds it, and those entries
+are the norms of each row orthogonal to the ones before it.
+"""
+function conditioning(W::WorkingSetQR{T}) where {T}
+    R = W.qr.R
+    rmin = typemax(T)
+    rmax = zero(T)
+    @inbounds for i in 1:W.qr.n
+        r = abs(R[i, i])
+        r > zero(T) || continue
+        rmin = min(rmin, r)
+        rmax = max(rmax, r)
+    end
+    return (rmax > zero(T) && rmin < typemax(T)) ? rmax / rmin : zero(T)
+end
+
+"""
     add_row!(W, m_r) -> Bool
 
 Append `m_r` to the working set, reporting whether it went in.

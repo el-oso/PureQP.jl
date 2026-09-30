@@ -56,6 +56,7 @@ export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURA
 # exist before the methods that name it.
 include("settings.jl")
 include("qrset.jl")
+include("ldl.jl")
 include("ldp.jl")
 include("workspace.jl")
 include("solution.jl")

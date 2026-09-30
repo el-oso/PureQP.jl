@@ -304,3 +304,37 @@ end
         @test maximum(max.(r .- u, l .- r)) < 1.0e-8
     end
 end
+
+@testitem "both working sets reach the same answer where both can" begin
+    using PureDAQP, LinearAlgebra, Random
+
+    # The two representations answer the same questions, so on a problem neither has trouble
+    # with they must reach the same answer. Not necessarily by the same route: the pivots
+    # differ in their last digits, so a row priced at the tolerance can enter in one and not
+    # the other, and the iteration counts then differ by a step or two.
+    rng = MersenneTwister(404)
+    for _ in 1:20
+        n, m = rand(rng, 3:14), rand(rng, 4:20)
+        G = randn(rng, n, n)
+        P = Matrix(Symmetric(G' * G + n * I))
+        q = randn(rng, n)
+        A = randn(rng, m, n)
+        b = A * randn(rng, n)
+        l = b .- rand(rng, m)
+        u = b .+ rand(rng, m)
+        sq = solve(P, q, A, l, u, ActiveSet(; working_set = :qr); max_iter = 50_000)
+        sg = solve(P, q, A, l, u, ActiveSet(; working_set = :gram); max_iter = 50_000)
+        @test sq.status == SOLVED
+        @test sg.status == SOLVED
+        @test sq.obj_val ≈ sg.obj_val atol = 1.0e-9
+        @test sq.x ≈ sg.x atol = 1.0e-7
+    end
+end
+
+@testitem "the Gram working set is refused an unknown name" begin
+    using PureDAQP
+
+    @test_throws "working_set must be :qr or :gram" ActiveSet(; working_set = :ldl)
+    @test ActiveSet().working_set === :qr
+    @test ActiveSet(; working_set = :gram).working_set === :gram
+end

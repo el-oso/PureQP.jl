@@ -136,7 +136,7 @@ function setup_backend(
     red = reduce_qp(
         convert(Matrix{T}, P), convert(Matrix{T}, A),
         convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
-        iseq; eps_prox = resolved.eps_prox
+        iseq; eps_prox = resolved.eps_prox, working_set = resolved.working_set
     )
 
     # The reported point is these arrays, not copies of them, so the solution the workspace
@@ -319,7 +319,8 @@ function update!(
         ws.red = reduce_qp(
             convert(Matrix{T}, data.P), convert(Matrix{T}, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
-            iseq; eps_prox = ws.algorithm.eps_prox
+            iseq; eps_prox = ws.algorithm.eps_prox,
+            working_set = ws.algorithm.working_set
         )
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)

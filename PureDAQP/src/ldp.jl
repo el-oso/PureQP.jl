@@ -21,7 +21,7 @@ of an iteration.
 """
 # Immutable: nothing here is ever rebound. Every field is a buffer written through, and the
 # live size lives in `F.k`, which is why that one stays in a mutable struct of its own.
-struct LDPWorkspace{T <: Real}
+struct LDPWorkspace{T <: Real, WS}
     # Stored transposed, `n × m`: every kernel here reads one *row* of `M`, which as a
     # column of `Mt` is contiguous. Held the other way round each read is strided, BLAS
     # drops to its scalar path, and every element costs a cache line.
@@ -42,11 +42,11 @@ struct LDPWorkspace{T <: Real}
     u::Vector{T}     # primal point of the least-distance problem, Mₐᵀμ
     g::Vector{T}     # scratch: products against the active rows
     Mv::Vector{T}    # scratch: M * v
-    # The working set, as the `QR` of its rows. `Q` holds them orthonormalized in working-set
-    # order, so a product against the working set is one matrix-vector call rather than one
-    # short BLAS call per row, and the dependency test reads `|R_ii|`, which carries the
-    # conditioning of the rows once rather than twice. `qrset.jl` says why that matters.
-    W::WorkingSetQR{T}
+    # The working set. Two representations answer the same questions at different cost and
+    # accuracy -- `WorkingSetQR` factors the rows themselves, `WorkingSetGram` their Gram
+    # matrix -- and the caller chooses between them. Concrete once instantiated, so neither
+    # costs a dispatch in the loop. `qrset.jl` and `ldl.jl` say what the choice buys.
+    W::WS
     price::Vector{T} # scratch: M * u, every row at once
     # The norm each row of `M` was divided by. Pricing multiplies it back, so a row is
     # compared against the tolerance in the units the caller stated its bounds in.
@@ -56,16 +56,32 @@ struct LDPWorkspace{T <: Real}
     xold::Vector{T}  # proximal centre of the previous pass
 end
 
-function LDPWorkspace(Mt::Matrix{T}, iseq::AbstractVector{Bool}, scale::Vector{T}) where {T <: Real}
+function LDPWorkspace(
+        Mt::Matrix{T}, iseq::AbstractVector{Bool}, scale::Vector{T}, W
+    ) where {T <: Real}
     n, m = size(Mt)
     kmax = min(m, n) + 1
-    return LDPWorkspace{T}(
+    return LDPWorkspace{T, typeof(W)}(
         Mt, zeros(T, m), zeros(T, m), convert(Vector{Bool}, iseq), zeros(Int8, m),
         zeros(Int, kmax), zeros(Int, m), zeros(T, kmax), zeros(T, kmax), zeros(T, kmax),
         zeros(T, n), zeros(T, kmax), zeros(T, m),
-        WorkingSetQR{T}(n, kmax), zeros(T, m), scale,
+        W, zeros(T, m), scale,
         zeros(T, n), zeros(T, n), zeros(T, n)
     )
+end
+
+"""
+    build_working_set(kind, T, n, kmax)
+
+The working set `kind` names, over `n` variables and at most `kmax` rows.
+
+`:qr` factors the rows themselves and `:gram` their Gram matrix; the two answer the same
+questions, at different cost and different accuracy.
+"""
+function build_working_set(kind::Symbol, ::Type{T}, n::Integer, kmax::Integer) where {T <: Real}
+    kind === :qr && return WorkingSetQR{T}(n, kmax)
+    kind === :gram && return WorkingSetGram{T}(n, kmax)
+    return throw(ArgumentError(lazy"working_set must be :qr or :gram, got :$kind"))
 end
 
 
@@ -196,7 +212,9 @@ space of the rows held *together with* `r`, so it is only the pair of moves that
 `Mₐᵀμ` still. Moving the stored multipliers while discarding `r`'s own would shift the dual
 point by `alpha * m_r`, and the run stops converging.
 """
-function full_set_step!(ws::LDPWorkspace{T}, r::Integer, side::Int8, zero_tol::T) where {T}
+function full_set_step!(
+        ws::LDPWorkspace{T, <:WorkingSetQR}, r::Integer, side::Int8, zero_tol::T
+    ) where {T}
     k = nactive(ws.W)
     p = view(ws.p, 1:k)
     # `ldiv!` reads its right-hand side without writing to it, so the row of `M` is safe to
@@ -217,6 +235,13 @@ function full_set_step!(ws::LDPWorkspace{T}, r::Integer, side::Int8, zero_tol::T
     ws.mu[nactive(ws.W)] = side == SIDE_UPPER ? -alpha : alpha
     return true
 end
+
+# The Gram representation has room for the dependent row, so the case above does not arise
+# for it: `maxrows` counts one more than there are variables, the row goes in at a zero
+# pivot, and `first_dependent` picks it up on the next pass through the loop.
+full_set_step!(
+    ws::LDPWorkspace{T, <:WorkingSetGram}, r::Integer, side::Int8, ::T
+) where {T} = (activate!(ws, r, side); true)
 
 """
     singular_step!(ws, singular, zero_tol) -> Bool
@@ -279,17 +304,8 @@ the row it drops re-enters on the next pass.
 function multiplier_noise(ws::LDPWorkspace{T}, mus) where {T}
     k = nactive(ws.W)
     k > 0 || return zero(T)
-    R = ws.W.qr.R
-    rmin = typemax(T)
-    rmax = zero(T)
-    @inbounds for i in 1:k
-        r = abs(R[i, i])
-        r > zero(T) || continue
-        rmin = min(rmin, r)
-        rmax = max(rmax, r)
-    end
-    (rmax > zero(T) && rmin < typemax(T)) || return zero(T)
-    ratio = rmax / rmin
+    ratio = conditioning(ws.W)
+    ratio > zero(T) || return zero(T)
     return 10 * k * eps(T) * ratio * ratio * maximum(abs, mus)
 end
 
@@ -392,7 +408,7 @@ a signature `test_signatures` can state.
 """
 function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where {T}
     zero_tol, primal_tol = alg.zero_tol, alg.primal_tol
-    nvar, m = size(ws.Mt)
+    m = size(ws.Mt, 2)
     bland_after = 4 * (m + 1)
     # The pricing window, and the row it starts at. An eighth of the rows is wide enough that
     # a violated row is usually in it and narrow enough to be worth the narrowing; the floor
@@ -439,7 +455,7 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
             iszero(entering) && return (LDP_OPTIMAL, iter)
         end
         scan = entering == m ? 1 : entering + 1
-        if nactive(ws.W) == nvar
+        if nactive(ws.W) == maxrows(ws.W)
             # The set already spans every variable, so the entering row is dependent by
             # counting and is stepped toward rather than added. A row drops, and pricing
             # reaches this row again with room to hold it.
@@ -460,7 +476,7 @@ with the caller's bounds in the same scaling, and the working state.
 Only the targets change between proximal-point iterations, so `R`, `M` and the `LDLᵀ` of the
 working set are all reused.
 """
-struct DAQPReduction{T <: Real, F <: Cholesky, FT}
+struct DAQPReduction{T <: Real, F <: Cholesky, FT, WS}
     R::F
     # `transpose(R.U)`, kept rather than formed per pass. It solves against the stored
     # triangle without copying it, but the wrapper itself is a heap allocation on Julia 1.13,
@@ -469,7 +485,7 @@ struct DAQPReduction{T <: Real, F <: Cholesky, FT}
     bu::Vector{T}     # the caller's bounds, divided by the row norms
     bl::Vector{T}
     eps_prox::T
-    ws::LDPWorkspace{T}
+    ws::LDPWorkspace{T, WS}
     scale::Vector{T}  # the row norm each row was divided by
 end
 
@@ -485,7 +501,7 @@ extreme case.
 function reduce_qp(
         H::AbstractMatrix{T}, A::AbstractMatrix{T},
         bupper::AbstractVector{T}, blower::AbstractVector{T},
-        iseq::AbstractVector{Bool}; eps_prox::T = zero(T)
+        iseq::AbstractVector{Bool}; eps_prox::T = zero(T), working_set::Symbol = :qr
     ) where {T <: Real}
     n = size(H, 1)
     m = size(A, 1)
@@ -508,7 +524,7 @@ function reduce_qp(
         copyto!(Mr, A)
         rmul!(Mr, one(T) / s)
         R = Cholesky(Matrix{T}(s * I, n, n), 'U', 0)
-        return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m)
+        return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m, working_set)
     end
     # Symmetrize into one buffer. `(H + H') / 2` reads pleasantly and allocates four
     # matrices to produce one, which is most of what a small solve costs.
@@ -543,7 +559,7 @@ function reduce_qp(
     Mr = Matrix{T}(undef, m, n)
     copyto!(Mr, A)
     rdiv!(Mr, R.U)
-    return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m)
+    return finish_reduction(R, Mr, bupper, blower, iseq, eps_prox, n, m, working_set)
 end
 
 """
@@ -576,7 +592,7 @@ the same thing on every row however that row happened to be scaled.
 """
 function finish_reduction(
         R, Mr::Matrix{T}, bupper::AbstractVector{T}, blower::AbstractVector{T},
-        iseq::AbstractVector{Bool}, eps_prox::T, n::Int, m::Int
+        iseq::AbstractVector{Bool}, eps_prox::T, n::Int, m::Int, kind::Symbol
     ) where {T}
     # The rows are written out to `Mt` in the layout the loop reads, so the transpose costs no
     # pass of its own.
@@ -605,9 +621,11 @@ function finish_reduction(
         bl[j] = blower[j] / s
     end
 
-    ws = LDPWorkspace(Mt, iseq, scale)
+    ws = LDPWorkspace(Mt, iseq, scale, build_working_set(kind, T, n, min(m, n) + 1))
     Rt = transpose(R.U)
-    return DAQPReduction{T, typeof(R), typeof(Rt)}(R, Rt, bu, bl, eps_prox, ws, scale)
+    return DAQPReduction{T, typeof(R), typeof(Rt), typeof(ws.W)}(
+        R, Rt, bu, bl, eps_prox, ws, scale
+    )
 end
 
 """
