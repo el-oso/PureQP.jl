@@ -205,3 +205,36 @@ end
         @test test_signatures(signatures; guarantees = (:noalloc, :trim_compatible)) isa Vector
     end
 end
+
+@testitem "both triangular solves of every Cholesky factor allocate nothing and trim, proved" begin
+    using PureQPBase, StrictMode, StrictModeTest, TypeContracts, LinearAlgebra, Random
+    StrictMode.assert_enabled()
+    Random.seed!(5)
+    spd(T, k) = (S = randn(T, k, k); Matrix(Symmetric(S'S / k + I)))
+
+    for T in (Float64, Float32)
+        cases = Any[
+            spd(T, 6),
+            Matrix{T}(2I, 6, 6),
+            Diagonal(rand(T, 6) .+ T(0.5)),
+            PureQPBase.BlockDiagonal([spd(T, 3), spd(T, 2), spd(T, 1)]),
+            PureQPBase.KroneckerOperator(spd(T, 4), spd(T, 3)),
+        ]
+        for P in cases
+            R = PureQPBase.cholesky_factor(P, zero(T))
+            # `transpose(R)` is formed once and held, as a consumer that solves in a loop does.
+            Rt = transpose(R)
+            v = randn(T, size(P, 1))
+            @test TypeContracts.check_contract(typeof(R), PureQPBase.CholeskyFactor).passed
+            ldiv!(R, v)
+            ldiv!(Rt, v)
+            @test (@allocated ldiv!(R, v)) == 0
+            @test (@allocated ldiv!(Rt, v)) == 0
+            V = typeof(v)
+            @test test_signatures(
+                [(ldiv!, (typeof(R), V)), (ldiv!, (typeof(Rt), V))];
+                guarantees = (:typestable, :noalloc, :trim_compatible)
+            ) isa Vector
+        end
+    end
+end

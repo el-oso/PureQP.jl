@@ -1,0 +1,273 @@
+# The matrices `cholesky_factor` factors densely, into an `UpperTriangular{T, Matrix{T}}`.
+const DenseFactorable = Union{StridedMatrix, Symmetric{<:Any, <:StridedMatrix}}
+
+"""
+    has_cholesky_factor(P) -> Bool
+
+Whether [`cholesky_factor`](@ref) can factor `P` in `P`'s own form, without forming `P`.
+
+`true` for a strided matrix, a `Symmetric` of one, a `Diagonal`, a [`BlockDiagonal`](@ref) of
+those, and a [`KroneckerOperator`](@ref) of strided factors. `false` for a
+[`ProductOperator`](@ref), whose entries are unavailable and which a factorization cannot
+reach through products, and `false` for every other matrix.
+
+Split from the factorization because an `R` that is `nothing` when `P` cannot be factored is a
+union that `--trim` refuses to resolve; a caller asks this first and then calls
+[`cholesky_factor`](@ref), whose return type is concrete.
+"""
+has_cholesky_factor(::Any) = false
+has_cholesky_factor(::DenseFactorable) = true
+has_cholesky_factor(::Diagonal) = true
+# By value: blocks of mixed types collect into a `Vector` of their common supertype.
+has_cholesky_factor(P::BlockDiagonal) = all(B -> B isa DenseFactorable, P.blocks)
+has_cholesky_factor(::KroneckerOperator{<:Any, <:StridedMatrix}) = true
+has_cholesky_factor(::ProductOperator) = false
+
+"""
+    CholeskyFactor
+
+The contract of the `R` that [`cholesky_factor`](@ref) returns, which is not a subtype of this
+type: an `UpperTriangular` and a `Diagonal` are `R`s too. `TypeContracts.check_contract(typeof(R),
+CholeskyFactor)` checks one against it.
+
+An `R` is a square matrix with `RᵀR = P + shift*I` and answers two in-place solves on a vector:
+
+  - `ldiv!(R, v)` overwrites `v` with `R⁻¹v`;
+  - `ldiv!(Rt, v)`, with `Rt = transpose(R)`, overwrites `v` with `R⁻ᵀv`.
+
+Both allocate nothing on a `Vector` of `R`'s element type. The wrapper `transpose(R)` is
+itself a heap allocation on Julia 1.13 for some `R`, so a caller that solves in a loop forms
+it once and holds it. Some `R` keep scratch that `ldiv!` overwrites, so one `R` is not safe to
+solve with from two tasks at once.
+"""
+abstract type CholeskyFactor end
+
+@strict_contract CholeskyFactor begin
+    Base.size(::Self)::Tuple{Int, Int} => "the size of `P`"
+    LinearAlgebra.ldiv!(::Self, ::AbstractVector) => "overwrite the vector with `R⁻¹v`, in place"
+end
+
+"""
+    cholesky_factor(P, shift) -> R
+
+The upper Cholesky factor of `P + shift*I`, in `P`'s own form, so that `RᵀR = P + shift*I`;
+the contract `R` meets is [`CholeskyFactor`](@ref). Defined where [`has_cholesky_factor`](@ref)
+holds. Nothing the size of `P` is formed unless `P` is dense.
+
+| `P` | `R` |
+|---|---|
+| strided matrix, `Symmetric` of one | `UpperTriangular{T, Matrix{T}}`, from a symmetrized, shifted copy |
+| `Diagonal` | `Diagonal(sqrt.(d .+ shift))` |
+| `BlockDiagonal` | a `BlockDiagonal` of the blocks' factors |
+| `KroneckerOperator` | a [`KroneckerCholesky`](@ref), `R₁ ⊗ R₂`; requires `shift = 0` |
+
+A dense `P` equal to `μI` yields `√(μ + shift) I` without a factorization.
+
+Throws an `ArgumentError` naming the remedy when `P + shift*I` is not positive definite, and
+for a `KroneckerOperator` when `shift ≠ 0`: `P₁ ⊗ P₂ + εI` is not a Kronecker product, so it
+has no Kronecker factor.
+"""
+function cholesky_factor end
+
+function cholesky_factor(H::DenseFactorable, shift)
+    T = eltype(H)
+    n = LinearAlgebra.checksquare(H)
+    eps = convert(T, shift)
+    # `H = μI` has the Cholesky factor `√μ I`, so a reduction `A R⁻¹` against it is a scaling
+    # rather than a triangular solve. The test stops at the first entry that disqualifies
+    # `H`, which for a dense `H` is the first off-diagonal one.
+    mu = scalar_diagonal(H)
+    if !isnothing(mu)
+        mu + eps > 0 || throw(not_positive_definite(eps))
+        return UpperTriangular(Matrix{T}(sqrt(mu + eps) * I, n, n))
+    end
+    # Symmetrize into one buffer. `(H + H') / 2` reads pleasantly and allocates four
+    # matrices to produce one.
+    Hs = Matrix{T}(undef, n, n)
+    for j in 1:n, i in 1:n
+        Hs[i, j] = (H[i, j] + H[j, i]) / 2
+    end
+    if !iszero(eps)
+        for i in 1:n
+            Hs[i, i] += eps
+        end
+    end
+    # `check = false` so an indefinite `H` is a value to test rather than an exception to
+    # catch.
+    F = cholesky!(Symmetric(Hs), NoPivot(); check = false)
+    issuccess(F) || throw(not_positive_definite(eps))
+    return UpperTriangular(F.factors)
+end
+
+function not_positive_definite(eps)
+    return ArgumentError(
+        iszero(eps) ?
+            "P is not positive definite, which ActiveSet() needs when eps_prox = 0, " *
+            "because the reduction factors it. Pass eps_prox > 0 to run proximal-point " *
+            "iterations instead, which accept a positive semidefinite P." :
+            "P + eps_prox*I is not positive definite, so P is not positive semidefinite " *
+            "and the problem is not convex."
+    )
+end
+
+"""
+    scalar_diagonal(H) -> μ or nothing
+
+`μ` when `H` is `μI`, and `nothing` otherwise. Stops at the first entry that rules it out, so
+a dense `H` costs one comparison rather than a pass over the matrix.
+"""
+function scalar_diagonal(H::AbstractMatrix)
+    n = size(H, 1)
+    (n == size(H, 2) && n > 0) || return nothing
+    mu = H[1, 1]
+    for j in 1:n, i in 1:n
+        if i == j
+            H[i, j] == mu || return nothing
+        else
+            iszero(H[i, j]) || return nothing
+        end
+    end
+    return mu
+end
+
+function cholesky_factor(P::Diagonal, shift)
+    T = eltype(P)
+    d = P.diag .+ convert(T, shift)
+    all(>(zero(T)), d) || throw(not_positive_definite(shift))
+    return Diagonal(sqrt.(d))
+end
+
+function cholesky_factor(P::BlockDiagonal, shift)
+    return BlockDiagonal(map(B -> cholesky_factor(B, shift), P.blocks))
+end
+
+# Block by block, each against its own run of `v`. The views are not escaping, so they cost
+# nothing.
+function LinearAlgebra.ldiv!(R::BlockDiagonal{<:Any, <:UpperTriangular}, v::AbstractVector)
+    check_solve_operand(R, v)
+    for b in 1:nblocks(R)
+        ldiv!(R.blocks[b], view(v, colrange(R, b)))
+    end
+    return v
+end
+
+function LinearAlgebra.ldiv!(
+        Rt::Transpose{<:Any, <:BlockDiagonal{<:Any, <:UpperTriangular}}, v::AbstractVector
+    )
+    R = parent(Rt)
+    check_solve_operand(R, v)
+    for b in 1:nblocks(R)
+        ldiv!(transpose(R.blocks[b]), view(v, colrange(R, b)))
+    end
+    return v
+end
+
+"""
+    KroneckerCholesky{T} <: AbstractMatrix{T}
+
+The Cholesky factor `R₁ ⊗ R₂` of `P₁ ⊗ P₂`, stored as the two factors `R₁ = chol(P₁)` and
+`R₂ = chol(P₂)` (both `UpperTriangular`) and never as the `n₁n₂ × n₁n₂` product.
+`(R₁ ⊗ R₂)ᵀ(R₁ ⊗ R₂) = R₁ᵀR₁ ⊗ R₂ᵀR₂ = P₁ ⊗ P₂`, and the Kronecker product of two upper
+triangular matrices is upper triangular.
+
+With `vec` column-major and `X` the `n₂×n₁` matrix holding a vector `y`,
+
+    (R₁ ⊗ R₂)⁻¹ y = vec(R₂⁻¹ X R₁⁻ᵀ)        (R₁ ⊗ R₂)⁻ᵀ y = vec(R₂⁻ᵀ X R₁⁻¹)
+
+so each solve is one triangular solve from each side, `O(n₁n₂(n₁ + n₂))`, through an `n₂×n₁`
+scratch the factor owns. The scratch makes the factor unsafe to use from two tasks at once.
+Both solves allocate nothing on a `Vector`; see [`CholeskyFactor`](@ref) for holding
+`transpose(R)`.
+"""
+struct KroneckerCholesky{T <: Real} <: AbstractMatrix{T}
+    R1::UpperTriangular{T, Matrix{T}}
+    R2::UpperTriangular{T, Matrix{T}}
+    # The transposes are held rather than formed per solve: `transpose` of a triangular matrix
+    # allocates its wrappers on Julia 1.13. `transpose(U)` is a `LowerTriangular` over a
+    # `Transpose` of the storage, which is what the solves below dispatch on.
+    R1t::LowerTriangular{T, Transpose{T, Matrix{T}}}
+    R2t::LowerTriangular{T, Transpose{T, Matrix{T}}}
+    X::Matrix{T}
+
+    function KroneckerCholesky{T}(R1, R2) where {T}
+        U1 = convert(UpperTriangular{T, Matrix{T}}, R1)
+        U2 = convert(UpperTriangular{T, Matrix{T}}, R2)
+        return new{T}(
+            U1, U2, transpose(U1), transpose(U2),
+            Matrix{T}(undef, size(U2, 1), size(U1, 1)),
+        )
+    end
+end
+
+KroneckerCholesky(R1::AbstractMatrix{T}, R2::AbstractMatrix) where {T <: Real} =
+    KroneckerCholesky{T}(R1, R2)
+
+Base.size(R::KroneckerCholesky) = (n = size(R.R1, 1) * size(R.R2, 1); (n, n))
+
+# Same ordering as `KroneckerOperator`: the second factor runs fastest.
+function Base.getindex(R::KroneckerCholesky, i::Integer, j::Integer)
+    @boundscheck checkbounds(R, i, j)
+    n2 = size(R.R2, 1)
+    i1, i2 = divrem(i - 1, n2)
+    j1, j2 = divrem(j - 1, n2)
+    return R.R1[i1 + 1, j1 + 1] * R.R2[i2 + 1, j2 + 1]
+end
+
+# Copied through the factor's own scratch rather than reshaped in place: `reshape` of a vector
+# allocates an array header.
+function LinearAlgebra.ldiv!(R::KroneckerCholesky, v::AbstractVector)
+    check_solve_operand(R, v)
+    copyto!(R.X, v)
+    ldiv!(R.R2, R.X)
+    rdiv!(R.X, R.R1t)
+    copyto!(v, R.X)
+    return v
+end
+
+function LinearAlgebra.ldiv!(Rt::Transpose{<:Any, <:KroneckerCholesky}, v::AbstractVector)
+    R = parent(Rt)
+    check_solve_operand(R, v)
+    copyto!(R.X, v)
+    ldiv!(R.R2t, R.X)
+    rdiv!(R.X, R.R1)
+    copyto!(v, R.X)
+    return v
+end
+
+# `copyto!` between arrays of different length copies the shorter prefix without complaint.
+function check_solve_operand(R::AbstractMatrix, v::AbstractVector)
+    Base.require_one_based_indexing(v)
+    length(v) == size(R, 1) ||
+        throw(DimensionMismatch(lazy"v has length $(length(v)), R has $(size(R, 1)) rows"))
+    return nothing
+end
+
+function cholesky_factor(K::KroneckerOperator, shift)
+    iszero(shift) || throw(
+        ArgumentError(
+            "a Kronecker P has no Kronecker Cholesky factor once a shift is added: " *
+                "P1 ⊗ P2 + εI is not a Kronecker product. Pass eps_prox = 0, or pass P as a " *
+                "Matrix to factor it densely."
+        )
+    )
+    R1 = kronecker_factor(K.A1)
+    R2 = kronecker_factor(K.A2)
+    return KroneckerCholesky(R1, R2)
+end
+
+# `P₁ ⊗ P₂` is also positive definite when both factors are negative definite, which no
+# factor-wise Cholesky reaches.
+function kronecker_factor(A)
+    try
+        return cholesky_factor(A, zero(eltype(A)))
+    catch err
+        err isa ArgumentError || rethrow()
+        throw(
+            ArgumentError(
+                "each factor of a Kronecker P must be positive definite for P to have a " *
+                    "Kronecker Cholesky factor, although P1 ⊗ P2 is also positive definite when both " *
+                    "factors are negative definite. Pass P as a Matrix to factor it densely."
+            )
+        )
+    end
+end

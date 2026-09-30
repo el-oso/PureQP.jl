@@ -30,6 +30,7 @@ include("linsys.jl")
 include("preconditioner.jl")
 include("operator.jl")
 include("rows.jl")
+include("cholesky.jl")
 include("lowrank.jl")
 include("block.jl")
 include("kronsolve.jl")
@@ -142,6 +143,33 @@ let
     end
 end
 
+# A consumer solves against `R` and `transpose(R)` in a loop, so both solves are checked for
+# every representation `cholesky_factor` returns, on a small instance. The transposed solve has
+# no slot in the `CholeskyFactor` contract, whose `Self` stands for the factor alone.
+#
+# The triangular solve of a dense `R`, which a block-diagonal `R` runs per block, is asserted
+# for `--trim` and not for allocation: the value-free scan reads the standard library's
+# `ldiv!` for a triangular matrix as allocating, while AllocCheck proves it does not.
+# `test/strictmode_tests.jl` proves both solves of every `R` with StrictModeTest.
+let
+    spd = [4.0 1.0 0.0; 1.0 3.0 0.5; 0.0 0.5 2.0]
+    for P in (
+            spd,
+            Diagonal([4.0, 3.0, 2.0]),
+            BlockDiagonal([spd, [2.0 0.5; 0.5 3.0]]),
+            KroneckerOperator(spd, [2.0 0.5; 0.5 3.0]),
+        )
+        R = cholesky_factor(P, 0.0)
+        Rt = transpose(R)
+        v = ones(size(P, 1))
+        scanned = !(P isa Union{Matrix, BlockDiagonal})
+        scanned && @assert_noalloc ldiv!(R, v)
+        @assert_trim_compatible ldiv!(R, v)
+        scanned && @assert_noalloc ldiv!(Rt, v)
+        @assert_trim_compatible ldiv!(Rt, v)
+    end
+end
+
 # Every `LinearSystem` and built-in preconditioner defined by the time this module finishes
 # must satisfy its contract and be `--trim` compatible, asserted here rather than type by
 # type: a per-type `@verify` is opt-in, so a new type acquires the guarantee only if whoever
@@ -151,5 +179,11 @@ end
 # by the packages that implement them, since this one defines no concrete subtype of either.
 @verify LinearSystem subtypes = true trim_compat = true
 @verify Preconditioner subtypes = true trim_compat = true
+
+# The factor types are not subtypes of `CholeskyFactor`, so each is checked against it by name.
+@verify UpperTriangular{Float64, Matrix{Float64}} for_contract = CholeskyFactor trim_compat = true
+@verify Diagonal{Float64, Vector{Float64}} for_contract = CholeskyFactor trim_compat = true
+@verify BlockDiagonal{Float64, UpperTriangular{Float64, Matrix{Float64}}} for_contract = CholeskyFactor trim_compat = true
+@verify KroneckerCholesky{Float64} for_contract = CholeskyFactor trim_compat = true
 
 end # module PureQPBase
