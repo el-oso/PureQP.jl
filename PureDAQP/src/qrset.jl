@@ -99,9 +99,14 @@ So `false` means the row is not finite, the one case `rtol = 0` still refuses. I
 state the method can continue from: the row would be recorded as active while the
 factorization did not take it, leaving the two disagreeing about how many rows are held, and a
 row so recorded is skipped by pricing and can never be reconsidered.
+
+`FixedCapacity()` is what makes this allocation-free: the factorization is built to the
+largest working set the problem admits, so growing it is a mistake rather than a step, and
+under this policy the reallocating path is absent from the compiled method instead of merely
+unreached. Exceeding the capacity throws, which [`maxrows`](@ref) is what keeps unreachable.
 """
 @inline add_row!(W::WorkingSetQR, m_r::AbstractVector) =
-    try_insert_column!(W.qr, W.qr.n + 1, m_r; rtol = 0)
+    try_insert_column!(W.qr, W.qr.n + 1, m_r; rtol = 0, capacity_policy = FixedCapacity())
 
 "Drop the `i`th row of the working set."
 @inline remove_row!(W::WorkingSetQR, i::Integer) = (delete_column!(W.qr, Int(i)); W)

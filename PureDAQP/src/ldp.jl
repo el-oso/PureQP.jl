@@ -75,13 +75,13 @@ end
 
 The working set `kind` names, over `n` variables and at most `kmax` rows.
 
-`:qr` factors the rows themselves and `:gram` their Gram matrix; the two answer the same
-questions, at different cost and different accuracy.
+`:rows` factors the active rows themselves and `:gram` their Gram matrix; the two answer the
+same questions, at different cost and different accuracy.
 """
 function build_working_set(kind::Symbol, ::Type{T}, n::Integer, kmax::Integer) where {T <: Real}
-    kind === :qr && return WorkingSetQR{T}(n, kmax)
+    kind === :rows && return WorkingSetQR{T}(n, kmax)
     kind === :gram && return WorkingSetGram{T}(n, kmax)
-    return throw(ArgumentError(lazy"working_set must be :qr or :gram, got :$kind"))
+    return throw(ArgumentError(lazy"working_set must be :rows or :gram, got :$kind"))
 end
 
 
@@ -501,7 +501,7 @@ extreme case.
 function reduce_qp(
         H::AbstractMatrix{T}, A::AbstractMatrix{T},
         bupper::AbstractVector{T}, blower::AbstractVector{T},
-        iseq::AbstractVector{Bool}; eps_prox::T = zero(T), working_set::Symbol = :qr
+        iseq::AbstractVector{Bool}; eps_prox::T = zero(T), working_set::Symbol = :rows
     ) where {T <: Real}
     n = size(H, 1)
     m = size(A, 1)

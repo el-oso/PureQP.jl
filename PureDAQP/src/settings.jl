@@ -15,12 +15,14 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
   marks a linearly dependent row, which sends the iteration down its singular branch.
 - `primal_tol = sqrt(eps(T))` — a row priced below `-primal_tol` is violated and enters the
   working set. Rows are normalized first, so this means the same thing on every row.
-- `working_set = :qr` — how the working set is represented. `:qr` factors the active rows
-  themselves and decides dependence on `|R_ii|`, which carries the conditioning of `M` once.
-  `:gram` factors their Gram matrix instead, which is the faster of the two but squares that
-  conditioning, so it cannot separate a dependent row from an independent one much below
-  `sqrt(k·eps)`. Prefer `:gram` only for problems measured to be well conditioned; on one
-  that is not, it reports a feasible problem infeasible rather than solving it.
+- `working_set = :rows` — what the working set factors. `:rows` factors the active rows
+  themselves, and decides dependence on how much of an entering row is orthogonal to those
+  already held, which carries the conditioning of `M` once. `:gram` factors their Gram
+  matrix `Mₐ Mₐᵀ` instead — the normal equations of the same rows — which is the faster of
+  the two but squares that conditioning, so it cannot separate a dependent row from an
+  independent one much below `sqrt(k·eps)`. Prefer `:gram` only for problems measured to be
+  well conditioned; on one that is not, it reports a feasible problem infeasible rather than
+  solving it. The manual's section on choosing between them says how to tell.
 
 The method reduces the problem to a least-distance problem, `min ‖u‖²` subject to `Mu ≤ d`
 with `M = A R⁻¹` for the Cholesky factor `R` of `P` (or of `P + εI`), and solves that by
@@ -49,10 +51,10 @@ stored_real(::Nothing) = Float64
 
 function ActiveSet(;
         eps_prox = 0.0, eta_prox = nothing, max_prox = 100,
-        zero_tol = nothing, primal_tol = nothing, working_set = :qr,
+        zero_tol = nothing, primal_tol = nothing, working_set = :rows,
     )
-    working_set in (:qr, :gram) ||
-        throw(ArgumentError("working_set must be :qr or :gram, got $(repr(working_set))"))
+    working_set in (:rows, :gram) ||
+        throw(ArgumentError("working_set must be :rows or :gram, got $(repr(working_set))"))
     eps_prox >= 0 || throw(ArgumentError("eps_prox must be non-negative, got $eps_prox"))
     max_prox > 0 || throw(ArgumentError("max_prox must be positive, got $max_prox"))
     isnothing(eta_prox) || eta_prox > 0 || throw(ArgumentError("eta_prox must be positive, got $eta_prox"))

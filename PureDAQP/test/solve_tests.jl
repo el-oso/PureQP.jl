@@ -322,7 +322,7 @@ end
         b = A * randn(rng, n)
         l = b .- rand(rng, m)
         u = b .+ rand(rng, m)
-        sq = solve(P, q, A, l, u, ActiveSet(; working_set = :qr); max_iter = 50_000)
+        sq = solve(P, q, A, l, u, ActiveSet(; working_set = :rows); max_iter = 50_000)
         sg = solve(P, q, A, l, u, ActiveSet(; working_set = :gram); max_iter = 50_000)
         @test sq.status == SOLVED
         @test sg.status == SOLVED
@@ -331,10 +331,13 @@ end
     end
 end
 
-@testitem "the Gram working set is refused an unknown name" begin
+@testitem "the working set is refused an unknown name" begin
     using PureDAQP
 
-    @test_throws "working_set must be :qr or :gram" ActiveSet(; working_set = :ldl)
-    @test ActiveSet().working_set === :qr
+    # `:qr` and `:ldl` name factorizations rather than what is factored, which is the axis
+    # this setting chooses on, and `:ldl` is additionally what `:gram` already uses.
+    @test_throws "working_set must be :rows or :gram" ActiveSet(; working_set = :ldl)
+    @test_throws "working_set must be :rows or :gram" ActiveSet(; working_set = :qr)
+    @test ActiveSet().working_set === :rows
     @test ActiveSet(; working_set = :gram).working_set === :gram
 end

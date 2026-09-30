@@ -5,11 +5,11 @@
   "tool": "Chairmarks, seconds=3, median reported",
   "note": "clock unpinned on this host; indicative, not a gate",
   "rows": [
-    {"case": "benign", "n": 25, "m": 50, "gram": {"status": "SOLVED", "iter": 47, "ms": 0.038793, "violation": 5.829e-15, "obj": 501.0068789}, "qr": {"status": "SOLVED", "iter": 47, "ms": 0.057449, "violation": 7.105e-15, "obj": 501.0068789}},
-    {"case": "benign", "n": 50, "m": 100, "gram": {"status": "SOLVED", "iter": 99, "ms": 0.189366, "violation": 6.883e-15, "obj": 1710.210762}, "qr": {"status": "SOLVED", "iter": 99, "ms": 0.233380, "violation": 8.882e-15, "obj": 1710.210762}},
-    {"case": "benign", "n": 100, "m": 200, "gram": {"status": "SOLVED", "iter": 214, "ms": 1.048253, "violation": 2.487e-14, "obj": 9073.567544}, "qr": {"status": "SOLVED", "iter": 214, "ms": 1.235516, "violation": 3.020e-14, "obj": 9073.567544}},
-    {"case": "benign", "n": 200, "m": 400, "gram": {"status": "SOLVED", "iter": 817, "ms": 9.631113, "violation": 7.105e-14, "obj": 38454.23661}, "qr": {"status": "SOLVED", "iter": 817, "ms": 12.028036, "violation": 5.684e-14, "obj": 38454.23661}},
-    {"case": "ill conditioned 30x200", "n": 30, "m": 200, "gram": {"status": "NUMERICAL_ERROR", "iter": 36, "ms": 0.046698, "violation": NaN, "obj": NaN}, "qr": {"status": "SOLVED", "iter": 59, "ms": 0.081734, "violation": 1.200e-06, "obj": -1040088.299}},
-    {"case": "degenerate 30x130", "n": 30, "m": 130, "gram": {"status": "SOLVED", "iter": 96, "ms": 0.114906, "violation": 1.670e-13, "obj": -5.667119858}, "qr": {"status": "SOLVED", "iter": 84, "ms": 0.149892, "violation": 7.438e-14, "obj": -5.667119858}}
+    {"case": "benign", "n": 25, "m": 50, "gram": {"status": "SOLVED", "iter": 47, "ms": 0.038903, "violation": 5.829e-15, "obj": 501.0068789}, "rows": {"status": "SOLVED", "iter": 47, "ms": 0.057307, "violation": 7.105e-15, "obj": 501.0068789}},
+    {"case": "benign", "n": 50, "m": 100, "gram": {"status": "SOLVED", "iter": 99, "ms": 0.191350, "violation": 6.883e-15, "obj": 1710.210762}, "rows": {"status": "SOLVED", "iter": 99, "ms": 0.231977, "violation": 8.882e-15, "obj": 1710.210762}},
+    {"case": "benign", "n": 100, "m": 200, "gram": {"status": "SOLVED", "iter": 214, "ms": 1.061337, "violation": 2.487e-14, "obj": 9073.567544}, "rows": {"status": "SOLVED", "iter": 214, "ms": 1.222650, "violation": 3.020e-14, "obj": 9073.567544}},
+    {"case": "benign", "n": 200, "m": 400, "gram": {"status": "SOLVED", "iter": 817, "ms": 9.866817, "violation": 7.105e-14, "obj": 38454.23661}, "rows": {"status": "SOLVED", "iter": 817, "ms": 11.953633, "violation": 5.684e-14, "obj": 38454.23661}},
+    {"case": "ill conditioned 30x200", "n": 30, "m": 200, "gram": {"status": "NUMERICAL_ERROR", "iter": 36, "ms": 0.046538, "violation": NaN, "obj": NaN}, "rows": {"status": "SOLVED", "iter": 59, "ms": 0.081313, "violation": 1.200e-06, "obj": -1040088.299}},
+    {"case": "degenerate 30x130", "n": 30, "m": 130, "gram": {"status": "SOLVED", "iter": 96, "ms": 0.114766, "violation": 1.670e-13, "obj": -5.667119858}, "rows": {"status": "SOLVED", "iter": 84, "ms": 0.149942, "violation": 7.438e-14, "obj": -5.667119858}}
   ]
 }

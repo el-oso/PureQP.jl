@@ -212,16 +212,109 @@ gradients missing too many solves in a row; `ActiveSet` returns it when a dual s
 working set's multipliers finds no row to block it through a nonsingular Gram matrix, which the
 method's own argument rules out and so signals a numerical breakdown. ADMM never reports it.
 
+## Choosing a working set for `ActiveSet`
+
+[`ActiveSet`](@ref) is the one algorithm with a representation to choose, and it is not a
+backend. `working_set` takes `:rows` (the default) or `:gram`.
+
+### What the setting selects
+
+The method reduces the problem to `min ‖u‖²` subject to `lo ≤ Mu ≤ hi`, with `M = A R⁻¹` for
+the Cholesky factor `R` of `P`. It then walks a **working set**: the rows of `M` currently
+held at a bound. Each iteration adds one row or drops one, and from the set it needs three
+things — the multipliers of the rows held, whether an entering row is linearly dependent on
+them, and, when it is, the direction that dependency opens.
+
+`Mₐ` is those active rows. The setting chooses what gets factored:
+
+- **`:rows`** factors `Mₐᵀ` itself, an `n × k` matrix, as a `QR`.
+- **`:gram`** factors `Mₐ Mₐᵀ`, a `k × k` matrix, as an `LDLᵀ`. That matrix is the normal
+  equations of the same rows.
+
+Neither is ever refactorized. A row entering or leaving *updates* the factorization in place,
+which is what makes the method affordable: refactorizing would cost `O(nk²)` across `O(m)`
+iterations.
+
+This is a different axis from `linsys`, which `ActiveSet` refuses outright. A `linsys`
+backend factors a matrix of fixed size and pattern and then solves against it repeatedly; a
+working set factors a matrix whose row count changes every iteration and is never solved as a
+KKT system. Cholesky against `LDLᵀ` in a sparse backend is two ways to factor *one* matrix;
+`:rows` against `:gram` is factoring *two different matrices*.
+
+### Why the choice matters
+
+Forming `Mₐ Mₐᵀ` squares the condition number. Everything below follows from that one fact.
+
+**Cost.** A row entering the Gram form extends it by one rank-one update against the `k`
+values already held. Entering the `:rows` form orthogonalizes the row against every row held,
+and a row leaving sweeps Givens rotations across the factor. Measured at `k = 100`, `n = 200`:
+`add_row!` 4.5 µs and an early `remove_row!` 8.1 µs, against a whole iteration of 14.8 µs.
+That is where the 1.2×–1.5× comes from.
+
+**Rank.** The pivot that decides dependence is, for `:gram`, formed by cancellation: for unit
+rows it is `d = 1 − (1 − σ²)`, whose absolute error is about `k·eps`. So it cannot distinguish
+a `σ` below roughly `sqrt(k·eps)` — about `1e-8` in double precision — from zero, however the
+tolerance is set. `:rows` reads `|R_ii|` instead, the norm of the entering row's component
+orthogonal to the rest, which carries the conditioning once rather than twice.
+
+**What goes wrong.** A working set wrongly declared singular sends the method down its
+singular branch, where it walks a direction that means nothing and finds nothing to block it.
+That outcome is a *proof of infeasibility* — so the failure is not a worse answer, it is a
+confident wrong one about a feasible problem. `certifiable` checks such a claim against the
+caller's own rows before reporting it, which turns the wrong answer into `NUMERICAL_ERROR`
+rather than `PRIMAL_INFEASIBLE`, but it cannot recover the solve.
+
+### How to choose
+
+Start with the default. `:rows` is the default because nothing about a problem announces in
+advance that its reduction is well conditioned, and a solve that stops is worth more than a
+solve that is 1.3× faster.
+
+Move to `:gram` when **all** of these hold:
+
+1. **You have measured `cond(A R⁻¹)` on representative data** and it is comfortably below
+   `1e8`. Not `cond(A)`, and not `cond(P)` — the reduction multiplies them, and it is the
+   product that the working set sees. `cond(A) · cond(R⁻¹)` bounds it.
+2. **The problems you will solve resemble the ones you measured.** A solver embedded behind
+   a user-supplied matrix does not meet this; one solving a fixed model with varying data
+   usually does.
+3. **The 1.2×–1.5× is worth having.** It is real but modest, and it is smaller than what
+   warm starting buys on a sequence of related problems — see `update!` and [`solve!`](@ref),
+   where a re-solve after a small change costs a fraction of a cold one.
+
+If you are unsure, solve once with each and compare. They agree on the answer wherever both
+reach one, so a disagreement is itself the signal:
+
+```julia
+a = solve(P, q, A, l, u, ActiveSet())                          # :rows
+b = solve(P, q, A, l, u, ActiveSet(; working_set = :gram))
+a.status == b.status && a.obj_val ≈ b.obj_val    # if false, keep :rows
+```
+
+### What does not decide it
+
+- **Sparsity and structure.** `M = A R⁻¹` is dense whatever `A` was, so neither form sees
+  them, and `ActiveSet` ignores both regardless.
+- **Problem size.** The ratio is roughly flat across the sizes measured.
+- **Rows that are exact combinations of other rows.** Dependence that is *exact* is not the
+  same difficulty as dependence blurred by rounding: both forms carry the dependent row and
+  walk the direction it opens, and both solve such problems. Only conditioning separates them.
+- **Whether `eps_prox > 0`.** Proximal-point iterations improve the conditioning of `P + εI`,
+  which helps both.
+
+[Benchmarks](@ref "Choosing a working set for the active-set method") give the measured times
+and the problems behind them.
+
 ## Summary
 
 | | `OperatorSplitting` (default) | `InteriorPoint` | `ActiveSet` |
 |---|---|---|---|
-| iteration cost | many cheap iterations, one factorization reused until `ρ` changes | a few iterations, a fresh factorization each | a few iterations, each a rank-one update of the working set's `LDLᵀ` |
+| iteration cost | many cheap iterations, one factorization reused until `ρ` changes | a few iterations, a fresh factorization each | a few iterations, each an update of the working set's factorization |
 | default tolerance | `1e-3` | `1e-8` | exact at the working set; `primal_tol` decides which rows enter |
 | matrices | any `AbstractMatrix`, structure and sparsity exploited | the same | dense only, structure and sparsity ignored |
 | `update!` | can skip refactorization entirely (`q`-only updates always do) | refactorizes every outer iteration regardless | keeps the reduction unless `P` or `A` changes |
 | matrix-free operators | no restriction | needs a caller-supplied preconditioner and `scaling = 0` | not supported |
-| `linsys` | every backend | all but `:kronecker` and `:lowrank` | none: it has no backend to choose |
+| `linsys` | every backend | all but `:kronecker` and `:lowrank` | none: it has no backend to choose, but `working_set` picks what its own factorization holds |
 | derivatives | ready from the iterate as it stands | require `polishing = true` first | ready: inactive multipliers are exactly zero |
 | infeasibility certificates | yes | yes, through the same test | primal only, and without a certificate |
 

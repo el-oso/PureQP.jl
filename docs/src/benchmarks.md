@@ -174,10 +174,10 @@ implementation it follows by 1.28× to 2.42×; below that the fixed cost of a so
 run of a dozen iterations and DAQP's is smaller. PureIPM beats Clarabel at every size, by
 1.9× to 5.6×.
 
-These are the figures for the default `working_set = :qr`, which trades 1.2×–1.5× for a rank
-test that holds on an ill-conditioned reduction; `:gram` is the faster setting and the
-section on [choosing a working set](#Choosing-a-working-set-for-the-active-set-method) gives
-both and says when each is right.
+These are the figures for the default `working_set = :rows`, which trades 1.2×–1.5× for a
+rank test that holds on an ill-conditioned reduction; `:gram` is the faster setting, and
+[choosing a working set for `ActiveSet`](@ref "Choosing a working set for `ActiveSet`") says
+when each is right.
 
 For repeated small solves, [`setup`](@ref) with [`update!`](@ref) and [`solve!`](@ref) pays
 the fixed cost once and warm starts from the previous working set, which is a different
@@ -193,15 +193,16 @@ its residuals fall below the tolerance.
 
 ## Choosing a working set for the active-set method
 
-[`ActiveSet`](@ref) keeps its working set in one of two forms, chosen with
-`working_set`. `:qr` factors the active rows themselves and decides dependence on `|R_ii|`;
-`:gram` factors their Gram matrix `Mₐ Mₐᵀ` and decides it on a pivot of the `LDLᵀ`. Reproduce
-with `julia --project=bench bench/working_set_choice.jl`; samples are in
+[`ActiveSet`](@ref) keeps its working set in one of two forms, chosen with `working_set`.
+`:rows` factors the active rows themselves; `:gram` factors their Gram matrix `Mₐ Mₐᵀ`. These
+are the measurements; [choosing a working set for `ActiveSet`](@ref "Choosing a working set
+for `ActiveSet`") says how to decide. Reproduce with
+`julia --project=bench bench/working_set_choice.jl`; samples are in
 `bench/results/working_set_choice.json`. Single-threaded BLAS.
 
-**Well conditioned: `:gram` is faster, and the paths are identical.**
+**Well conditioned: `:gram` is faster.**
 
-| n | m | `:gram` | `:qr` | iterations | `:qr` cost |
+| n | m | `:gram` | `:rows` | iterations | `:rows` cost |
 |---|---|---|---|---|---|
 | 25 | 50 | 0.039 ms | 0.057 ms | 47 / 47 | 1.48× |
 | 50 | 100 | 0.189 ms | 0.233 ms | 99 / 99 | 1.23× |
@@ -209,35 +210,38 @@ with `julia --project=bench bench/working_set_choice.jl`; samples are in
 | 200 | 400 | 9.631 ms | 12.028 ms | 817 / 817 | 1.25× |
 
 The iteration counts are equal row for row here, so on these problems the whole difference is
-what one iteration costs. A row entering the Gram form is one rank-one extension against the
-`k` values already held; entering the `QR` means orthogonalizing the row against every row
-held, and a row leaving means a sweep of rotations over the factor. The counts are not
-guaranteed to match — the pivots differ in their last digits, so a row priced at the
-tolerance can enter one and not the other — but the answers agree.
+what one iteration costs. The counts are not guaranteed to match — the pivots differ in their
+last digits, so a row priced at the tolerance can enter one and not the other — but the
+answers agree.
+
+Where that cost sits, measured at `k = 100`, `n = 200` against a whole iteration of 14.8 µs:
+
+| | `:rows` |
+|---|---|
+| `add_row!` | 4.5 µs |
+| `remove_row!`, early in the set | 8.1 µs |
+| `remove_row!`, middle | 4.3 µs |
+| `remove_row!`, last | 0.06 µs |
+
+A deletion is repaired by rotations over the columns after it, so dropping the newest row is
+free and dropping the oldest costs the whole factor.
 
 **Ill conditioned: `:gram` cannot decide rank, and stops.**
 
-| case | `:gram` | `:qr` |
+| case | `:gram` | `:rows` |
 |---|---|---|
 | `cond(A R⁻¹) ≈ 1e17`, 30 variables, 200 rows | `NUMERICAL_ERROR` | `SOLVED`, violation 1.2e-06 |
 
-The Gram matrix has the condition number of `Mₐ` squared, and the pivot that decides
-dependence is formed by cancellation, so below roughly `sqrt(k·eps)` it cannot separate a
-dependent row from an independent one. The problem here is feasible and `:qr` solves it.
+The problem is feasible and `:rows` solves it.
 
 **What does not separate them: rows that are exact combinations of others.**
 
-| case | `:gram` | `:qr` |
+| case | `:gram` | `:rows` |
 |---|---|---|
 | 40 of 130 rows are combinations of the rest | `SOLVED`, violation 1.7e-13 | `SOLVED`, violation 7.4e-14 |
 
-A dependent row is not the same difficulty as an ill-conditioned one. Both forms carry the
-dependent row and walk the direction it opens; they differ only in whether they can *see* a
-dependency that rounding has blurred.
-
-So: `:qr` is the default because a wrong infeasibility claim is worse than a slower solve, and
-nothing about a problem announces in advance that its reduction is well conditioned. Choose
-`:gram` when you have measured that yours are, and the 1.2×–1.5× matters.
+Dependence that is exact is not the same difficulty as dependence blurred by rounding. Both
+forms carry the dependent row and walk the direction it opens.
 
 ## Choosing a representation
 

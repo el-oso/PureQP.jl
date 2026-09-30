@@ -3,7 +3,7 @@
 #
 #     julia --project=bench bench/working_set_choice.jl
 #
-# `:gram` factors the Gram matrix of the active rows and `:qr` factors the rows themselves.
+# `:gram` factors the Gram matrix of the active rows and `:rows` factors the rows themselves.
 # They answer the same questions; what differs is what a row entering costs and how finely
 # dependence can be decided.
 #
@@ -87,13 +87,13 @@ rows = []
 println("Well conditioned: the cost of a row entering decides\n")
 @printf(
     "%5s %6s | %-10s %8s %6s | %-10s %8s %6s | %s\n",
-    "n", "m", ":gram", "ms", "iters", ":qr", "ms", "iters", "gram/qr"
+    "n", "m", ":gram", "ms", "iters", ":rows", "ms", "iters", "rows/gram"
 )
 rng = MersenneTwister(20260930)
 for (n, m) in [(25, 50), (50, 100), (100, 200), (200, 400)]
     P, q, A, l, u = benign_qp(rng, n, m)
     g = measure(P, q, A, l, u, :gram)
-    r = measure(P, q, A, l, u, :qr)
+    r = measure(P, q, A, l, u, :rows)
     push!(rows, (case = "benign", n = n, m = m, gram = g, qr = r))
     @printf(
         "%5d %6d | %-10s %8.3f %6d | %-10s %8.3f %6d | %.2fx\n",
@@ -103,14 +103,14 @@ for (n, m) in [(25, 50), (50, 100), (100, 200), (200, 400)]
 end
 
 println("\nWhere the rank decision decides, and where it does not\n")
-@printf("%-22s | %-18s %8s | %-18s %8s\n", "case", ":gram", "ms", ":qr", "ms")
+@printf("%-22s | %-18s %8s | %-18s %8s\n", "case", ":gram", "ms", ":rows", "ms")
 hard = [
     ("ill conditioned 30x200", illconditioned_qp(MersenneTwister(5), 30, 200)),
     ("degenerate 30x130", degenerate_qp(MersenneTwister(1), 30, 60, 40)),
 ]
 for (name, (P, q, A, l, u)) in hard
     g = measure(P, q, A, l, u, :gram)
-    r = measure(P, q, A, l, u, :qr)
+    r = measure(P, q, A, l, u, :rows)
     push!(rows, (case = name, n = size(A, 2), m = size(A, 1), gram = g, qr = r))
     @printf("%-22s | %-18s %8.3f | %-18s %8.3f\n", name, g.status, g.ms, r.status, r.ms)
     @printf("%-22s |   violation %8.2e |   violation %8.2e\n", "", g.viol, r.viol)
@@ -128,7 +128,7 @@ open(joinpath(@__DIR__, "results", "working_set_choice.json"), "w") do io
     for (i, r) in enumerate(rows)
         @printf(
             io,
-            "    {\"case\": \"%s\", \"n\": %d, \"m\": %d, \"gram\": {\"status\": \"%s\", \"iter\": %d, \"ms\": %.6f, \"violation\": %.3e, \"obj\": %.10g}, \"qr\": {\"status\": \"%s\", \"iter\": %d, \"ms\": %.6f, \"violation\": %.3e, \"obj\": %.10g}}%s\n",
+            "    {\"case\": \"%s\", \"n\": %d, \"m\": %d, \"gram\": {\"status\": \"%s\", \"iter\": %d, \"ms\": %.6f, \"violation\": %.3e, \"obj\": %.10g}, \"rows\": {\"status\": \"%s\", \"iter\": %d, \"ms\": %.6f, \"violation\": %.3e, \"obj\": %.10g}}%s\n",
             r.case, r.n, r.m,
             r.gram.status, r.gram.iter, r.gram.ms, r.gram.viol, r.gram.obj,
             r.qr.status, r.qr.iter, r.qr.ms, r.qr.viol, r.qr.obj,
