@@ -88,6 +88,9 @@ Multiplying by this makes both cases read `musign * μ ≥ 0`.
 @inline musign(ws::LDPWorkspace{T}, j::Integer) where {T} =
     ws.side[j] == SIDE_UPPER ? -one(T) : one(T)
 
+@noinline _nonfinite_row(r::Integer) =
+    throw(ArgumentError("row $r of the reduced constraint matrix is not finite"))
+
 """
 Put row `r` into the working set at `side`, extending the factorization.
 
@@ -98,7 +101,7 @@ dependent is then [`first_dependent`](@ref)'s question, asked of `|R_ii|`.
 """
 function activate!(ws::LDPWorkspace{T}, r::Integer, side::Int8) where {T}
     k = nactive(ws.W)
-    add_row!(ws.W, row(ws, r))
+    add_row!(ws.W, row(ws, r)) || _nonfinite_row(r)
     ws.active[k + 1] = r
     ws.mu[k + 1] = zero(T)
     ws.side[r] = side
@@ -264,22 +267,27 @@ function primal_point!(ws::LDPWorkspace{T}) where {T}
 end
 
 """
-    entering_row(ws, primal_tol, bland) -> (row, side)
+    entering_row(ws, primal_tol, bland, rows) -> (row, side)
 
-The inactive row that violates its bound by the most, and the side it violates, or
-`(0, SIDE_UPPER)` when none does, which is what ends the run.
+The row of `rows` that violates its bound by the most, and the side it violates, or
+`(0, SIDE_UPPER)` when none does.
+
+Reads `price` only over `rows`, so a caller that priced a window may pass that window.
+Deciding that no row violates — which is what ends the run — needs every row of `M`, so only
+a caller that priced all of them may conclude it from a zero here.
 
 Dantzig's rule takes the worst violation, which is the fast choice but can cycle: a row that
 keeps swapping sides re-enters forever. `bland` switches to the lowest violated index,
 Bland's rule, which terminates finitely at the cost of taking more steps.
 """
-function entering_row(ws::LDPWorkspace{T}, primal_tol::T, bland::Bool) where {T}
-    m = size(ws.Mt, 2)
+function entering_row(
+        ws::LDPWorkspace{T}, primal_tol::T, bland::Bool, rows::UnitRange{Int}
+    ) where {T}
     worst = primal_tol
     entering = 0
     entering_side = SIDE_UPPER
     # Not `@simd`: this is an argmax search, and the `slot` test skips the working set.
-    @inbounds for r in 1:m
+    @inbounds for r in rows
         iszero(ws.slot[r]) || continue
         # Priced in the caller's own units. `finish_reduction` divided each row by its norm,
         # and those norms span five orders here, so a violation that is at the tolerance in
@@ -323,7 +331,14 @@ a signature `test_signatures` can state.
 """
 function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where {T}
     zero_tol, primal_tol = alg.zero_tol, alg.primal_tol
-    bland_after = 4 * (size(ws.Mt, 2) + 1)
+    m = size(ws.Mt, 2)
+    bland_after = 4 * (m + 1)
+    # The pricing window, and the row it starts at. An eighth of the rows is wide enough that
+    # a violated row is usually in it and narrow enough to be worth the narrowing; the floor
+    # keeps a small problem pricing in one go, where a window costs a second BLAS call and
+    # saves nothing.
+    chunk = max(256, m >> 3)
+    scan = 1
     for iter in 1:max_iter
         # Every step reads `nactive(ws.W)` for itself: dropping and adding a row both change it, so
         # the working set's size does not survive an iteration.
@@ -338,15 +353,31 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
         end
         primal_point!(ws)
 
-        # Price every row with one matrix-vector product rather than a dot product per
-        # inactive row. The working set is priced too and its values ignored, which is `k`
-        # wasted products out of `m` — cheaper than it sounds, because a dot product per row
-        # is `m` BLAS calls per iteration, and on a short row a call costs about what the
-        # arithmetic does. One call for all of them is what makes the small sizes competitive.
-        mul!(ws.price, transpose(ws.Mt), ws.u)
-
-        entering, entering_side = entering_row(ws, primal_tol, iter > bland_after)
-        iszero(entering) && return (LDP_OPTIMAL, iter)
+        # Price with one matrix-vector product rather than a dot product per inactive row. The
+        # working set is priced too and its values ignored, which is `k` wasted products out of
+        # however many are priced — cheaper than it sounds, because a dot product per row is
+        # one BLAS call per row, and on a short row a call costs about what the arithmetic
+        # does. One call for all of them is what makes the small sizes competitive.
+        #
+        # A window of `chunk` rows, resumed where the last one entered, in place of all `m`:
+        # any violated row is a step the method can take, so it does not have to be the worst
+        # one, and pricing is the bulk of an iteration. What the window cannot decide is that
+        # *no* row violates, so a window that finds nothing prices the rest before the run ends
+        # on it. Bland's rule prices everything too: its finite termination rests on scanning
+        # indices in a fixed order, which a moving window does not.
+        bland = iter > bland_after
+        entering, entering_side = 0, SIDE_UPPER
+        if !bland && chunk < m
+            window = scan:min(scan + chunk - 1, m)
+            mul!(view(ws.price, window), transpose(view(ws.Mt, :, window)), ws.u)
+            entering, entering_side = entering_row(ws, primal_tol, false, window)
+        end
+        if iszero(entering)
+            mul!(ws.price, transpose(ws.Mt), ws.u)
+            entering, entering_side = entering_row(ws, primal_tol, bland, 1:m)
+            iszero(entering) && return (LDP_OPTIMAL, iter)
+        end
+        scan = entering == m ? 1 : entering + 1
         activate!(ws, entering, entering_side)
     end
     return (LDP_ITERATION_LIMIT, max_iter)

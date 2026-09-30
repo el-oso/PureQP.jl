@@ -20,16 +20,23 @@
 
 The `QR` of `Mₐᵀ`, the active rows of the reduced constraint matrix as columns.
 
-`UpdatableFactorizations` maintains it under the two edits the method makes: a row entering
-appends a column, a row leaving deletes one, each `O(nk)`. The factored matrix is `n × k`, so
-the working set can hold at most `n` rows -- which is the rank of the problem's own rows, and
-the most an active set can carry.
+`ModifiableFactorizations` maintains it under the two edits the method makes: a row entering
+appends a column, a row leaving deletes one, each `O(nk)`.
+
+The factored matrix is `n × k` and the factorization requires more rows than columns, so the
+working set holds at most `n` rows. That is the rank of the problem's own rows, and so the
+most an active set can carry at a solution -- but not the most the method reaches on its way
+there: the singular step wants the dependent row *in* the set, and from a full set that would
+be row `n + 1`. A `QR` cannot hold it, since there is no `R[n+1, n+1]` for
+[`first_dependent`](@ref) to read. Such a row is dependent by counting rather than by
+measurement, so it needs no place in the factorization: `ldiv!` gives its coefficients against
+the rows already held, and those are the null direction the step walks.
 """
 struct WorkingSetQR{T <: Real}
     # Spelled out rather than left as a parameter: the reduction is dense by construction
     # (`M = A R⁻¹` is dense whatever `A` was), so this is the only factorization the method
     # ever holds, and naming it keeps the type of every workspace that carries one concrete.
-    qr::UpdatableQR{T, Matrix{T}, UpdatableFactorizations.DenseQ{T, Matrix{T}}}
+    qr::ModifiableQR{T, Matrix{T}, ModifiableFactorizations.DenseQ{T, Matrix{T}}}
 end
 
 "An empty working set over `n` variables, sized for the largest it can reach."
@@ -40,7 +47,7 @@ function WorkingSetQR{T}(n::Integer, kmax::Integer) where {T <: Real}
     # none of them allocates.
     seed = zeros(T, Int(n), 1)
     seed[1] = one(T)
-    f = UpdatableQR(seed; capacity = (Int(n), cap))
+    f = ModifiableQR(seed; capacity = (Int(n), cap))
     delete_column!(f, 1)
     return WorkingSetQR{T}(f)
 end
@@ -51,12 +58,17 @@ end
 """
     add_row!(W, m_r) -> Bool
 
-Append `m_r` to the working set.
+Append `m_r` to the working set, reporting whether it went in.
 
 `rtol = 0` admits a row whatever its residual, because the caller decides what counts as
 dependent: the method needs the dependent row *in* the set, since the direction it then walks
-is how it either drops a blocking row or proves the problem infeasible. `false` only when the
-residual is exactly zero, which no rounding produces.
+is how it either drops a blocking row or proves the problem infeasible. A row that duplicates
+one already held goes in at `R_ii = 0`, which is the value [`first_dependent`](@ref) reads.
+
+So `false` means the row is not finite, the one case `rtol = 0` still refuses. It is not a
+state the method can continue from: the row would be recorded as active while the
+factorization did not take it, leaving the two disagreeing about how many rows are held, and a
+row so recorded is skipped by pricing and can never be reconsidered.
 """
 @inline add_row!(W::WorkingSetQR, m_r::AbstractVector) =
     try_insert_column!(W.qr, W.qr.n + 1, m_r; rtol = 0)

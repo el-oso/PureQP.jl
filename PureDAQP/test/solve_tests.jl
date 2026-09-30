@@ -220,3 +220,25 @@ end
     sol = solve(P, [0.0, 0.0], A, [1.0, -5.0], [2.0, -4.0], ActiveSet())
     @test sol.status == PRIMAL_INFEASIBLE
 end
+
+@testitem "linearly dependent rows that agree are solved, not reported infeasible" begin
+    using PureDAQP, LinearAlgebra
+
+    # A row that repeats one already held enters the working set at `R_ii = 0`, which is the
+    # value the dependency test reads. Reaching it must not be mistaken for infeasibility, and
+    # must not leave the working set's bookkeeping disagreeing with the factorization about
+    # how many rows are in it.
+    P = Matrix(1.0I, 2, 2)
+    dup = solve(P, [0.0, 0.0], [1.0 0.0; 1.0 0.0], [1.0, 1.0], [2.0, 2.0], ActiveSet())
+    @test dup.status == SOLVED
+    @test dup.x[1] ≈ 1.0
+
+    # A third row that is the sum of the first two: dependent without duplicating either.
+    A = [1.0 0.0; 0.0 1.0; 1.0 1.0]
+    l = [1.0, 1.0, 2.0]
+    u = [3.0, 3.0, 4.0]
+    sol = solve(P, [0.0, 0.0], A, l, u, ActiveSet())
+    @test sol.status == SOLVED
+    r = A * sol.x
+    @test maximum(max.(r .- u, l .- r)) < 1.0e-9
+end

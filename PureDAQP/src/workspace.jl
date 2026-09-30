@@ -60,7 +60,7 @@ const DenseWorkspace{T} = ActiveSetWorkspace{
 function Base.show(io::IO, ws::ActiveSetWorkspace{T}) where {T}
     n, m = dimensions(ws)
     print(io, "ActiveSetWorkspace{", T, "}: ", n, " variables, ", m, " rows, ")
-    print(io, ws.red.ws.F.k, " rows in the working set")
+    print(io, nactive(ws.red.ws.W), " rows in the working set")
     return nothing
 end
 
@@ -199,7 +199,7 @@ that reaches an answer pays for it.
 function certifiable(ws::ActiveSetWorkspace{T}) where {T}
     lw = ws.red.ws
     prob = ws.prob
-    k = lw.F.k
+    k = nactive(lw.W)
     k > 0 || return false
     y = ws.ycert
     fill!(y, zero(T))

@@ -27,7 +27,7 @@ active at the solution.
 module PureDAQP
 
 using LinearAlgebra
-using UpdatableFactorizations: UpdatableFactorizations, UpdatableQR, try_insert_column!,
+using ModifiableFactorizations: ModifiableFactorizations, ModifiableQR, try_insert_column!,
     delete_column!
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_function, @strict, @assert_noalloc, @assert_trim_compatible,
