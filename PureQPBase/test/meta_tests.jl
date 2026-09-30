@@ -11,7 +11,7 @@
         "kronecker_tests.jl" => 4,
         "linsys_tests.jl" => 19,
         "meta_tests.jl" => 1,
-        "operator_tests.jl" => 5,
+        "operator_tests.jl" => 9,
         "scaling_tests.jl" => 8,
         "selection_tests.jl" => 6,
         "strictmode_tests.jl" => 4,

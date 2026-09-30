@@ -94,8 +94,15 @@ end
     q = randn(n)
     b = A * randn(n)
     l, u = b .- rand(m), b .+ rand(m)
-    Pmap = LinearMap(Matrix(P); issymmetric = true, isposdef = true)
-    Amap = LinearMap(A)
+    # A map that holds no entries is what keeps its traits: a wrapped matrix is handed on as
+    # the matrix instead.
+    Pd = Matrix(P)
+    Pmap = LinearMap{Float64}(
+        (y, x) -> mul!(y, Pd, x), n, n; issymmetric = true, isposdef = true, ismutating = true
+    )
+    Amap = LinearMap{Float64}(
+        (y, x) -> mul!(y, A, x), (y, x) -> mul!(y, A', x), m, n; ismutating = true
+    )
     # `as_operator` is the door: the extension's `setup` method sends every argument through
     # it before the problem is built, so a test of the wrapping calls exactly that.
     Ext = Base.get_extension(PureQPBase, :PureQPBaseLinearMapsExt)
@@ -112,6 +119,148 @@ end
     mixed, = backend_for(wrap(Pmap), q, wrap(A), l, u; free...)
     @test mixed.P isa PureQPBase.ProductOperator
     @test mixed.A isa Matrix
+end
+
+@testitem "a wrapped matrix reaches the base as the matrix" begin
+    using PureQPBase, LinearAlgebra, LinearMaps, Random
+    Random.seed!(35)
+    Ext = Base.get_extension(PureQPBase, :PureQPBaseLinearMapsExt)
+    wrap(M) = Ext.as_operator(Float64, M)
+    B = randn(6, 4)
+
+    # The matrix itself, not a copy and not a wrapper.
+    @test wrap(LinearMap(B)) === B
+    D = Diagonal(rand(5))
+    @test wrap(LinearMap(D)) === D
+    # LinearMaps stores an adjoint as a wrapped adjoint matrix, which is handed on lazily.
+    @test wrap(LinearMap(B)') == B'
+
+    # A scalar is folded into a copy; the caller's matrix is left alone.
+    B0 = copy(B)
+    scaled = wrap(3 * LinearMap(B))
+    @test scaled isa Matrix{Float64}
+    @test scaled == 3 * B
+    @test scaled !== B
+    @test B == B0
+    @test wrap(2 * (3 * LinearMap(B))) == 6 * B
+
+    # The element type the solve runs in is the one the matrix arrives in.
+    @test wrap(LinearMap(Float32.(B))) isa Matrix{Float64}
+    @test wrap(LinearMap(Float32.(B))) == Float32.(B)
+    @test wrap(LinearMap(rand(1:3, 3, 3))) isa Matrix{Float64}
+end
+
+@testitem "a kron of wrapped matrices reaches the base as a KroneckerOperator" begin
+    using PureQPBase, LinearAlgebra, LinearMaps, Random
+    include(joinpath(@__DIR__, "helpers.jl"))
+    Random.seed!(36)
+    Ext = Base.get_extension(PureQPBase, :PureQPBaseLinearMapsExt)
+    wrap(M) = Ext.as_operator(Float64, M)
+    n1, n2, m1, m2 = 7, 5, 6, 4
+    B1, B2 = randn(m1, n1), randn(m2, n2)
+
+    K = wrap(kron(LinearMap(B1), LinearMap(B2)))
+    @test K isa PureQPBase.KroneckerOperator
+    @test K.A1 === B1
+    @test K.A2 === B2
+    x = randn(n1 * n2)
+    @test K * x ≈ kron(B1, B2) * x
+
+    # The scalar `kron` pulls out of its factors lands in the first factor, as a copy.
+    Ks = wrap(kron(2 * LinearMap(B1), LinearMap(B2)))
+    @test Ks isa PureQPBase.KroneckerOperator
+    @test Ks.A1 == 2 * B1
+    @test Ks.A2 === B2
+    @test Ks * x ≈ 2 * kron(B1, B2) * x
+    @test wrap(3 * kron(LinearMap(B1), LinearMap(B2))).A1 == 3 * B1
+
+    # Factors of different types are brought to one, which `KroneckerOperator` requires.
+    mixed = wrap(kron(LinearMap(Symmetric(B1[1:5, :]' * B1[1:5, :])), LinearMap(B2)))
+    @test mixed isa PureQPBase.KroneckerOperator{Float64, Matrix{Float64}}
+
+    # A problem's `A` built this way reaches the backend that needs the structure.
+    n = n1 * n2
+    Kp = wrap(kron(LinearMap(randn(n1, n1)), LinearMap(randn(n2, n2))))
+    b = Kp * randn(n)
+    prob, wt, ls = backend_for(
+        Diagonal(fill(2.0, n)), randn(n), Kp, b .- rand(n), b .+ rand(n); scaling = 0
+    )
+    @test prob.A isa PureQPBase.KroneckerOperator
+    @test PureQPBase.backend_name(ls) === :kronecker
+
+    # Nothing forms the product: these factors stand for a 90000 × 90000 matrix.
+    big = wrap(kron(LinearMap(randn(300, 300)), LinearMap(randn(300, 300))))
+    @test big isa PureQPBase.KroneckerOperator
+    @test size(big) == (90_000, 90_000)
+end
+
+@testitem "a blockdiag of wrapped matrices reaches the base as a BlockDiagonal" begin
+    using PureQPBase, LinearAlgebra, LinearMaps, SparseArrays, Random
+    Random.seed!(37)
+    Ext = Base.get_extension(PureQPBase, :PureQPBaseLinearMapsExt)
+    wrap(M) = Ext.as_operator(Float64, M)
+    blocks = [randn(3, 3), randn(4, 2), randn(2, 5)]
+
+    D = wrap(blockdiag(map(LinearMap, blocks)...))
+    @test D isa PureQPBase.BlockDiagonal
+    @test all(D.blocks .=== blocks)
+    @test size(D) == (9, 10)
+    x = randn(10)
+    @test D * x ≈ Matrix(blockdiag(map(LinearMap, blocks)...)) * x
+
+    # A scalar multiplies every block, as a copy.
+    Ds = wrap(2 * blockdiag(map(LinearMap, blocks)...))
+    @test Ds isa PureQPBase.BlockDiagonal
+    @test Ds.blocks == [2 * B for B in blocks]
+    @test blocks[1] !== Ds.blocks[1]
+
+    # Blocks of different types are brought to one.
+    S = Symmetric(blocks[1]' * blocks[1])
+    mixed = wrap(blockdiag(LinearMap(S), LinearMap(blocks[2])))
+    @test mixed isa PureQPBase.BlockDiagonal{Float64, Matrix{Float64}}
+
+    # A vector of maps is unwrapped as a tuple of them is.
+    vec_map = LinearMaps.BlockDiagonalMap{Float64}(LinearMap.(blocks))
+    @test vec_map.maps isa Vector
+    @test wrap(vec_map) isa PureQPBase.BlockDiagonal
+end
+
+@testitem "a map the base cannot hold stays a ProductOperator" begin
+    using PureQPBase, LinearAlgebra, LinearMaps, SparseArrays, Random
+    Random.seed!(38)
+    Ext = Base.get_extension(PureQPBase, :PureQPBaseLinearMapsExt)
+    wrap(M) = Ext.as_operator(Float64, M)
+    n = 6
+    B, C = randn(n, n), randn(n, n)
+    fn = LinearMap{Float64}((y, x) -> mul!(y, B, x), (y, x) -> mul!(y, B', x), n, n; ismutating = true)
+    opaque(M) = wrap(M) isa PureQPBase.ProductOperator
+
+    @test opaque(fn)
+    @test opaque(2 * fn)
+    # A scalar multiple of a structured map is structured; of an opaque one, opaque.
+    @test !opaque(2 * LinearMap(B))
+    # The factors are what make a Kronecker product or a block-diagonal structured.
+    @test opaque(kron(fn, LinearMap(C)))
+    @test opaque(kron(LinearMap(B), fn))
+    @test opaque(blockdiag(LinearMap(B), fn))
+    # The base's Kronecker operator has two factors.
+    @test opaque(kron(LinearMap(B), LinearMap(C), LinearMap(B)))
+    # Sums and general products have no representation of their own.
+    @test opaque(LinearMap(B) + LinearMap(C))
+    @test opaque(LinearMap(B) * LinearMap(C))
+    @test opaque(LinearMap(B)' * LinearMap(B))
+    @test opaque(vcat(LinearMap(B), LinearMap(C)))
+    @test opaque(hcat(LinearMap(B), LinearMap(C)))
+    @test opaque(LinearMap(I, n))
+    # Only real entries have a place in the base.
+    @test opaque(LinearMap(complex.(B)))
+    @test opaque(LinearMap(B) * im)
+
+    # The wrapped map keeps the traits it declared, which is all an opaque map can offer.
+    sym = LinearMap{Float64}(
+        (y, x) -> mul!(y, B + B', x), n, n; issymmetric = true, ismutating = true
+    )
+    @test PureQPBase.is_symmetric(wrap(sym))
 end
 
 @testitem "a SciMLOperator is wrapped, or unwrapped, by what it carries" begin
