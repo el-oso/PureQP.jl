@@ -438,3 +438,43 @@ end
     @test r.iter_window > 0
     @test_throws "reps must be at least 1" faster_scan(P, q, A, b .- 1, b .+ 1; reps = 0)
 end
+
+@testitem "a solution kept across a solve is refilled without allocating" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+
+    # This method refills the workspace's own `Solution` rather than building one, so two
+    # results read from one workspace are the same object. A caller keeping a result needs its
+    # own: `copy` builds one and allocates, `copyto!` refills one it already holds and does
+    # not, which is what a loop under a no-allocation guarantee needs.
+    P = Matrix(2.0I, 3, 3)
+    A = Matrix(1.0I, 3, 3)
+    ws = PureDAQP.setup(P, [1.0, -2.0, 0.5], A, fill(-1.0, 3), fill(1.0, 3), ActiveSet())
+    kept = copy(PureQPBase.solve!(ws))
+    firstx = copy(kept.x)
+
+    PureQPBase.update!(ws; q = [-1.0, 2.0, -0.5])
+    second = PureQPBase.solve!(ws)
+    @test second.x != firstx        # the workspace moved on
+    @test kept.x == firstx          # ours did not
+
+    PureQPBase.copyto!(kept, second)
+    @test kept.x == second.x
+    @test kept.status == second.status
+    @test kept.obj_val == second.obj_val
+    @test kept.iter == second.iter
+
+    PureQPBase.update!(ws; q = [3.0, 3.0, 3.0])
+    third = PureQPBase.solve!(ws)
+    @test kept.x != third.x         # still independent
+
+    refill(dest, src) = @allocated PureQPBase.copyto!(dest, src)
+    refill(kept, third)
+    @test iszero(refill(kept, third))
+
+    smaller = PureDAQP.setup(
+        Matrix(2.0I, 2, 2), [1.0, 1.0], Matrix(1.0I, 2, 2),
+        fill(-1.0, 2), fill(1.0, 2), ActiveSet()
+    )
+    other = copy(PureQPBase.solve!(smaller))
+    @test_throws "must match the source" PureQPBase.copyto!(other, third)
+end

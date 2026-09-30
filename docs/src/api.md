@@ -17,6 +17,8 @@ PureOSQP.Optimizer
 PureQPBase.adjoint_derivative
 PureQPBase.forward_derivative
 PureQPBase.Solution
+Base.copy(::PureQPBase.Solution)
+Base.copyto!(::PureQPBase.Solution, ::PureQPBase.Solution)
 ```
 
 ## Algorithms and options

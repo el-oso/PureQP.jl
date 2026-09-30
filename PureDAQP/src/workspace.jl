@@ -163,6 +163,22 @@ Run the dual active-set method from the workspace's state.
 The working set carries over from the previous solve when one has run and nothing has
 invalidated it, so a re-solve after [`update!`](@ref) starts from the previous answer's
 active rows. [`cold_start!`](@ref) drops it.
+
+How much that saves depends on how far the data moved, because the carried set is a good guess
+exactly to the extent the active set did not change. Measured on an ill-conditioned problem,
+a re-solve after a 1% change in `q` costs a fiftieth of a cold one; after a tenth it can cost
+more than one, and on the hardest draws it reaches no answer at all and reports
+`NUMERICAL_ERROR` or `MAX_ITER_REACHED`.
+
+Such a run is recoverable and never a wrong answer: [`cold_start!`](@ref) and a second
+`solve!` solve the same data. This is left to the caller rather than done here, because a
+solve that sometimes silently runs twice is worse than one that fails predictably for a caller
+working to a deadline. A control loop that has the time to spare can retry; one that does not
+can take the failure and keep the previous input.
+
+The result is the workspace's own `Solution`, refilled by each solve rather than rebuilt. To
+keep one across a later solve, copy it -- [`copyto!`](@ref) into a `Solution` you already hold
+allocates nothing.
 """
 function solve!(ws::ActiveSetWorkspace{T}) where {T}
     t0 = time_ns()
