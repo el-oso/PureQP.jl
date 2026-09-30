@@ -35,3 +35,25 @@ end
         setup(scalar, q, K, vcat(b[1], l[2:end]), vcat(b[1], u[2:end]); scaling = 0).linsys
     ) === :cholesky
 end
+
+@testitem "setup with Kronecker P and A forms neither matrix" begin
+    using LinearAlgebra, Random, Krylov
+    Random.seed!(66)
+    sym(k) = (S = randn(k, k); Matrix(Symmetric(S'S / k + I)))
+    n1, n2 = 30, 25
+    n = n1 * n2
+    P = PureOSQP.KroneckerOperator(sym(n1), sym(n2))
+    A = PureOSQP.KroneckerOperator(randn(n1, n1), randn(n2, n2))
+    q = randn(n)
+    b = A * randn(n)
+    l, u = b .- rand(n), b .+ rand(n)
+    dense_bytes = sizeof(Float64) * n^2
+
+    # The matrix-free backend reads products only, so nothing in `setup` needs an `n×n`
+    # array: neither the convexity test of `P` nor the workspace it returns.
+    build() = setup(P, q, A, l, u, OperatorSplitting(); scaling = 0, linsys = :indirect)
+    ws = build()
+    @test PureOSQP.backend_name(ws.linsys) === :indirect
+    @test Base.summarysize(ws) < dense_bytes ÷ 4
+    @test (@allocated build()) < dense_bytes ÷ 4
+end

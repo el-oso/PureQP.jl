@@ -92,6 +92,26 @@ function LinearAlgebra.mul!(
     return y
 end
 
+# `setup` asks a `P` whether it is symmetric and convex before any backend exists. The generic
+# answers walk `n²` entries and factor an `n×n` copy; a Kronecker product answers both from
+# its two factors.
+
+# `(P₁ ⊗ P₂)ᵀ = P₁ᵀ ⊗ P₂ᵀ`, so symmetric factors give a symmetric product. The converse fails
+# only for a product of two antisymmetric factors, which this reports as not symmetric: the
+# answer errs toward refusing, and such a `P` can be passed as its own matrix.
+is_symmetric(K::KroneckerOperator) = issymmetric(K.A1) && issymmetric(K.A2)
+
+# The eigenvalues of `P₁ ⊗ P₂` are the products `λᵢ(P₁) λⱼ(P₂)`. A product of two reals is
+# bilinear, so its extremes over all pairs sit at the extremes of each factor's spectrum, and
+# `P + σI` is positive definite exactly when the smallest of those four products exceeds `-σ`.
+# Two eigenvalue problems of the factors' sizes replace a factorization of the `n×n` product.
+function is_convex(::Type{T}, K::KroneckerOperator, sigma) where {T}
+    isempty(K) && return true
+    lo1, hi1 = extrema(eigvals(Symmetric(Matrix{T}(K.A1))))
+    lo2, hi2 = extrema(eigvals(Symmetric(Matrix{T}(K.A2))))
+    return min(lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2) + sigma > zero(T)
+end
+
 """
     is_scalar_multiple(P) -> Bool
 

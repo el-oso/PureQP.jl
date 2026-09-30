@@ -43,7 +43,8 @@ struct ProductOperator{T <: Real, L, LT, V <: AbstractVector{T}} <: AbstractMatr
     posdef::Bool
     probe::Bool
     basis::V       # scratch of length `cols`, holds one basis vector at a time
-    column::V      # scratch of length `rows`, receives `op * eⱼ`
+    column::V      # scratch of length `rows`: receives `op * eⱼ`, and is the basis vector
+    #                of the adjoint product that reads a row ([`dense_row!`](@ref))
 end
 
 """
@@ -70,7 +71,7 @@ function ProductOperator{T}(
     ) where {T <: Real}
     rows, cols = size(op)
     basis = zeros(T, probe ? cols : 0)
-    column = zeros(T, probe ? rows : 0)
+    column = zeros(T, rows)
     opt = adjoint(op)
     return ProductOperator{T, typeof(op), typeof(opt), typeof(basis)}(
         op, opt, rows, cols, symmetric, posdef, probe, basis, column
@@ -170,7 +171,7 @@ column agrees to that operator's rounding rather than bitwise — which is the c
 exists for, the entries not being there to walk.
 """
 function probe_column!(M::ProductOperator{T}, j::Integer) where {T}
-    # The scratch is empty on an operator built without `probe`, which would otherwise fail
+    # `basis` is empty on an operator built without `probe`, which would otherwise fail
     # here as a `BoundsError` saying nothing about why.
     M.probe || no_entries()
     fill!(M.basis, zero(T))

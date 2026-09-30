@@ -172,3 +172,36 @@ end
         [(dynamic, (Base.RefValue{Any},))]; guarantees = (:trim_compatible,)
     )
 end
+
+@testitem "dense_row! allocates nothing and trims on every representation, proved" begin
+    using PureQPBase, StrictMode, StrictModeTest, LinearAlgebra
+
+    StrictMode.assert_enabled()
+    struct RowsOnlyMap{T}
+        M::Matrix{T}
+    end
+    struct RowsOnlyMapAdjoint{T}
+        parent::RowsOnlyMap{T}
+    end
+    Base.size(o::RowsOnlyMap) = size(o.M)
+    Base.size(o::RowsOnlyMapAdjoint) = reverse(size(o.parent.M))
+    Base.adjoint(o::RowsOnlyMap) = RowsOnlyMapAdjoint(o)
+    LinearAlgebra.mul!(y::AbstractVector, o::RowsOnlyMap, x::AbstractVector) = mul!(y, o.M, x)
+    LinearAlgebra.mul!(y::AbstractVector, o::RowsOnlyMapAdjoint, x::AbstractVector) =
+        mul!(y, o.parent.M', x)
+
+    for T in (Float64, Float32)
+        V = Vector{T}
+        Kr = typeof(PureQPBase.KroneckerOperator(randn(T, 3, 2), randn(T, 2, 3)))
+        Bd = typeof(PureQPBase.BlockDiagonal([randn(T, 2, 2), randn(T, 3, 1)]))
+        Po = typeof(PureQPBase.ProductOperator{T}(RowsOnlyMap(randn(T, 4, 3))))
+        signatures = [
+            (PureQPBase.dense_row!, (V, Matrix{T}, Int)),
+            (PureQPBase.dense_row!, (V, Diagonal{T, V}, Int)),
+            (PureQPBase.dense_row!, (V, Kr, Int)),
+            (PureQPBase.dense_row!, (V, Bd, Int)),
+            (PureQPBase.dense_row!, (V, Po, Int)),
+        ]
+        @test test_signatures(signatures; guarantees = (:noalloc, :trim_compatible)) isa Vector
+    end
+end

@@ -29,6 +29,7 @@ include("weights.jl")
 include("linsys.jl")
 include("preconditioner.jl")
 include("operator.jl")
+include("rows.jl")
 include("lowrank.jl")
 include("block.jl")
 include("kronsolve.jl")
@@ -123,6 +124,21 @@ let
         @assert_trim_compatible update_preconditioner!(M, prob, wt, 0)
         @assert_noalloc ldiv!(y, M, x)
         @assert_trim_compatible ldiv!(y, M, x)
+    end
+end
+
+# A consumer reads rows through `dense_row!` every time a row enters its working set, so each
+# method is checked on a small instance. `ProductOperator` is covered by
+# `test/strictmode_tests.jl`, which proves it over a wrapped type defined there.
+let
+    for A in (
+            [1.0 2.0 3.0 4.0 5.0 6.0; 6.0 5.0 4.0 3.0 2.0 1.0],
+            KroneckerOperator([1.0 2.0; 3.0 4.0], [1.0 0.5 2.0; 0.0 1.0 3.0]),
+            BlockDiagonal([[1.0 2.0; 3.0 4.0], [1.0 0.5; 0.0 1.0; 2.0 3.0]]),
+        )
+        row = zeros(size(A, 2))
+        @assert_noalloc dense_row!(row, A, 1)
+        @assert_trim_compatible dense_row!(row, A, 1)
     end
 end
 
