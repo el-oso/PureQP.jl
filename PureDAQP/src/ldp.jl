@@ -47,7 +47,11 @@ struct LDPWorkspace{T <: Real, WS}
     # matrix -- and the caller chooses between them. Concrete once instantiated, so neither
     # costs a dispatch in the loop. `qrset.jl` and `ldl.jl` say what the choice buys.
     W::WS
-    price::Vector{T} # scratch: M * u, every row at once
+    price::Vector{T} # scratch: M * u over the rows priced
+    # How many leading entries of `active` and `p` the infeasibility ray spans, or 0 for the
+    # working set's own length. They differ only after [`full_set_step!`](@ref) proves
+    # infeasibility, where the ray covers one row more than the set holds.
+    certrow::Vector{Int}
     # The norm each row of `M` was divided by. Pricing multiplies it back, so a row is
     # compared against the tolerance in the units the caller stated its bounds in.
     scale::Vector{T}
@@ -65,7 +69,7 @@ function LDPWorkspace(
         Mt, zeros(T, m), zeros(T, m), convert(Vector{Bool}, iseq), zeros(Int8, m),
         zeros(Int, kmax), zeros(Int, m), zeros(T, kmax), zeros(T, kmax), zeros(T, kmax),
         zeros(T, n), zeros(T, kmax), zeros(T, m),
-        W, zeros(T, m), scale,
+        W, zeros(T, m), zeros(Int, 1), scale,
         zeros(T, n), zeros(T, n), zeros(T, n)
     )
 end
@@ -226,7 +230,17 @@ function full_set_step!(
         end
     end
     alpha, blocking = blocking_step(ws, p, zero_tol)
-    iszero(blocking) && return false
+    if iszero(blocking)
+        # Nothing blocks, so this direction proves the problem infeasible -- and the proof
+        # includes `r`, which is not in the working set and so is not in `p[1:k]`. Recording
+        # it past the live prefix is what lets `certifiable` rebuild the whole ray: without
+        # its `∓1` the direction does not satisfy `Aᵀy = 0`, the check against the caller's
+        # rows fails, and a sound proof is reported as a numerical breakdown instead.
+        ws.active[k + 1] = r
+        ws.p[k + 1] = side == SIDE_UPPER ? -one(T) : one(T)
+        ws.certrow[1] = k + 1
+        return false
+    end
     for i in 1:k
         ws.mu[i] += alpha * p[i]
     end
@@ -410,12 +424,13 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
     zero_tol, primal_tol = alg.zero_tol, alg.primal_tol
     m = size(ws.Mt, 2)
     bland_after = 4 * (m + 1)
-    # The pricing window, and the row it starts at. An eighth of the rows is wide enough that
-    # a violated row is usually in it and narrow enough to be worth the narrowing; the floor
-    # keeps a small problem pricing in one go, where a window costs a second BLAS call and
-    # saves nothing.
-    chunk = max(256, m >> 3)
+    # How many rows one iteration examines, and the row it starts at. `chunk = m` examines
+    # every row, which is what `scan = :all` asks for and what leaves the entering row the
+    # worst violator rather than the worst one near where the last search stopped.
+    chunk = alg.scan === :window ? max(256, m >> 3) : m
     scan = 1
+    # Any ray a previous pass left behind describes a working set this one no longer holds.
+    ws.certrow[1] = 0
     for iter in 1:max_iter
         # Every step reads `nactive(ws.W)` for itself: dropping and adding a row both change it, so
         # the working set's size does not survive an iteration.
@@ -652,11 +667,20 @@ end
 Adopt new caller bounds, keeping the factorization and the transformed constraint matrix.
 """
 function rebuild_bounds!(red::DAQPReduction{T}, bupper::AbstractVector{T}, blower::AbstractVector{T}) where {T}
+    iseq = red.ws.iseq
+    moved = false
     for j in eachindex(red.bu)
         red.bu[j] = bupper[j] / red.scale[j]
         red.bl[j] = blower[j] / red.scale[j]
+        # Which rows are equalities is a property of the bounds, so it is rebuilt with them.
+        # Left alone, a row whose bounds have just been separated keeps a multiplier free in
+        # sign and never blocks a step, and the pass settles on a point that is not the
+        # answer -- reported as one, because nothing about the run looks wrong.
+        eq = bupper[j] == blower[j]
+        moved |= eq != iseq[j]
+        iseq[j] = eq
     end
-    return red
+    return moved
 end
 
 """

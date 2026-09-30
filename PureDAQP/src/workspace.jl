@@ -199,7 +199,9 @@ that reaches an answer pays for it.
 function certifiable(ws::ActiveSetWorkspace{T}) where {T}
     lw = ws.red.ws
     prob = ws.prob
-    k = nactive(lw.W)
+    # The ray spans the working set, except where `full_set_step!` proved infeasibility with a
+    # row it could not hold; there it reaches one further, and `certrow` says so.
+    k = iszero(lw.certrow[1]) ? nactive(lw.W) : lw.certrow[1]
     k > 0 || return false
     y = ws.ycert
     fill!(y, zero(T))
@@ -324,7 +326,11 @@ function update!(
         )
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)
-        rebuild_bounds!(ws.red, data.u0, data.l0)
+        # A row that has just become an equality, or stopped being one, is held on different
+        # terms: an equality's multiplier is free in sign and never blocks a step. The
+        # working set carried from the previous solve holds it on the old terms, so it is no
+        # longer a starting point and the next solve builds its own.
+        rebuild_bounds!(ws.red, data.u0, data.l0) && (ws.warm = false)
     end
     ws.update_time += (time_ns() - t0) / 1.0e9
     return ws

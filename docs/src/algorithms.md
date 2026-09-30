@@ -297,7 +297,46 @@ b = solve(P, q, A, l, u, ActiveSet(; working_set = :gram))
 a.status == b.status && a.obj_val ≈ b.obj_val    # if false, keep :rows
 ```
 
-### What does not decide it
+### How many rows an iteration examines
+
+A second setting, `scan`, is independent of the working set. `:all` (the default) examines
+every row each iteration and enters the worst violator; `:window` examines a window of them,
+resumed where the last row entered, and enters the worst within it. A window still examines
+every row before a run ends, so it cannot stop early or miss a violated row — what it changes
+is which violated row enters, and that changes how many iterations the run takes.
+
+**This one is not predictable, and the package does not pretend otherwise.** Measured over
+eight problems, `:window` ran from 1.8× faster to 1.6× slower, and none of the properties that
+ought to predict it does:
+
+| problem | m | rows active | m / active | `:window` |
+|---|---|---|---|---|
+| 629 × 2186 | 2186 | 202 | 10.8 | **1.81× faster** |
+| 400 × 3200 | 3200 | 397 | 8.1 | **1.14× faster** |
+| 200 × 1600 | 1600 | 200 | 8.0 | 1.06× slower |
+| 100 × 800 | 800 | 100 | 8.0 | 1.03× slower |
+| 50 × 400 | 400 | 50 | 8.0 | 1.18× slower |
+| 250 × 500 | 500 | 249 | 2.0 | 1.60× slower |
+| 400 × 800 | 800 | 392 | 2.0 | 1.27× slower |
+
+A ratio near 2 loses every time, which is the one part that holds. A ratio near 8 loses three
+times and wins once, so the ratio is necessary and not sufficient. How often the window finds
+a violator does not separate them either — 84% to 93% on every problem, winners and losers
+alike — nor does how good its choice is.
+
+So use [`faster_scan`](@ref), which solves one of your problems both ways and returns the
+setting that was faster, with both times and iteration counts:
+
+```julia
+julia> faster_scan(P, q, A, l, u)
+(scan = :window, all_ms = 111.45, window_ms = 59.32, ratio = 1.88, iter_all = 973, iter_window = 988)
+```
+
+The answer holds for problems of that shape and conditioning, not for a different family. When
+`ratio` is near one the setting does not matter, and `:all` is the default because it is the
+one that is never much worse.
+
+### What does not decide the working set
 
 - **Sparsity and structure.** `M = A R⁻¹` is dense whatever `A` was, so neither form sees
   them, and `ActiveSet` ignores both regardless.

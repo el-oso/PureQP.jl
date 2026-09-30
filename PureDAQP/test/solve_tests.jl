@@ -341,3 +341,100 @@ end
     @test ActiveSet().working_set === :rows
     @test ActiveSet(; working_set = :gram).working_set === :gram
 end
+
+@testitem "infeasibility proved from a full working set is still infeasibility" begin
+    using PureDAQP, LinearAlgebra
+
+    # With one variable the working set fills after a single row, so the contradiction
+    # between these two is met by `full_set_step!` rather than by the singular branch. The
+    # direction that proves it includes the entering row, which is not in the working set;
+    # a certificate rebuilt from the set alone does not satisfy `Aᵀy = 0`, fails the check
+    # against the caller's rows, and downgrades a sound proof to a numerical breakdown.
+    one = reshape([1.0], 1, 1)
+    both = reshape([1.0, 1.0], 2, 1)
+    for ws in (:rows, :gram)
+        sol = solve(one, [0.0], both, [1.0, -5.0], [2.0, -4.0], ActiveSet(; working_set = ws))
+        @test sol.status == PRIMAL_INFEASIBLE
+    end
+
+    # The same, with the set filled by rows that are not the contradicting pair.
+    A = [1.0 0.0; 0.0 1.0; 1.0 0.0]
+    sol = solve(Matrix(1.0I, 2, 2), [0.0, 0.0], A, [1.0, 100.0, -5.0], [2.0, 101.0, -4.0], ActiveSet())
+    @test sol.status == PRIMAL_INFEASIBLE
+end
+
+@testitem "an update! that changes which rows are equalities is not warm started" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+
+    # An equality's multiplier is free in sign and never blocks a step, so a working set
+    # carried across a change of equality status holds a row on terms that no longer apply.
+    P = Matrix(1.0I, 2, 2)
+    q = [-1.0, 1.0]
+    A = Matrix(1.0I, 2, 2)
+    alg = ActiveSet()
+
+    ws = PureDAQP.setup(P, q, A, [-1.0, -1.0], [-1.0, 1.0], alg)   # row 1 an equality
+    PureQPBase.solve!(ws)
+    PureQPBase.update!(ws; l = [-1.0, -1.0], u = [1.0, 1.0])       # no longer one
+    loosened = PureQPBase.solve!(ws)
+    @test loosened.status == SOLVED
+    @test loosened.x ≈ solve(P, q, A, [-1.0, -1.0], [1.0, 1.0], alg).x atol = 1.0e-8
+
+    ws2 = PureDAQP.setup(P, q, A, [-1.0, -1.0], [1.0, 1.0], alg)   # no equalities
+    PureQPBase.solve!(ws2)
+    PureQPBase.update!(ws2; l = [-1.0, -1.0], u = [-1.0, 1.0])     # row 1 becomes one
+    tightened = PureQPBase.solve!(ws2)
+    @test tightened.status == SOLVED
+    @test tightened.x ≈ solve(P, q, A, [-1.0, -1.0], [-1.0, 1.0], alg).x atol = 1.0e-8
+
+    # Bounds that move without changing any equality keep the working set.
+    ws3 = PureDAQP.setup(P, q, A, [-2.0, -2.0], [2.0, 2.0], alg)
+    PureQPBase.solve!(ws3)
+    PureQPBase.update!(ws3; l = [-1.5, -1.5], u = [1.5, 1.5])
+    @test ws3.warm
+    @test PureQPBase.solve!(ws3).x ≈ solve(P, q, A, [-1.5, -1.5], [1.5, 1.5], alg).x atol = 1.0e-8
+end
+
+@testitem "a scan window reaches the same answer as scanning every row" begin
+    using PureDAQP, LinearAlgebra, Random
+
+    # A window changes which violated row enters, not which point is optimal.
+    rng = MersenneTwister(808)
+    for _ in 1:12
+        n, m = rand(rng, 5:20), rand(rng, 300:400)
+        G = randn(rng, n, n)
+        P = Matrix(Symmetric(G' * G + n * I))
+        q = randn(rng, n)
+        A = randn(rng, m, n)
+        b = A * randn(rng, n)
+        l = b .- rand(rng, m)
+        u = b .+ rand(rng, m)
+        every = solve(P, q, A, l, u, ActiveSet(); max_iter = 50_000)
+        window = solve(P, q, A, l, u, ActiveSet(; scan = :window); max_iter = 50_000)
+        @test every.status == SOLVED
+        @test window.status == SOLVED
+        @test every.obj_val ≈ window.obj_val atol = 1.0e-9
+    end
+    @test_throws "scan must be :all or :window" ActiveSet(; scan = :partial)
+    @test ActiveSet().scan === :all
+end
+
+@testitem "faster_scan measures both settings and picks one" begin
+    using PureDAQP, LinearAlgebra, Random
+
+    rng = MersenneTwister(99)
+    n, m = 20, 400
+    G = randn(rng, n, n)
+    P = Matrix(Symmetric(G' * G + n * I))
+    q = randn(rng, n)
+    A = randn(rng, m, n)
+    b = A * randn(rng, n)
+    r = faster_scan(P, q, A, b .- rand(rng, m), b .+ rand(rng, m); reps = 2, max_iter = 50_000)
+    @test r.scan in (:all, :window)
+    # Whichever it picked is the one it timed as faster, and the ratio says by how much.
+    @test (r.scan === :all) == (r.all_ms <= r.window_ms)
+    @test r.ratio >= 1
+    @test r.iter_all > 0
+    @test r.iter_window > 0
+    @test_throws "reps must be at least 1" faster_scan(P, q, A, b .- 1, b .+ 1; reps = 0)
+end

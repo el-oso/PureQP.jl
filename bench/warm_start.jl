@@ -70,6 +70,7 @@ workspace across draws would instead measure a solver re-solving what it had jus
 function warm_steps(P, q, A, l, u, alg, eps, draws)
     ms = Float64[]
     iters = Int[]
+    failed = 0
     for seed in 1:draws
         rng = MersenneTwister(seed)
         qp = q .+ eps .* randn(rng, length(q)) .* abs.(q)
@@ -77,12 +78,19 @@ function warm_steps(P, q, A, l, u, alg, eps, draws)
         PureQPBase.solve!(w)
         PureQPBase.update!(w; q = qp)
         t = @elapsed s = PureQPBase.solve!(w)
-        s.status == PureQPBase.SOLVED ||
-            error("a warm step did not succeed at eps = $eps, got $(s.status)")
-        push!(ms, 1000t)
-        push!(iters, s.iter)
+        # A warm step that does not reach an answer is a result about warm starting rather
+        # than an error in the measurement: far enough from where the working set was optimal,
+        # the carried set is a bad enough guess that the pass breaks down. `cold_start!` then
+        # solves the same data, so the count of these belongs in the report beside the times.
+        if s.status == PureQPBase.SOLVED
+            push!(ms, 1000t)
+            push!(iters, s.iter)
+        else
+            failed += 1
+        end
     end
-    return (ms = ms, iters = iters)
+    isempty(ms) && error("no warm step succeeded at eps = $eps")
+    return (ms = ms, iters = iters, failed = failed)
 end
 
 function report(name, P, q, A, l, u)
@@ -114,13 +122,14 @@ function report(name, P, q, A, l, u)
             steps, (
                 eps = eps, min_ms = minimum(st.ms), median_ms = median(st.ms),
                 max_ms = maximum(st.ms), min_iter = minimum(st.iters),
-                max_iter = maximum(st.iters), beat_cold = beat,
+                max_iter = maximum(st.iters), beat_cold = beat, failed = st.failed,
             )
         )
         @printf(
-            "  %-18.0e %9.3f %9.3f %9.3f   %d of %d   iterations %d - %d\n",
-            eps, minimum(st.ms), median(st.ms), maximum(st.ms), beat, DRAWS,
-            minimum(st.iters), maximum(st.iters)
+            "  %-18.0e %9.3f %9.3f %9.3f   %d of %d   iterations %d - %d%s\n",
+            eps, minimum(st.ms), median(st.ms), maximum(st.ms), beat, DRAWS - st.failed,
+            minimum(st.iters), maximum(st.iters),
+            iszero(st.failed) ? "" : "   $(st.failed) of $DRAWS did not reach an answer warm"
         )
         flush(stdout)
     end
@@ -160,9 +169,9 @@ open(joinpath(@__DIR__, "results", "puredaqp_warm_start.json"), "w") do io
         for (j, s) in enumerate(c.steps)
             @printf(
                 io,
-                "{\"q_perturbation\": %.0e, \"min_ms\": %.6f, \"median_ms\": %.6f, \"max_ms\": %.6f, \"min_iter\": %d, \"max_iter\": %d, \"beat_cold\": %d, \"draws\": %d}%s",
+                "{\"q_perturbation\": %.0e, \"min_ms\": %.6f, \"median_ms\": %.6f, \"max_ms\": %.6f, \"min_iter\": %d, \"max_iter\": %d, \"beat_cold\": %d, \"draws\": %d, \"failed_warm\": %d}%s",
                 s.eps, s.min_ms, s.median_ms, s.max_ms, s.min_iter, s.max_iter,
-                s.beat_cold, DRAWS, j == length(c.steps) ? "" : ", "
+                s.beat_cold, DRAWS, s.failed, j == length(c.steps) ? "" : ", "
             )
         end
         println(io, "]}", i == length(cases) ? "" : ",")

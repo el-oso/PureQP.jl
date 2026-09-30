@@ -45,7 +45,7 @@ import PureQPBase:
 export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
 export dimensions, capabilities
 export Solution, Status, Options, default_options
-export QPAlgorithm, ActiveSet
+export QPAlgorithm, ActiveSet, faster_scan
 export QPWorkspace, ActiveSetWorkspace
 export has_solution, status_name
 export SOLVED, PRIMAL_INFEASIBLE, DUAL_INFEASIBLE, MAX_ITER_REACHED, NON_CONVEX, UNSOLVED

@@ -26,6 +26,7 @@ PureQPBase.QPAlgorithm
 PureOSQP.OperatorSplitting
 PureIPM.InteriorPoint
 PureDAQP.ActiveSet
+PureDAQP.faster_scan
 PureQPBase.Options
 PureQPBase.LINSYS_OPTIONS
 PureQPBase.default_options
