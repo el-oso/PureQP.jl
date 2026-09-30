@@ -3,7 +3,7 @@
 #
 # Both solvers are given the same data and timed over setup and solve together, which is what
 # a caller pays for a problem it has not seen before; the warm path is measured separately in
-# puredaqp_windowed_pricing.json. Agreement is checked before any time is recorded, so a row
+# puredaqp_warm_start.json. Agreement is checked before any time is recorded, so a row
 # in the output is a comparison of two solvers that found the same answer.
 #
 #     julia --project=bench bench/daqp_headtohead.jl
@@ -35,7 +35,14 @@ function dep_version(name)
     return "not installed"
 end
 
-const SIZES = [(10, 20), (25, 50), (50, 100), (100, 200), (200, 400), (400, 800)]
+# A grid over both dimensions rather than a line through them. How many rows are active at the
+# solution -- and so how many iterations the method takes -- follows the ratio `m / n` more
+# than it follows either alone, so a sweep along `m = 2n` cannot show where one solver
+# overtakes the other.
+const NS = [25, 50, 100, 200, 400]
+const RATIOS = [0.5, 1, 2, 4, 8]
+"Cells above this are left out: their cost is dominated by the same effects the smaller ones show."
+const MAX_CELL = 400 * 3200
 
 # A dual active-set method takes on the order of `m` iterations, so both solvers are given a
 # limit well past what the largest size here needs. Left at their defaults the sweep measures
@@ -45,7 +52,9 @@ const C_SETTINGS = Dict(:iter_limit => Cint(ITER_LIMIT))
 
 rows = []
 rng = MersenneTwister(20260930)
-for (n, m) in SIZES
+for n in NS, ratio in RATIOS
+    m = round(Int, n * ratio)
+    (m >= 2 && n * m <= MAX_CELL) || continue
     P, q, A, l, u = random_qp(rng, n, m)
     sense = zeros(Cint, m)
 
@@ -56,14 +65,14 @@ for (n, m) in SIZES
     rel = norm(sol.x - xc) / max(norm(xc), one(eltype(xc)))
     rel < 1.0e-6 || error("solvers disagree at n=$n m=$m: relative difference $rel")
 
-    bp = @be PureDAQP.solve($P, $q, $A, $l, $u, ActiveSet(); max_iter = ITER_LIMIT) seconds = 4
-    bc = @be DAQP.quadprog($P, $q, $A, $u, $l, $sense; settings = $C_SETTINGS) seconds = 4
+    bp = @be PureDAQP.solve($P, $q, $A, $l, $u, ActiveSet(); max_iter = ITER_LIMIT) seconds = 2
+    bc = @be DAQP.quadprog($P, $q, $A, $u, $l, $sense; settings = $C_SETTINGS) seconds = 2
     pure_ms = 1000 * median(bp).time
     c_ms = 1000 * median(bc).time
 
     push!(
         rows, (
-            n = n, m = m, iters = sol.iter,
+            n = n, m = m, ratio = ratio, iters = sol.iter,
             puredaqp_ms = pure_ms, libdaqp_ms = c_ms,
             speedup = c_ms / pure_ms,
             rel_err_vs_libdaqp = rel,
@@ -84,7 +93,7 @@ open(joinpath(@__DIR__, "results", "puredaqp_vs_libdaqp.json"), "w") do io
     println(io, "  \"host\": \"", gethostname(), "\",")
     println(io, "  \"julia\": \"", VERSION, "\",")
     println(io, "  \"blas_threads\": 1,")
-    println(io, "  \"tool\": \"Chairmarks, seconds=4, median reported\",")
+    println(io, "  \"tool\": \"Chairmarks, seconds=2, median reported\",")
     println(io, "  \"daqp_jl\": \"", dep_version("DAQP"), "\",")
     println(io, "  \"daqp_jll\": \"", dep_version("DAQP_jll"), "\",")
     println(io, "  \"puredaqp\": \"", dep_version("PureDAQP"), "\",")
@@ -94,12 +103,28 @@ open(joinpath(@__DIR__, "results", "puredaqp_vs_libdaqp.json"), "w") do io
     for (i, r) in enumerate(rows)
         @printf(
             io,
-            "    {\"n\": %d, \"m\": %d, \"iters\": %d, \"puredaqp_ms\": %.6f, \"libdaqp_ms\": %.6f, \"speedup\": %.6f, \"rel_err_vs_libdaqp\": %.3e, \"alloc_bytes\": %d}%s\n",
-            r.n, r.m, r.iters, r.puredaqp_ms, r.libdaqp_ms, r.speedup,
+            "    {\"n\": %d, \"m\": %d, \"m_over_n\": %g, \"iters\": %d, \"puredaqp_ms\": %.6f, \"libdaqp_ms\": %.6f, \"speedup\": %.6f, \"rel_err_vs_libdaqp\": %.3e, \"alloc_bytes\": %d}%s\n",
+            r.n, r.m, r.ratio, r.iters, r.puredaqp_ms, r.libdaqp_ms, r.speedup,
             r.rel_err_vs_libdaqp, r.alloc_bytes, i == length(rows) ? "" : ","
         )
     end
     println(io, "  ]")
     println(io, "}")
 end
-println("wrote bench/results/puredaqp_vs_libdaqp.json")
+
+# The grid, as a grid. Above 1.00 PureDAQP is the faster of the two.
+println("\nlibdaqp / PureDAQP, by n and m/n\n")
+@printf("%6s", "n \\ m/n")
+for r in RATIOS
+    @printf("%10s", string(r))
+end
+println()
+for n in NS
+    @printf("%6d", n)
+    for ratio in RATIOS
+        i = findfirst(r -> r.n == n && r.ratio == ratio, rows)
+        isnothing(i) ? @printf("%10s", "-") : @printf("%9.2fx", rows[i].speedup)
+    end
+    println()
+end
+println("\nwrote bench/results/puredaqp_vs_libdaqp.json")

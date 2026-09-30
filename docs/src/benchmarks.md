@@ -170,9 +170,12 @@ beforehand. Both DAQP implementations read dense ones, which is what they are bu
 **An active-set method wins this shape.** These are dense problems with few rows active at
 the solution, which is what an active-set method is for: a few expensive steps, then it stops
 at the exact vertex. PureDAQP is the fastest solver here from `n = 50` up and beats the C
-implementation it follows by 1.28× to 2.42×; below that the fixed cost of a solve dominates a
-run of a dozen iterations and DAQP's is smaller. PureIPM beats Clarabel at every size, by
-1.9× to 5.6×.
+implementation it follows by 1.28× to 2.42×. PureIPM beats Clarabel at every size, by 1.9× to
+5.6×.
+
+Below `n = 50` it does not, and the reason is per-iteration work rather than a fixed cost:
+setup is about a fifth of a solve at `n = 25`, and the remainder divides into iterations that
+each cost more than the C implementation's. The next table gives the whole picture.
 
 These are the figures for the default `working_set = :rows`, which trades 1.2×–1.5× for a
 rank test that holds on an ill-conditioned reduction; `:gram` is the faster setting, and
@@ -190,6 +193,46 @@ only one of the three that takes an operator it can only multiply by.
 The six solutions agree to about `1e-4`, which is expected at `eps_abs = eps_rel = 1e-6`.
 The active-set and interior-point solvers stop at exact optimality conditions; ADMM stops when
 its residuals fall below the tolerance.
+
+## Against the C implementation, over both dimensions
+
+The table above runs along `m = 2n`, which is one line through a plane. This one is the
+plane: `libdaqp / PureDAQP`, so above `1.00` PureDAQP is faster. Reproduce with
+`julia --project=bench bench/daqp_headtohead.jl`; samples are in
+`bench/results/puredaqp_vs_libdaqp.json`. Single-threaded BLAS, `working_set = :rows`, both
+solvers given the same iteration limit.
+
+| n \ m/n | 0.5 | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|---|
+| 25 | 0.89× | 0.66× | 0.61× | 0.94× | 0.93× |
+| 50 | 1.40× | 1.10× | 1.09× | 1.14× | 1.04× |
+| 100 | 2.30× | 1.80× | 1.64× | 1.11× | 1.64× |
+| 200 | 3.34× | 2.32× | 1.39× | 1.71× | 2.14× |
+| 400 | **4.05×** | 1.70× | 1.49× | 1.85× | 2.19× |
+
+The two agree to between `4.5e-16` and `3.9e-14` in every cell, and the script checks that
+before recording a time.
+
+**`n` decides this, not the aspect ratio.** Reading down a column is a clean progression;
+reading across a row is not. The crossover sits near `n = 50` whichever shape the problem
+has.
+
+**The best case is tall and thin.** `m / n = 0.5` is the strongest column, because few rows
+means a small working set and the per-iteration cost follows `O(nk)`. A sweep along `m = 2n`
+runs through one of the weaker columns, which is why the table above reports a narrower
+range than this one.
+
+**Below `n = 50`, `:gram` recovers it.** The deficit is the extra arithmetic the `:rows`
+representation spends per iteration, not a fixed cost, so changing the representation removes
+it:
+
+| n | m | `:rows` | `:gram` | libdaqp | `:rows` / C | `:gram` / C |
+|---|---|---|---|---|---|---|
+| 25 | 25 | 0.026 ms | 0.017 ms | 0.017 ms | 0.63× | **0.96×** |
+| 25 | 50 | 0.067 ms | 0.047 ms | 0.041 ms | 0.60× | 0.86× |
+| 25 | 100 | 0.080 ms | 0.059 ms | 0.062 ms | 0.78× | **1.06×** |
+| 50 | 50 | 0.117 ms | 0.089 ms | 0.124 ms | 1.06× | **1.39×** |
+| 100 | 100 | 0.527 ms | 0.437 ms | 0.819 ms | 1.55× | **1.87×** |
 
 ## Choosing a working set for the active-set method
 

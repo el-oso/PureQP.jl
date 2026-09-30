@@ -1,0 +1,12 @@
+{
+  "host": "neuromancer",
+  "julia": "1.13.1",
+  "blas_threads": 1,
+  "tool": "Chairmarks, median reported; workspace rebuilt in the untimed setup phase",
+  "measures": "cold includes setup; warm excludes it",
+  "note": "clock unpinned on this host; indicative, not a gate",
+  "cases": [
+    {"name": "generated, ill-conditioned P", "n": 250, "m": 500, "cold_ms": 63.382893, "cold_iter": 2483, "warm_same_ms": 0.074971, "warm_same_bytes": 0, "steps": [{"q_perturbation": 1e-04, "min_ms": 0.079480, "median_ms": 0.082676, "max_ms": 0.168207, "min_iter": 1, "max_iter": 3, "beat_cold": 8, "draws": 8}, {"q_perturbation": 1e-03, "min_ms": 0.126859, "median_ms": 0.178090, "max_ms": 0.238189, "min_iter": 2, "max_iter": 5, "beat_cold": 8, "draws": 8}, {"q_perturbation": 1e-02, "min_ms": 0.343357, "median_ms": 0.781559, "max_ms": 1.277769, "min_iter": 10, "max_iter": 45, "beat_cold": 8, "draws": 8}, {"q_perturbation": 5e-02, "min_ms": 2.987862, "median_ms": 3.795500, "max_ms": 4.692846, "min_iter": 103, "max_iter": 179, "beat_cold": 8, "draws": 8}, {"q_perturbation": 1e-01, "min_ms": 5.643017, "median_ms": 6.608287, "max_ms": 8.245704, "min_iter": 215, "max_iter": 323, "beat_cold": 8, "draws": 8}]},
+    {"name": "CSV problem at /home/el_oso/Documents/claude/problem", "n": 629, "m": 2186, "cold_ms": 60.391506, "cold_iter": 988, "warm_same_ms": 0.959840, "warm_same_bytes": 0, "steps": [{"q_perturbation": 1e-04, "min_ms": 1.079515, "median_ms": 1.159792, "max_ms": 1.554640, "min_iter": 1, "max_iter": 2, "beat_cold": 8, "draws": 8}, {"q_perturbation": 1e-03, "min_ms": 1.324707, "median_ms": 3.035397, "max_ms": 3.859355, "min_iter": 2, "max_iter": 9, "beat_cold": 8, "draws": 8}, {"q_perturbation": 1e-02, "min_ms": 3.071169, "median_ms": 5.444648, "max_ms": 12.436643, "min_iter": 31, "max_iter": 220, "beat_cold": 8, "draws": 8}, {"q_perturbation": 5e-02, "min_ms": 7.648037, "median_ms": 12.389359, "max_ms": 57.034882, "min_iter": 125, "max_iter": 1055, "beat_cold": 8, "draws": 8}, {"q_perturbation": 1e-01, "min_ms": 16.978204, "median_ms": 21.762738, "max_ms": 249.511402, "min_iter": 323, "max_iter": 4741, "beat_cold": 5, "draws": 8}]}
+  ]
+}

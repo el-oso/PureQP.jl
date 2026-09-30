@@ -270,7 +270,13 @@ Start with the default. `:rows` is the default because nothing about a problem a
 advance that its reduction is well conditioned, and a solve that stops is worth more than a
 solve that is 1.3× faster.
 
-Move to `:gram` when **all** of these hold:
+Move to `:gram` for a **small** problem whatever else is true. Below about `n = 50` the
+`:rows` representation spends enough extra arithmetic per iteration to lose to the C
+implementation of the same method, and `:gram` brings it back to parity; measured at `n = 25`,
+`:rows` runs at 0.60×–0.78× of libdaqp and `:gram` at 0.86×–1.06×. A problem that small is
+also one whose conditioning you can check directly, so the risk below is easy to retire.
+
+Above that size, move to `:gram` when **all** of these hold:
 
 1. **You have measured `cond(A R⁻¹)` on representative data** and it is comfortably below
    `1e8`. Not `cond(A)`, and not `cond(P)` — the reduction multiplies them, and it is the
@@ -295,7 +301,8 @@ a.status == b.status && a.obj_val ≈ b.obj_val    # if false, keep :rows
 
 - **Sparsity and structure.** `M = A R⁻¹` is dense whatever `A` was, so neither form sees
   them, and `ActiveSet` ignores both regardless.
-- **Problem size.** The ratio is roughly flat across the sizes measured.
+- **The shape of the problem.** How many rows there are relative to variables moves the
+  cost of a solve a great deal, but it moves both representations together.
 - **Rows that are exact combinations of other rows.** Dependence that is *exact* is not the
   same difficulty as dependence blurred by rounding: both forms carry the dependent row and
   walk the direction it opens, and both solve such problems. Only conditioning separates them.
