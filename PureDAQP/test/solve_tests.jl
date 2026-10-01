@@ -791,6 +791,18 @@ end
     @test Base.summarysize(ws.red.R) < n * n * sizeof(Float64) / 20
     # With no dense triangular factor there is no `A R⁻¹` to form, so rows are derived.
     @test nameof(typeof(ws.red.ws.M)) === :ImplicitRows
+    # `A` keeps its sparsity too, held with its transpose so a row is a column. That is two
+    # copies of the nonzeros and two sets of index arrays, so the bound is against what the
+    # dense matrix it replaces would cost rather than against `nnz` itself.
+    @test nameof(typeof(ws.red.ws.M.A)) === :SparseRows
+    @test Base.summarysize(ws.red.ws.M.A) < m * n * sizeof(Float64) / 20
+    # A row read agrees with the dense matrix's, entry for entry.
+    rowbuf = zeros(n)
+    Adense = Matrix(A)
+    for i in (1, m ÷ 3, m)
+        PureQPBase.dense_row!(rowbuf, ws.red.ws.M.A, i)
+        @test rowbuf == Adense[i, :]
+    end
 
     s = PureDAQP.solve!(ws)
     sdense = PureDAQP.solve(Matrix(P), q, Matrix(A), l, u, ActiveSet(); max_iter = 50_000)

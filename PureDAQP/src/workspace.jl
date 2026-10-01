@@ -148,16 +148,14 @@ end
 
 `A` itself when the reduction reads its rows and products directly, and a dense copy otherwise.
 
-A sparse `A` goes through the dense copy, which is the one place this method forms a matrix.
-CSC stores columns, so a row of it is reachable only by walking every column, which costs more
-than the densification it would avoid; reading rows in `O(nnz)` needs the transpose held
-alongside, which the reduction does not do.
+The base decides what a row-reading consumer should hold, so a sparse `A` is kept as a sparse
+pair with its transpose rather than densified; this adds only the refusal.
 """
 row_operand(::Type{T}, A::ReadDirectly{T}) where {T} = A
 
 function row_operand(::Type{T}, A::AbstractMatrix) where {T}
     is_materializable(A) || refuse_unreadable_operand(T)
-    return convert(Matrix{T}, A)
+    return rows_operand(T, A)
 end
 
 @noinline refuse_unreadable_operand(::Type{T}) where {T} = throw(

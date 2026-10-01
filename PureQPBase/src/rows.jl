@@ -24,6 +24,20 @@ function dense_row!(dest::AbstractVector, A::AbstractMatrix, i::Integer)
     return dest
 end
 
+"""
+    rows_operand(T, A) -> A, a row-readable form of it, or Matrix{T}
+
+What a consumer that reads `A` by rows should hold.
+
+The generic answer is a dense copy, because the generic [`dense_row!`](@ref) reads one entry per
+column and a representation that makes that expensive is cheaper to densify once. A
+representation with a row-readable form of its own overrides this and returns that form: the
+SparseArrays extension returns one holding the transpose, where a row is a column.
+
+A representation the consumer already reads directly never reaches this.
+"""
+rows_operand(::Type{T}, A::AbstractMatrix) where {T} = convert(Matrix{T}, A)
+
 # `(A₁ ⊗ A₂)[i, (j₁, j₂)] = A₁[i₁, j₁] A₂[i₂, j₂]`, where `i = (i₁ - 1) m₂ + i₂` and the
 # second factor's column index runs fastest, so `dest` laid out as `n₂×n₁` is the outer
 # product of row `i₂` of `A₂` with row `i₁` of `A₁`. Loops rather than a reshaped view: the
