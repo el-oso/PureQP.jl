@@ -817,3 +817,54 @@ end
         PureDAQP.setup(Matrix(P), q, Matrix(A), l, u, ActiveSet(); max_iter = 50_000)
     )
 end
+
+@testitem "every LinearMaps composition reaches the reduction" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps, Random
+
+    Random.seed!(5)
+    k = 6
+    n = k * k
+    f1 = Matrix(Symmetric(rand(k, k) + k * I))
+    f2 = Matrix(Symmetric(rand(k, k) + k * I))
+    P = kron(f1, f2)
+    a1, a2 = randn(k + 2, k), randn(k + 1, k)
+    A = kron(a1, a2)
+    q = randn(n)
+
+    # `A` is only multiplied and read by row, so every composition serves: the ones the base
+    # holds as their own type, and the ones that arrive as a `ProductOperator` and answer a row
+    # with one adjoint product.
+    maps = (
+        ("wrapped matrix", LinearMap(A)),
+        ("kron", kron(LinearMap(a1), LinearMap(a2))),
+        ("vcat", [LinearMap(A); LinearMap(A)]),
+        ("sum", LinearMap(A) + LinearMap(A)),
+        ("product", LinearMap(A) * LinearMap(Matrix(1.0I, n, n))),
+        ("scaled", 2.0 * LinearMap(A)),
+        ("function map", LinearMap(x -> A * x, y -> A' * y, size(A)...)),
+    )
+
+    for (label, M) in maps
+        b = M * randn(n)
+        l, u = b .- 1, b .+ 1
+        s = copy(PureDAQP.solve(P, q, M, l, u, ActiveSet(); max_iter = 20_000))
+        dense = copy(PureDAQP.solve(P, q, Matrix(M), l, u, ActiveSet(); max_iter = 20_000))
+        @test s.status == SOLVED
+        @test dense.status == SOLVED
+        # The same rows in a different representation take the same path to the same point.
+        @test s.iter == dense.iter
+        @test isapprox(s.obj_val, dense.obj_val; rtol = 1.0e-9)
+        @test maximum(abs, s.x - dense.x) < 1.0e-7
+    end
+
+    # `P` is the asymmetric case: it needs a factor, so a map that unwraps to one of the forms
+    # the base factors is served and a products-only one is refused by name.
+    Pk = kron(LinearMap(f1), LinearMap(f2))
+    bk = A * randn(n)
+    @test PureDAQP.solve(Pk, q, A, bk .- 1, bk .+ 1, ActiveSet(); max_iter = 20_000).status ==
+        SOLVED
+    Pfun = LinearMap(x -> P * x, n; issymmetric = true, isposdef = true)
+    @test_throws "needs a P it can factor" PureDAQP.solve(
+        Pfun, q, A, bk .- 1, bk .+ 1, ActiveSet()
+    )
+end
