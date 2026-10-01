@@ -1,3 +1,12 @@
+# A wrapper that names one of its parent's triangles as the matrix. `Hermitian` of a real matrix
+# states the same property as `Symmetric`, and every path here reads it the same way: through
+# `parent` over the triangle `uplo` names, never by indexing the wrapper, which costs a branch
+# per entry and reads the other half at stride `size(M, 1)`.
+const SymmetricFactorable = Union{
+    Symmetric{<:Any, <:StridedMatrix},
+    Hermitian{<:Real, <:StridedMatrix},
+}
+
 """
     BackendInfo
 
@@ -1097,17 +1106,50 @@ only the lower triangle of `Symmetric(ls.K, :L)`.
 function assemble_kkt0!(ls::FullKKT{T}, prob) where {T}
     P, A, D, E, c, n, m = prob.P, prob.A, prob.D, prob.E, prob.c, prob.n, prob.m
     K0 = ls.K0
+    kkt_cost_block!(K0, T, P, D, c, n)
     for j in 1:n
         dj = D[j]
-        for i in j:n
-            K0[i, j] = c * D[i] * T(P[i, j]) * dj
-        end
         for i in 1:m
             K0[n + i, j] = E[i] * T(A[i, j]) * dj
         end
     end
     ls.k0_current = true
     return nothing
+end
+
+"`K0[i, j] = c·D[i]·P[i, j]·D[j]` over the lower triangle, which is the block `bunchkaufman!` reads."
+function kkt_cost_block!(K0::AbstractMatrix, ::Type{T}, P, D, c, n) where {T}
+    for j in 1:n
+        dj = D[j]
+        for i in j:n
+            K0[i, j] = c * D[i] * T(P[i, j]) * dj
+        end
+    end
+    return K0
+end
+
+# Read from the triangle `P` names instead of through the wrapper, with the parent as an
+# argument so the loop keeps the alignment facts a field read loses. A lower parent is walked
+# contiguously; an upper one is transposed on the way in, which is a strided read either way.
+kkt_cost_block!(K0::AbstractMatrix, ::Type{T}, P::SymmetricFactorable, D, c, n) where {T} =
+    kkt_cost_block_triangle!(K0, T, parent(P), D, c, n, P.uplo == 'U')
+
+function kkt_cost_block_triangle!(
+        K0::AbstractMatrix, ::Type{T}, A::AbstractMatrix, D, c, n, upper::Bool
+    ) where {T}
+    for j in 1:n
+        dj = D[j]
+        if upper
+            for i in j:n
+                K0[i, j] = c * D[i] * T(A[j, i]) * dj
+            end
+        else
+            for i in j:n
+                K0[i, j] = c * D[i] * T(A[i, j]) * dj
+            end
+        end
+    end
+    return K0
 end
 
 function factorize!(ls::FullKKT{T}, prob, wt)::Bool where {T}

@@ -1,5 +1,7 @@
-# The matrices `cholesky_factor` factors densely, into an `UpperTriangular{T, Matrix{T}}`.
-const DenseFactorable = Union{StridedMatrix, Symmetric{<:Any, <:StridedMatrix}}
+# The matrices `cholesky_factor` factors densely, into an `UpperTriangular{T, Matrix{T}}`. The
+# two arms take separate methods: a bare matrix promises nothing about its two triangles and is
+# symmetrized, while a wrapper names the triangle to read and the other is not read at all.
+const DenseFactorable = Union{StridedMatrix, SymmetricFactorable}
 
 """
     has_cholesky_factor(P) -> Bool
@@ -56,7 +58,8 @@ holds. Nothing the size of `P` is formed unless `P` is dense.
 
 | `P` | `R` |
 |---|---|
-| strided matrix, `Symmetric` of one | `UpperTriangular{T, Matrix{T}}`, from a symmetrized, shifted copy |
+| strided matrix | `UpperTriangular{T, Matrix{T}}`, from a symmetrized, shifted copy |
+| `Symmetric` or `Hermitian` of one | `UpperTriangular{T, Matrix{T}}`, from the triangle `uplo` names; the other is not read |
 | `Diagonal` | `Diagonal(sqrt.(d .+ shift))` |
 | `BlockDiagonal` | a `BlockDiagonal` of the blocks' factors |
 | `KroneckerOperator` | a [`KroneckerCholesky`](@ref), `R₁ ⊗ R₂`, when `shift = 0` and both factors are positive definite; otherwise a [`KroneckerSquareRoot`](@ref) |
@@ -72,32 +75,84 @@ Throws an `ArgumentError` naming the remedy when `P + shift*I` is not positive d
 """
 function cholesky_factor end
 
-function cholesky_factor(H::DenseFactorable, shift)
+function cholesky_factor(H::StridedMatrix, shift)
     T = eltype(H)
     n = LinearAlgebra.checksquare(H)
     eps = convert(T, shift)
-    # `H = μI` has the Cholesky factor `√μ I`, so a reduction `A R⁻¹` against it is a scaling
-    # rather than a triangular solve. The test stops at the first entry that disqualifies
-    # `H`, which for a dense `H` is the first off-diagonal one.
-    mu = scalar_diagonal(H)
-    if !isnothing(mu)
-        mu + eps > 0 || throw(not_positive_definite(eps))
-        return UpperTriangular(Matrix{T}(sqrt(mu + eps) * I, n, n))
-    end
-    # Symmetrize into one buffer. `(H + H') / 2` reads pleasantly and allocates four
+    scalar = scalar_factor(H, n, eps)
+    isnothing(scalar) || return scalar
+    # Symmetrize into one buffer: a bare matrix says nothing about which of `H[i, j]` and
+    # `H[j, i]` is meant, so both are read. `(H + H') / 2` reads pleasantly and allocates four
     # matrices to produce one.
     Hs = Matrix{T}(undef, n, n)
     for j in 1:n, i in 1:n
         Hs[i, j] = (H[i, j] + H[j, i]) / 2
     end
+    return shifted_cholesky!(Hs, n, eps)
+end
+
+"""
+    cholesky_factor(H::SymmetricFactorable, shift) -> UpperTriangular
+
+The factor of `H + shift*I` read from the triangle `H` names.
+
+`H.uplo` says which triangle is the matrix, so the other is never read and no averaging is
+needed: the entries are copied straight into the buffer the factorization overwrites, upper
+from an `'U'` wrapper and transposed from an `'L'` one. That is half the reads and half the
+writes of the method for a bare matrix, which has to consult both triangles because nothing
+told it which one is meant.
+"""
+function cholesky_factor(H::SymmetricFactorable, shift)
+    T = eltype(H)
+    n = LinearAlgebra.checksquare(H)
+    eps = convert(T, shift)
+    scalar = scalar_factor(H, n, eps)
+    isnothing(scalar) || return scalar
+    Hs = Matrix{T}(undef, n, n)
+    A = parent(H)
+    # Only the upper triangle is filled, and `cholesky!` below reads only that.
+    if H.uplo == 'U'
+        for j in 1:n, i in 1:j
+            Hs[i, j] = A[i, j]
+        end
+    else
+        for j in 1:n, i in 1:j
+            Hs[i, j] = A[j, i]
+        end
+    end
+    return shifted_cholesky!(Hs, n, eps)
+end
+
+"""
+    scalar_factor(H, n, eps) -> UpperTriangular or nothing
+
+The factor of `H + eps*I` when `H` is `μI`, and `nothing` when it is not.
+
+`μI` has the factor `√μ I`, so a reduction `A R⁻¹` against it is a scaling rather than a
+triangular solve. [`scalar_diagonal`](@ref) stops at the first entry that rules `μI` out, which
+for a dense `H` is the first off-diagonal one.
+"""
+function scalar_factor(H::AbstractMatrix, n::Integer, eps)
+    mu = scalar_diagonal(H)
+    isnothing(mu) && return nothing
+    mu + eps > 0 || throw(not_positive_definite(eps))
+    return UpperTriangular(Matrix{eltype(H)}(sqrt(mu + eps) * I, n, n))
+end
+
+"""
+    shifted_cholesky!(Hs, n, eps) -> UpperTriangular
+
+Factor `Hs + eps*I` in place, reading `Hs`'s upper triangle and overwriting it with the factor.
+
+`check = false` so an indefinite matrix is a value to test rather than an exception to catch.
+"""
+function shifted_cholesky!(Hs::Matrix, n::Integer, eps)
     if !iszero(eps)
         for i in 1:n
             Hs[i, i] += eps
         end
     end
-    # `check = false` so an indefinite `H` is a value to test rather than an exception to
-    # catch.
-    F = cholesky!(Symmetric(Hs), NoPivot(); check = false)
+    F = cholesky!(Symmetric(Hs, :U), NoPivot(); check = false)
     issuccess(F) || throw(not_positive_definite(eps))
     return UpperTriangular(F.factors)
 end
