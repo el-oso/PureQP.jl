@@ -126,19 +126,38 @@ const ReadDirectly{T} = Union{
 }
 
 """
-    reduction_operand(T, M) -> M or Matrix{T}
+    factored_operand(T, P) -> P or Matrix{T}
 
-`M` itself when the reduction reads it directly, and a dense copy otherwise.
+What the reduction hands to `cholesky_factor`.
 
-A sparse matrix goes through the dense copy, which is the one place this method forms a matrix:
-the base has no sparse Cholesky factor and no `O(nnz)` row read yet, so a sparse `P` or `A` is
-served by densifying it. So is any representation whose element type is not the solve's.
+A representation the reduction reads directly is passed through whether or not it has a factor,
+so a `P` with no factor is refused by `reduce_qp` naming the forms that have one rather than
+here. Everything else is handed to [`PureQPBase.factorable_operand`](@ref), which keeps what the
+base factors in its own form — a sparse `P` among them — and densifies the rest. A sparse `A` is
+not kept; see [`row_operand`](@ref).
 """
-reduction_operand(::Type{T}, M::ReadDirectly{T}) where {T} = M
+factored_operand(::Type{T}, P::ReadDirectly{T}) where {T} = P
 
-function reduction_operand(::Type{T}, M::AbstractMatrix) where {T}
-    is_materializable(M) || refuse_unreadable_operand(T)
-    return convert(Matrix{T}, M)
+function factored_operand(::Type{T}, P::AbstractMatrix) where {T}
+    is_materializable(P) || refuse_unreadable_operand(T)
+    return factorable_operand(T, P)
+end
+
+"""
+    row_operand(T, A) -> A or Matrix{T}
+
+`A` itself when the reduction reads its rows and products directly, and a dense copy otherwise.
+
+A sparse `A` goes through the dense copy, which is the one place this method forms a matrix.
+CSC stores columns, so a row of it is reachable only by walking every column, which costs more
+than the densification it would avoid; reading rows in `O(nnz)` needs the transpose held
+alongside, which the reduction does not do.
+"""
+row_operand(::Type{T}, A::ReadDirectly{T}) where {T} = A
+
+function row_operand(::Type{T}, A::AbstractMatrix) where {T}
+    is_materializable(A) || refuse_unreadable_operand(T)
+    return convert(Matrix{T}, A)
 end
 
 @noinline refuse_unreadable_operand(::Type{T}) where {T} = throw(
@@ -175,7 +194,7 @@ function setup_backend(
     # type asked for, and the reduction only reads this data.
     iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
     red = reduce_qp(
-        reduction_operand(T, P), reduction_operand(T, A),
+        factored_operand(T, P), row_operand(T, A),
         convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
         iseq; eps_prox = resolved.eps_prox, working_set = resolved.working_set
     )
@@ -379,7 +398,7 @@ function update!(
     if !isnothing(P) || !isnothing(A)
         iseq = [data.l0[i] == data.u0[i] for i in 1:data.m]
         red = reduce_qp(
-            reduction_operand(T, data.P), reduction_operand(T, data.A),
+            factored_operand(T, data.P), row_operand(T, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
             iseq; eps_prox = ws.algorithm.eps_prox,
             working_set = ws.algorithm.working_set

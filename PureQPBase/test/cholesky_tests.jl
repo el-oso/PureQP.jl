@@ -140,8 +140,17 @@ end
     op = PureQPBase.ProductOperator{Float64}(ProductsOnlyForCholesky(P); symmetric = true, posdef = true)
     @test !PureQPBase.has_cholesky_factor(op)
 
+    # The SparseArrays extension factors a sparse `P` through CHOLMOD and keeps the factor
+    # sparse, so the predicate holds and `factorable_operand` leaves the matrix alone.
+    @test PureQPBase.has_cholesky_factor(sparse(P))
+    @test PureQPBase.has_cholesky_factor(Symmetric(sparse(P)))
+    @test PureQPBase.factorable_operand(Float64, sparse(P)) isa SparseMatrixCSC
+    # A dense matrix is handed over unchanged, and a representation with no factor of its own
+    # is densified for one.
+    @test PureQPBase.factorable_operand(Float64, P) === P
+    @test PureQPBase.factorable_operand(Float64, SymTridiagonal([2.0, 3.0], [0.5])) isa Matrix
+
     # Everything else stays unfactored until something defines how.
-    @test !PureQPBase.has_cholesky_factor(sparse(P))
     @test !PureQPBase.has_cholesky_factor(SymTridiagonal([2.0, 3.0], [0.5]))
     @test !PureQPBase.has_cholesky_factor(PureQPBase.BlockDiagonal([Diagonal([1.0, 2.0])]))
     @test !PureQPBase.has_cholesky_factor(1.0I)

@@ -26,6 +26,32 @@ has_cholesky_factor(::KroneckerOperator{<:Any, <:StridedMatrix}) = true
 has_cholesky_factor(::ProductOperator) = false
 
 """
+    FactorableInPlace{T}
+
+The representations [`cholesky_factor`](@ref) factors in their own form at element type `T`.
+
+Sparse is absent here and added by the SparseArrays extension, which is where the sparse factor
+is defined; a representation missing from both is factored by densifying it.
+"""
+const FactorableInPlace{T} = Union{
+    StridedMatrix{T}, Symmetric{T, <:StridedMatrix{T}}, Hermitian{T, <:StridedMatrix{T}},
+    Diagonal{T}, BlockDiagonal{T}, KroneckerOperator{T},
+}
+
+"""
+    factorable_operand(T, P) -> P or Matrix{T}
+
+`P` itself when [`cholesky_factor`](@ref) factors it in its own form at element type `T`, and a
+dense copy otherwise.
+
+A consumer that wants a factor of `P` and nothing else asks for this rather than deciding what
+the base can factor: the set grows with the factors the base owns, and an extension that adds a
+factor adds the method alongside it.
+"""
+factorable_operand(::Type{T}, P::FactorableInPlace{T}) where {T} = P
+factorable_operand(::Type{T}, P::AbstractMatrix) where {T} = convert(Matrix{T}, P)
+
+"""
     CholeskyFactor
 
 The contract of the `R` that [`cholesky_factor`](@ref) returns, which is not a subtype of this

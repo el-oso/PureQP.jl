@@ -42,7 +42,7 @@ import PureQPBase:
     adopt_update!, check_update, has_solution, is_convex, is_materializable, validate,
     validated_data, validate_update!, check_option_names, settings_tuple, paired,
     empty_solution, norm_inf, support_plain, project_polar_reccone!, DIVISION_TOL,
-    has_cholesky_factor, cholesky_factor, scalar_diagonal, dense_row!,
+    has_cholesky_factor, cholesky_factor, factorable_operand, scalar_diagonal, dense_row!,
     BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator
 
 export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!

@@ -763,3 +763,45 @@ end
     wdn = PureDAQP.setup(kron(P1, P2), q, kron(A1, A2), l, u, ActiveSet(; eps_prox = 1.0e-5))
     @test Base.summarysize(wop) < Base.summarysize(wdn) / 2
 end
+
+@testitem "a sparse P is factored sparsely and the reduction is never formed" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, SparseArrays, Random
+
+    Random.seed!(31)
+    n = 600
+    m = n
+    # Banded `P` and a few entries per row of `A`: the shape a dense factor is wrong for.
+    P = spdiagm(
+        -2 => fill(0.3, n - 2), -1 => fill(0.7, n - 1), 0 => fill(4.0, n),
+        1 => fill(0.7, n - 1), 2 => fill(0.3, n - 2)
+    )
+    A = sprandn(m, n, 4 / n) + sparse(1.0I, m, n)
+    q = randn(n)
+    b = A * randn(n)
+    l, u = b .- 1, b .+ 1
+
+    ws = PureDAQP.setup(P, q, A, l, u, ActiveSet(); max_iter = 50_000)
+    # `P` keeps its representation and its factor keeps the sparsity: a dense factor of this
+    # `P` holds `n²/2` entries where the sparse one holds `O(n)`.
+    @test PureQPBase.has_cholesky_factor(P)
+    @test nameof(typeof(ws.red.R)) === :SparseCholesky
+    # The factor holds `L`, its transpose, two permutations and a scratch vector, so it is a
+    # multiple of `nnz(L)` rather than `nnz(L)` itself -- and still a fraction of the `n²`
+    # entries a dense factor of this `P` would hold.
+    @test Base.summarysize(ws.red.R) < n * n * sizeof(Float64) / 20
+    # With no dense triangular factor there is no `A R⁻¹` to form, so rows are derived.
+    @test nameof(typeof(ws.red.ws.M)) === :ImplicitRows
+
+    s = PureDAQP.solve!(ws)
+    sdense = PureDAQP.solve(Matrix(P), q, Matrix(A), l, u, ActiveSet(); max_iter = 50_000)
+    @test s.status == SOLVED
+    @test sdense.status == SOLVED
+    @test s.iter == sdense.iter
+    @test isapprox(s.obj_val, sdense.obj_val; rtol = 1.0e-9)
+    @test maximum(abs, s.x - sdense.x) < 1.0e-7
+
+    # The whole workspace stays well under what the two dense copies alone would cost.
+    @test Base.summarysize(ws) < Base.summarysize(
+        PureDAQP.setup(Matrix(P), q, Matrix(A), l, u, ActiveSet(); max_iter = 50_000)
+    )
+end
