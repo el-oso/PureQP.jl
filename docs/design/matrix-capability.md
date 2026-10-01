@@ -342,8 +342,17 @@ factors totalling 0.027 MiB, against 13.5 MiB for the dense pair:
 | `InteriorPoint` | held | discarded | stays sparse | **densified**, 124.63 MiB, backend `bunchkaufman` | **refused** |
 | `ActiveSet` | held | discarded | **densified** | held (R1) | held (R1) |
 
-R14 closes the structured column for the first two: `OperatorSplitting` reaches the matrix-free
-backend and `InteriorPoint` refuses rather than forming. One consequence to state plainly,
+R14 stops the materialisation but does not yet give these pairs the solve they should have.
+Holding a representation and solving without forming a matrix are separate properties: the base
+already owns direct backends that form nothing — `:kronecker` eigendecomposes the two factors,
+`:lowrank` solves by Woodbury, `:block` block by block — so an unmaterialized pair does not
+imply an iterative solve. What R14 leaves is a structured pair reaching conjugate gradients,
+measured at 225 iterations to a relative objective of 1.1e-3 where the formed matrix took 50 to
+5.8e-15. A direct backend reading the factors is what both numbers want, and it is R15 and R16
+that build it; `InteriorPoint`'s refusal is likewise a consequence of conjugate gradients being
+the only non-forming path open to it today, not of its pair being structured.
+
+One consequence to state plainly,
 because it reaches callers who never name a backend: the matrix-free backend lives in the
 Krylov extension, so a structured pair that no structured rung accepts now needs `using Krylov`
 where it previously fell through to a factorization. A `BlockDiagonal` pair is unaffected — the
