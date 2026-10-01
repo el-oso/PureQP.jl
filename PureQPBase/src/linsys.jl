@@ -518,6 +518,45 @@ function is_convex(::Type{T}, P::AbstractMatrix, sigma) where {T}
     return issuccess(cholesky!(Symmetric(Matrix{T}(P) + sigma * I); check = false))
 end
 
+"""
+    copy_upper_triangle!(dest, A, n, upper) -> dest
+
+Copy the symmetric matrix whose `upper` triangle (or lower) is stored in `A` into `dest`'s upper
+triangle. `dest`'s lower triangle is left as it was, which the callers' `Symmetric(dest, :U)`
+never reads.
+
+`A` is an argument rather than read from a wrapper inside the loop: a matrix loaded from a
+struct field arrives without the alignment facts an argument carries, and indexing the wrapper
+would cost a branch per entry and read half of them at stride `n`.
+"""
+function copy_upper_triangle!(dest::AbstractMatrix{T}, A::AbstractMatrix, n, upper::Bool) where {T}
+    if upper
+        for j in 1:n, i in 1:j
+            dest[i, j] = T(A[i, j])
+        end
+    else
+        for j in 1:n, i in 1:j
+            dest[i, j] = T(A[j, i])
+        end
+    end
+    return dest
+end
+
+# A wrapper names the triangle that is the matrix, so the test needs neither a symmetrization
+# nor a second `n×n` matrix for the shift: `Matrix{T}(P)` reads every entry through the
+# wrapper's branching `getindex`, and `+ sigma*I` allocates another `n×n` to hold the sum.
+function is_convex(::Type{T}, P::SymmetricFactorable, sigma) where {T}
+    isempty(P) && return true
+    n = size(P, 1)
+    Hs = Matrix{T}(undef, n, n)
+    copy_upper_triangle!(Hs, parent(P), n, P.uplo == 'U')
+    s = convert(T, sigma)
+    for i in 1:n
+        Hs[i, i] += s
+    end
+    return issuccess(cholesky!(Symmetric(Hs, :U); check = false))
+end
+
 # A diagonal matrix is positive definite exactly when its diagonal is, so the test is a
 # pass over `n` entries rather than a factorization of an `n×n` densification of them.
 is_convex(::Type{T}, P::Diagonal, sigma) where {T} = all(d -> d + sigma > zero(T), P.diag)

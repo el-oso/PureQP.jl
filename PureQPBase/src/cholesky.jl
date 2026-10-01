@@ -108,18 +108,8 @@ function cholesky_factor(H::SymmetricFactorable, shift)
     eps = convert(T, shift)
     scalar = scalar_factor(H, n, eps)
     isnothing(scalar) || return scalar
-    Hs = Matrix{T}(undef, n, n)
-    A = parent(H)
-    # Only the upper triangle is filled, and `cholesky!` below reads only that.
-    if H.uplo == 'U'
-        for j in 1:n, i in 1:j
-            Hs[i, j] = A[i, j]
-        end
-    else
-        for j in 1:n, i in 1:j
-            Hs[i, j] = A[j, i]
-        end
-    end
+    # Only the upper triangle is filled, and `shifted_cholesky!` reads only that.
+    Hs = copy_upper_triangle!(Matrix{T}(undef, n, n), parent(H), n, H.uplo == 'U')
     return shifted_cholesky!(Hs, n, eps)
 end
 

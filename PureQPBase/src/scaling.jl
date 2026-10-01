@@ -252,19 +252,33 @@ function triangle_colmax!(
         pcol::AbstractVector{T}, ::Type{T}, A::AbstractMatrix, D::AbstractVector, n, upper::Bool
     ) where {T}
     fill!(pcol, zero(T))
-    for j in 1:n
-        # The stored part of column `j`: rows `1:j` of an upper parent, `j:n` of a lower one.
-        rows = upper ? (1:j) : (j:n)
-        dj = D[j]
-        pj = zero(T)
-        for i in rows
-            v = abs(T(A[i, j]))
-            pj = max(pj, D[i] * v)
-            # At `i == j` this repeats the line above with the same value, which `max` absorbs.
-            pcol[i] = max(pcol[i], dj * v)
+    # The stored part of column `j` is rows `1:j` of an upper parent and `j:n` of a lower one.
+    # The two cases are separate loops so the test is not repeated for every column.
+    if upper
+        for j in 1:n
+            triangle_colmax_column!(pcol, T, A, D, j, 1:j)
         end
-        pcol[j] = max(pcol[j], pj)
+    else
+        for j in 1:n
+            triangle_colmax_column!(pcol, T, A, D, j, j:n)
+        end
     end
+    return pcol
+end
+
+@inline function triangle_colmax_column!(
+        pcol::AbstractVector{T}, ::Type{T}, A::AbstractMatrix, D::AbstractVector,
+        j::Integer, rows::UnitRange{Int}
+    ) where {T}
+    dj = D[j]
+    pj = zero(T)
+    for i in rows
+        v = abs(T(A[i, j]))
+        pj = max(pj, D[i] * v)
+        # At `i == j` this repeats the line above with the same value, which `max` absorbs.
+        pcol[i] = max(pcol[i], dj * v)
+    end
+    pcol[j] = max(pcol[j], pj)
     return pcol
 end
 
