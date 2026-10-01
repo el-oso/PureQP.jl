@@ -304,6 +304,23 @@ Two consequences the converter should build to:
   regress in S3. A caller who needs a sparse `P` factored sparsely, or a sparse `A` read by
   rows in `O(nnz)`, asks for S6.
 - **The equilibrated forms.** `ActiveSet` requires `scaling = 0` today and keeps requiring it.
+- **The working set's capacity is not a memory setting.** Once `P` and `A` keep their
+  representations, the `QR` of the working set is nearly all of what a sparse workspace holds —
+  51.6 MiB of 52.5 at `n = 1500`, at a capacity of `n` for an active set that reached 688. It is
+  held at `min(m, n) + 1` because the method can need it, and capping it below `n` is unsound
+  rather than merely wasteful. `maxrows` is the variable count, and the loop's
+  `nactive(W) == maxrows(W)` branch takes `full_set_step!` on the grounds that a set of `n` rows
+  spans the space, so the entering row is dependent by counting. Cap the capacity at `k < n` and
+  either `maxrows` stays `n`, so `activate!` reaches the factorization's `FixedCapacity` and
+  throws from inside it (measured: "a 6x4 factorization exceeds the capacity 6x3"), or `maxrows`
+  becomes `k` and `full_set_step!` runs on a set that does not span, which is a wrong answer
+  rather than a refusal. Growing on demand is sound and needs no number from the caller, but
+  `FixedCapacity()` is what makes `add_row!` provably allocation-free, so it would restate that
+  guarantee as holding only after the working set has reached its high-water mark.
+  Measured occupancy, for whoever revisits this: 385 of 400 and 194 of 201 on dense pairs, 257
+  and 368 of 600 on banded sparse ones — so there is little to reclaim where the capacity is
+  already nearly full, and the sparse cases are the ones that argue for `working_set = :gram`
+  instead, whose `LDLᵀ` of the Gram matrix is `k²/2` where this is `nk`.
 
 ### 5a. Why the Kronecker factors are written here rather than taken from Kronecker.jl
 
