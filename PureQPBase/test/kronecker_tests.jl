@@ -63,14 +63,19 @@ end
     name(P; kwargs...) = PureQPBase.backend_name(last(backend_for(P, q, K, l, u; kwargs...)))
 
     # Each of these breaks the diagonalization. A rung that accepted any of them would return
-    # a wrong answer, not a slow one.
+    # a wrong answer, not a slow one. What serves them instead is the matrix-free backend: a
+    # `KroneckerOperator` answers `holds_structure` true, so the rungs that form the reduced
+    # matrix decline rather than hold `n₁²n₂²` entries for a pair that stores `n₁² + n₂²`.
+    # `factorize = false` because only the choice is under test, and the matrix-free backend
+    # takes its conjugate-gradient settings from an algorithm, which this helper has none of.
     @test name(scalar; scaling = 0) === :kronecker
     # Equilibration puts `c·μ·D²` in the reduced matrix: diagonal, but not scalar.
-    @test name(scalar) === :cholesky
+    @test name(scalar; factorize = false) === :indirect
     # A `P` that is not a multiple of the identity, including a Kronecker one.
-    @test name(Diagonal(rand(n) .+ 1); scaling = 0) === :cholesky
+    @test name(Diagonal(rand(n) .+ 1); scaling = 0, factorize = false) === :indirect
     # A second weight among the rows, which an equality row is one way to produce.
-    @test name(scalar; scaling = 0, rho = vcat(1.0e3, fill(0.1, n - 1))) === :cholesky
+    @test name(scalar; scaling = 0, rho = vcat(1.0e3, fill(0.1, n - 1)), factorize = false) ===
+        :indirect
 
     # Predicate and value are separate so neither returns a union; the rung checks the first
     # before reading the second.

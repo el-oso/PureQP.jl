@@ -206,6 +206,7 @@ PureQPBase.structural_rows
 PureQPBase.is_convex
 PureQPBase.is_symmetric
 PureQPBase.is_materializable
+PureQPBase.holds_structure
 PureQPBase.reduced_diagonal!
 PureQPBase.reduced_rhs!
 PureQPBase.ProductOperator

@@ -550,6 +550,23 @@ rungs that consult it stay concretely typed.
 is_materializable(M) = true
 
 """
+    holds_structure(M) -> Bool
+
+Whether `M` carries a representation that forming its dense matrix would discard. False
+unless the representation says otherwise.
+
+This is a different question from [`is_materializable`](@ref), which asks whether entries can
+be read at all: a `KroneckerOperator` answers `true` there, because polishing and the
+derivatives do read its entries, and `true` here, because a backend that forms `n²` from two
+`n₁²` and `n₂²` factors has thrown away the reason the caller built it. The rungs that form a
+matrix consult this one and decline, so such a pair reaches a backend that works through
+products instead.
+
+The method body is a literal, so a call against a type with no override folds away.
+"""
+holds_structure(M) = false
+
+"""
     require_entries(P, A, what, remedy)
 
 Throw unless both operators can be read entry by entry, naming what needs it.
@@ -780,6 +797,7 @@ Ladder rung 6, the ADMM terminal: [`ReducedCholesky`](@ref).
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob, sel::ADMMSelection)
     (is_materializable(P) && is_materializable(A)) || return nothing
+    (holds_structure(P) || holds_structure(A)) && return nothing
     return (ReducedCholesky(prob.q0, prob.n, prob.m), false)
 end
 
@@ -1311,8 +1329,10 @@ function indirect_backend(proto::AbstractVector, n::Integer, m::Integer, precond
     throw(
         ArgumentError(
             "linsys = :indirect needs Krylov.jl, which is a weak dependency: run " *
-                "`using Krylov` before `setup`. It is not a core dependency because the " *
-                "backend is only worth reaching for when the reduced matrix cannot be formed."
+                "`using Krylov` before `setup`. The ladder reaches this backend for a pair " *
+                "whose reduced matrix cannot be formed, and for one that declares " *
+                "`PureQPBase.holds_structure` true, whose reduced matrix must not be: a " *
+                "structured or unmaterialized pair needs Krylov loaded."
         )
     )
 end

@@ -55,6 +55,10 @@ KroneckerOperator(A1::AbstractMatrix, A2::AbstractMatrix) =
 "The factors, as `(A1, A2)`."
 factors(K::KroneckerOperator) = (K.A1, K.A2)
 
+# Two factors of `n₁²` and `n₂²` entries stand for `n₁²n₂²`, so a backend that formed the
+# product would hold the square of what this type does.
+holds_structure(::KroneckerOperator) = true
+
 Base.size(K::KroneckerOperator) =
     (size(K.A1, 1) * size(K.A2, 1), size(K.A1, 2) * size(K.A2, 2))
 

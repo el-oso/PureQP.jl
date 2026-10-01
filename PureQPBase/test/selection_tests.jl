@@ -128,8 +128,11 @@ end
             Diagonal(rand(n) .+ 0.5),
             PureQPBase.RowCoupled(randn(10, n) ./ 4, ones(n - 10), collect(1:(n - 10))),
         ),
+        # Past the limit the rung declines, and `RowCoupled` answers `holds_structure` true, so
+        # the rungs that form the reduced matrix decline too: `k` dense rows and a diagonal
+        # stand for `n²` entries, and the matrix-free backend works from them as they are.
         (
-            :cholesky,
+            :indirect,
             Diagonal(rand(n) .+ 0.5),
             PureQPBase.RowCoupled(randn(11, n) ./ 4, ones(n - 11), collect(1:(n - 11))),
         ),
@@ -138,7 +141,10 @@ end
     n = 100
     for (backend, P, A) in families(n)
         q, l, u = randn(n), -rand(n), rand(n)
-        @test PureQPBase.backend_name(last(backend_for(P, q, A, l, u))) === backend
+        # `factorize = false`: the selection is what is under test, and the matrix-free backend
+        # takes its conjugate-gradient settings from an algorithm, which this helper has none of.
+        @test PureQPBase.backend_name(last(backend_for(P, q, A, l, u; factorize = false))) ===
+            backend
         @test PureQPBase.backend_name(
             last(backend_for(Matrix(P), q, Matrix(A), l, u))
         ) === :cholesky
@@ -263,4 +269,51 @@ end
     @test picked(tri, diag_A) === picked(sym, diag_A) === :tridiagonal
     @test picked(tri, bidi_A) === picked(sym, bidi_A) === :tridiagonal
     @test picked(sym, tri_A) === :banded
+end
+
+@testitem "no ladder forms a matrix for a pair that holds structure" begin
+    using PureQPBase, LinearAlgebra, Krylov, SparseArrays, Random
+    include(joinpath(@__DIR__, "helpers.jl"))
+    Random.seed!(14)
+
+    # The three representations that answer `holds_structure` true, each against an `A` that
+    # sends the pair past the rung built for it: equilibration defeats the Kronecker rung, and
+    # the low-rank rung declines above `10k > n`.
+    k1, k2 = 6, 5
+    n = k1 * k2
+    f1 = Matrix(Symmetric(rand(k1, k1) + k1 * I))
+    f2 = Matrix(Symmetric(rand(k2, k2) + k2 * I))
+    kron_P = PureQPBase.KroneckerOperator(f1, f2)
+    kron_A = PureQPBase.KroneckerOperator(Matrix(1.0I, k1, k1), Matrix(1.0I, k2, k2))
+    block_P = PureQPBase.BlockDiagonal([f1, Matrix(Symmetric(rand(k2, k2) + k2 * I))])
+    nb = size(block_P, 1)
+    coupled = PureQPBase.RowCoupled(randn(11, n) ./ 4, ones(n - 11), collect(1:(n - 11)))
+
+    @test PureQPBase.holds_structure(kron_P)
+    @test PureQPBase.holds_structure(block_P)
+    @test PureQPBase.holds_structure(coupled)
+    # A representation that stands for its own entries is formed as before.
+    @test !PureQPBase.holds_structure(randn(4, 4))
+    @test !PureQPBase.holds_structure(Diagonal(rand(4)))
+    @test !PureQPBase.holds_structure(sparse(1.0I, 4, 4))
+    @test !PureQPBase.holds_structure(Symmetric(randn(4, 4)))
+
+    pairs = (
+        (kron_P, kron_A, n),
+        (kron_P, Matrix(1.0I, n, n), n),
+        (Diagonal(rand(n) .+ 0.5), coupled, n),
+        (block_P, Matrix(1.0I, nb, nb), nb),
+    )
+    for (P, A, dim) in pairs
+        q, l, u = randn(dim), -rand(dim), rand(dim)
+        # `scaling = 10`, the default, is what puts the Kronecker pair past its own rung.
+        name = PureQPBase.backend_name(last(backend_for(P, q, A, l, u; factorize = false)))
+        @test name === :indirect
+        # The two rungs that form the reduced matrix decline by name, not by falling off the
+        # end of a method table.
+        prob = PureQPBase.validated_problem(Float64, dim, dim, P, q, A, l, u, 10)
+        wt = raw_weights(fill(0.1, dim), 1.0e-6)
+        @test isnothing(PureQPBase.dense_rung(P, A, prob, PureQPBase.ADMMSelection()))
+        @test isnothing(PureQPBase.formed_rung(P, A, prob, PureQPBase.ADMMSelection()))
+    end
 end

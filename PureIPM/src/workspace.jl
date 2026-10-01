@@ -234,6 +234,20 @@ function refuse_ipm_operators()
     )
 end
 
+function refuse_ipm_structured()
+    throw(
+        ArgumentError(
+            "no interior-point backend serves this pair: P or A declares " *
+                "`PureQPBase.holds_structure` true, and no structured rung accepts it, so the " *
+                "only rung left would form the reduced matrix and hold what the representation " *
+                "exists to avoid holding. Pass linsys = :indirect with a caller-supplied " *
+                "preconditioner and scaling = 0, pass the matrices themselves if they are " *
+                "small enough to form, or use OperatorSplitting(), whose ladder ends in a " *
+                "matrix-free backend that needs no preconditioner from the caller."
+        )
+    )
+end
+
 "Whether `M` is a preconditioner the caller built, rather than `nothing` or a built-in one."
 caller_preconditioner(M) = !(M isa Union{Nothing, IdentityPreconditioner, JacobiPreconditioner})
 
@@ -356,11 +370,13 @@ its weights reach `1/δ_d`. Other element types get [`ReducedCholesky`](@ref), s
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob::Problem{T}, sel::IPMSelection) where {T}
     (is_materializable(P) && is_materializable(A)) || return nothing
+    (holds_structure(P) || holds_structure(A)) && return nothing
     T <: LinearAlgebra.BlasFloat && return (FullKKT(prob.q0, prob.n, prob.m), false)
     return (ReducedCholesky(prob.q0, prob.n, prob.m), false)
 end
 
 dense_rung(P, A, prob, sel::IPMSelection) = nothing
+
 
 """
     lowrank_rung(P::Diagonal, A::RowCoupled, prob, wt, sel::IPMSelection) -> nothing
@@ -389,8 +405,17 @@ lowrank_rung(P::Diagonal, A::RowCoupled, prob, wt, sel::IPMSelection; require_cr
 
 Refuses: the interior-point method runs the matrix-free backend only when it is named, with
 a caller-supplied preconditioner.
+
+A pair reaches this rung for one of two reasons, and the refusal says which: an operand
+supplies products only, or it holds a structure the rungs that form the reduced matrix decline
+to discard.
 """
-indirect_rung(P, A, prob, sel::IPMSelection) = refuse_ipm_operators()
+indirect_rung(P, A, prob, sel::IPMSelection) =
+if holds_structure(P) || holds_structure(A)
+    refuse_ipm_structured()
+else
+    refuse_ipm_operators()
+end
 
 """
     warm_start!(ws::InteriorPointWorkspace; x = nothing, y = nothing)

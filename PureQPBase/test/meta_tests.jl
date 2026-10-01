@@ -15,7 +15,7 @@
         "operator_tests.jl" => 9,
         "rows_tests.jl" => 2,
         "scaling_tests.jl" => 8,
-        "selection_tests.jl" => 6,
+        "selection_tests.jl" => 7,
         "strictmode_tests.jl" => 6,
     )
     dir = @__DIR__

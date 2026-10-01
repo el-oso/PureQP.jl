@@ -38,7 +38,7 @@
     end
 end
 
-@testitem "interior point: a low-rank pair is served by the full KKT factorization" begin
+@testitem "interior point: a low-rank pair is refused rather than formed" begin
     using PureIPM, PureQPBase
     using LinearAlgebra, SparseArrays, Random
     include(joinpath(@__DIR__, "helpers.jl"))
@@ -47,13 +47,20 @@ end
     A = PureQPBase.RowCoupled(randn(3, n) ./ 4, ones(n - 3), collect(1:(n - 3)))
     q, l, u = randn(n), -rand(n), rand(n)
     P = Diagonal(rand(n) .+ 0.5)
-    # A diagonal `P` with a `RowCoupled` `A`: the pair the low-rank backend exists for. The
-    # interior-point method takes the full KKT factorization instead. The low-rank backend
-    # solves the reduced matrix, and forming that matrix at weights reaching `1/reg_dual`
-    # loses the accuracy the method needs -- for a positive definite `P` as much as for the
-    # linear program below.
+    # A diagonal `P` with a `RowCoupled` `A`: the pair the low-rank backend exists for. That
+    # backend solves the reduced matrix, and forming it at weights reaching `1/reg_dual` loses
+    # the accuracy the method needs, so its rung declines -- for a positive definite `P` as much
+    # as for the linear program. The rung below forms the KKT matrix from `A`'s entries, and
+    # `RowCoupled` holds `k` dense rows and a diagonal in place of those entries, so no rung
+    # serves the pair and it is refused rather than formed.
     for Pc in (P, Diagonal(zeros(n)))
-        ws = setup(Pc, q, A, l, u, InteriorPoint())
+        @test_throws "no interior-point backend serves this pair" setup(
+            Pc, q, A, l, u, InteriorPoint()
+        )
+    end
+    # The same numbers as a matrix are formed because the caller asked for that, and solve.
+    for Pc in (P, Diagonal(zeros(n)))
+        ws = setup(Pc, q, Matrix(A), l, u, InteriorPoint())
         @test PureQPBase.backend_name(ws.linsys) === :bunchkaufman
         s = solve!(ws)
         @test s.status == SOLVED

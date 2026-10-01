@@ -111,7 +111,7 @@ What each one asks of you:
 | `:dense` | `P` and `A` you can materialize | the pattern rule misjudged your problem and you want the dense reduced path anyway |
 | `:kkt` | `P` and `A` you can materialize | the reduced form's conditioning is in doubt; it never squares `cond(A)` |
 | `:sparse` | `SparseMatrixCSC` `P` and `A`, and `using SparseArrays` | you want a sparse factorization on a pair `:auto` sends elsewhere |
-| `:indirect` | `using Krylov`. Under [`InteriorPoint`](@ref), also a `preconditioner` of your own and `scaling = 0` | the matrix cannot be formed at all, or forming an `n×n` inverse is the dominant cost |
+| `:indirect` | `using Krylov`. Under [`InteriorPoint`](@ref), also a `preconditioner` of your own and `scaling = 0` | the matrix cannot be formed at all, must not be because `P` or `A` holds a structure forming would discard, or forming an `n×n` inverse is the dominant cost |
 
 `:kkt` and `:dense` always build. They test nothing about the pair beyond being able to
 materialize it, which is what makes them the reliable escape hatches. `:sparse` tries the

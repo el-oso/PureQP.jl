@@ -168,8 +168,8 @@ is conjugate gradients, which needs Krylov.jl.
 
 | | dense | sparse | structured | unmaterialized |
 |---|---|---|---|---|
-| [`OperatorSplitting`](@ref) | `cholesky` | `cholmod`, `ldlfactorizations` or `sparse_formed`, by the pattern | the structured backend its conditions admit, else the dense one | `indirect` with `scaling = 0`; a direct backend when the type unwraps to a structured one ([What a composed map becomes](@ref)) |
-| [`InteriorPoint`](@ref) | the full KKT system, `bunchkaufman` | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; a Kronecker or low-rank pair takes the full KKT system | only with a caller-supplied preconditioner, `linsys = :indirect` and `scaling = 0` |
+| [`OperatorSplitting`](@ref) | `cholesky` | `cholmod`, `ldlfactorizations` or `sparse_formed`, by the pattern | the structured backend its conditions admit, else `indirect`: a type that holds its structure is never formed | `indirect` with `scaling = 0`; a direct backend when the type unwraps to a structured one ([What a composed map becomes](@ref)) |
+| [`InteriorPoint`](@ref) | the full KKT system, `bunchkaufman` | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; a Kronecker or low-rank pair is refused, since the only rung left would form the matrix | only with a caller-supplied preconditioner, `linsys = :indirect` and `scaling = 0` |
 | [`ActiveSet`](@ref) | `A R⁻¹` formed once and stored | read into a dense matrix first | `Diagonal`, `BlockDiagonal` and `KroneckerOperator` are held as they are and `A R⁻¹` is not formed: implicit `A R⁻¹`, `R` in `P`'s form. Banded, tridiagonal and `RowCoupled` are read into a dense matrix first | `A`: implicit `A R⁻¹`, each row read as one adjoint product. `P`: refused, since `P` must have a Cholesky factor |
 
 Three things in that table are conditions on your problem, not choices.

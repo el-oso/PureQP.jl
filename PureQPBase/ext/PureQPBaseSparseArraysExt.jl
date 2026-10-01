@@ -295,6 +295,9 @@ function PureQPBase.formed_rung(
     # which indexes. `A` is a `SparseMatrixCSC` here and so always readable; `P` is not
     # constrained by the signature.
     PureQPBase.is_materializable(P) || return nothing
+    # The inverse is `n × n` however `P` is held, so a `P` whose representation is smaller than
+    # that is served below rather than accumulated into it.
+    PureQPBase.holds_structure(P) && return nothing
     n = prob.n
     Rinv = similar(prob.q0, T, n, n)
     # Grouped here rather than on the first `factorize!`: building it there would leave a

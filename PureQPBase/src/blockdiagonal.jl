@@ -55,6 +55,9 @@ BlockDiagonal(blocks::AbstractVector{<:AbstractMatrix}) = BlockDiagonal(collect(
 "The number of blocks on the diagonal."
 nblocks(A::BlockDiagonal) = length(A.blocks)
 
+# The off-diagonal blocks are zero and are not stored, so forming the matrix would hold them.
+holds_structure(::BlockDiagonal) = true
+
 "The rows block `i` occupies."
 rowrange(A::BlockDiagonal, i::Integer) = A.rowstart[i]:(A.rowstart[i + 1] - 1)
 

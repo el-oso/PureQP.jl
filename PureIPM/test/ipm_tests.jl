@@ -305,8 +305,20 @@ end
     @test_throws "linsys = :kronecker is not available with InteriorPoint()" setup(
         Pk, qk, K, lk, uk, InteriorPoint(); linsys = :kronecker, scaling = 0
     )
-    # The same pair on `:auto` is declined by the Kronecker rung and still solves.
-    ws = setup(Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0)
+    # On `:auto` the Kronecker rung declines too, and every rung below it either needs uniform
+    # weights or would form the matrix from `K`'s entries, which two factors stand in place of.
+    @test_throws "no interior-point backend serves this pair" setup(
+        Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0
+    )
+    # The refusal names both ways forward, so a caller is not left guessing.
+    @test_throws "linsys = :indirect with a caller-supplied preconditioner" setup(
+        Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0
+    )
+    @test_throws "or use OperatorSplitting()" setup(
+        Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0
+    )
+    # The same numbers as a matrix are formed because the caller asked for that, and solve.
+    ws = setup(Pk, qk, Matrix(K), lk, uk, InteriorPoint(); scaling = 0)
     @test PureQPBase.backend_name(ws.linsys) !== :kronecker
     @test solve!(ws).status == SOLVED
 end

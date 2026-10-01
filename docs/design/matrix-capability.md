@@ -342,6 +342,14 @@ factors totalling 0.027 MiB, against 13.5 MiB for the dense pair:
 | `InteriorPoint` | held | discarded | stays sparse | **densified**, 124.63 MiB, backend `bunchkaufman` | **refused** |
 | `ActiveSet` | held | discarded | **densified** | held (R1) | held (R1) |
 
+R14 closes the structured column for the first two: `OperatorSplitting` reaches the matrix-free
+backend and `InteriorPoint` refuses rather than forming. One consequence to state plainly,
+because it reaches callers who never name a backend: the matrix-free backend lives in the
+Krylov extension, so a structured pair that no structured rung accepts now needs `using Krylov`
+where it previously fell through to a factorization. A `BlockDiagonal` pair is unaffected — the
+block rung serves it, and the refusal sits below every structured rung rather than in front of
+them.
+
 Two findings behind that table. **Unmaterialized does not force an iterative solve**: the base
 owns direct backends that form nothing — `:kronecker` eigendecomposes the two factors,
 `:lowrank` solves by Woodbury, `:block` solves block by block. What is true is narrower, that
@@ -356,7 +364,7 @@ all three, the wrapper and nothing else.
 |---|---|---|
 | R12 | A caller's `Symmetric` is used rather than re-derived: the symmetrising copy is skipped and the factorisation reads one triangle. All three algorithms, so it belongs in the base | not started |
 | R13 | A sparse `P` or `A` keeps its representation through `ActiveSet`'s reduction | not started |
-| R14 | `linsys = :auto` does not choose a materialising backend for a structured `P` or `A`, in any algorithm | not started |
+| R14 | `linsys = :auto` does not choose a materialising backend for a structured `P` or `A`, in any algorithm | **done**. `holds_structure(M)` in the base is the predicate, separate from `is_materializable` because polishing and the derivatives do read a structured operand's entries; the rungs that form the reduced matrix decline on it. `OperatorSplitting` reaches the matrix-free backend instead, measured on a Kronecker pair at `n = 1600` as 0.72 MiB against 43.77 MiB and 43.3 ms against 190.6 ms. `InteriorPoint` has no structured rung for such a pair and refuses by name, since its own matrix-free path needs a caller's preconditioner |
 | R15 | `:kronecker` serves a structured `P` with a differently-represented `A`, and the reverse | not started |
 | R16 | The structured backends admit a weight per row, so `InteriorPoint` can reach them | not started |
 | R17 | `InteriorPoint` accepts an unmaterialized pair | not started |
