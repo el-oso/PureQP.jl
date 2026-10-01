@@ -185,5 +185,6 @@ end
 @verify Diagonal{Float64, Vector{Float64}} for_contract = CholeskyFactor trim_compat = true
 @verify BlockDiagonal{Float64, UpperTriangular{Float64, Matrix{Float64}}} for_contract = CholeskyFactor trim_compat = true
 @verify KroneckerCholesky{Float64} for_contract = CholeskyFactor trim_compat = true
+@verify KroneckerSquareRoot{Float64} for_contract = CholeskyFactor trim_compat = true
 
 end # module PureQPBase

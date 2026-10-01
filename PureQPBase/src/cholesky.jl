@@ -59,13 +59,16 @@ holds. Nothing the size of `P` is formed unless `P` is dense.
 | strided matrix, `Symmetric` of one | `UpperTriangular{T, Matrix{T}}`, from a symmetrized, shifted copy |
 | `Diagonal` | `Diagonal(sqrt.(d .+ shift))` |
 | `BlockDiagonal` | a `BlockDiagonal` of the blocks' factors |
-| `KroneckerOperator` | a [`KroneckerCholesky`](@ref), `R₁ ⊗ R₂`; requires `shift = 0` |
+| `KroneckerOperator` | a [`KroneckerCholesky`](@ref), `R₁ ⊗ R₂`, when `shift = 0` and both factors are positive definite; otherwise a [`KroneckerSquareRoot`](@ref) |
 
 A dense `P` equal to `μI` yields `√(μ + shift) I` without a factorization.
 
-Throws an `ArgumentError` naming the remedy when `P + shift*I` is not positive definite, and
-for a `KroneckerOperator` when `shift ≠ 0`: `P₁ ⊗ P₂ + εI` is not a Kronecker product, so it
-has no Kronecker factor.
+`R` is upper triangular for every `P` but a `KroneckerOperator` that needs the square root:
+`P₁ ⊗ P₂ + εI` is not a Kronecker product, so it has no `R₁ ⊗ R₂`, and neither does a pair of
+negative definite factors whose product is positive definite. Triangularity is not part of
+[`CholeskyFactor`](@ref), which asks for `RᵀR = P + shift*I` and two solves.
+
+Throws an `ArgumentError` naming the remedy when `P + shift*I` is not positive definite.
 """
 function cholesky_factor end
 
@@ -243,31 +246,121 @@ function check_solve_operand(R::AbstractMatrix, v::AbstractVector)
 end
 
 function cholesky_factor(K::KroneckerOperator, shift)
-    iszero(shift) || throw(
-        ArgumentError(
-            "a Kronecker P has no Kronecker Cholesky factor once a shift is added: " *
-                "P1 ⊗ P2 + εI is not a Kronecker product. Pass eps_prox = 0, or pass P as a " *
-                "Matrix to factor it densely."
-        )
-    )
-    R1 = kronecker_factor(K.A1)
-    R2 = kronecker_factor(K.A2)
-    return KroneckerCholesky(R1, R2)
+    # The triangular factor is the cheaper of the two and is exact only for an unshifted `P`
+    # whose factors are each positive definite; `KroneckerSquareRoot` covers the rest.
+    if iszero(shift)
+        R1 = triangular_kronecker_factor(K.A1)
+        R2 = triangular_kronecker_factor(K.A2)
+        isnothing(R1) || isnothing(R2) || return KroneckerCholesky(R1, R2)
+    end
+    return KroneckerSquareRoot(K.A1, K.A2, shift)
 end
 
-# `P₁ ⊗ P₂` is also positive definite when both factors are negative definite, which no
-# factor-wise Cholesky reaches.
-function kronecker_factor(A)
+"`cholesky_factor(A, 0)` when `A` is positive definite, and `nothing` when it is not."
+function triangular_kronecker_factor(A)
     try
         return cholesky_factor(A, zero(eltype(A)))
     catch err
         err isa ArgumentError || rethrow()
-        throw(
-            ArgumentError(
-                "each factor of a Kronecker P must be positive definite for P to have a " *
-                    "Kronecker Cholesky factor, although P1 ⊗ P2 is also positive definite when both " *
-                    "factors are negative definite. Pass P as a Matrix to factor it densely."
-            )
-        )
+        return nothing
     end
+end
+
+"""
+    KroneckerSquareRoot{T} <: AbstractMatrix{T}
+
+The factor `R = D^{1/2}(U₁ ⊗ U₂)ᵀ` of `P₁ ⊗ P₂ + shift*I`, where `Pᵢ = UᵢΛᵢUᵢᵀ` and
+`D = diag(λ₁ᵢλ₂ⱼ + shift)`. Stored as the two eigenvector matrices and `D`'s diagonal as a
+vector of length `n₁n₂`, never as the `n₁n₂ × n₁n₂` product.
+
+`RᵀR = (U₁ ⊗ U₂)D(U₁ ⊗ U₂)ᵀ = P₁ ⊗ P₂ + shift*I`, because `U₁ ⊗ U₂` is orthogonal and
+diagonalizes `P₁ ⊗ P₂` with eigenvalues `λ₁ᵢλ₂ⱼ`, and `shift*I` is diagonal in every
+orthogonal basis. The eigenvalue list is not the Kronecker product of two diagonals once
+shifted, which is why it is held as a vector; that is `O(n)` and not the obstruction.
+
+This is **not triangular**, and so not a Cholesky factor. [`CholeskyFactor`](@ref) asks only
+for `RᵀR = P + shift*I` and two solves, which this meets: with `X` the `n₂×n₁` matrix holding
+a vector,
+
+    R⁻¹y = vec(U₂ X U₁ᵀ) where X holds y ./ d        R⁻ᵀy = vec(U₂ᵀ X U₁) ./ d
+
+so each solve is two matrix products, `O(n₁n₂(n₁ + n₂))` — the same order as the triangular
+factor's two triangular solves.
+
+What this reaches that `R₁ ⊗ R₂` does not: a nonzero `shift`, since `P₁ ⊗ P₂ + εI` is not a
+Kronecker product and so has no `R₁ ⊗ R₂`; and a pair of negative definite factors, whose
+product is positive definite while neither factor has a Cholesky factor of its own. The
+condition is on the shifted eigenvalues, `λ₁ᵢλ₂ⱼ + shift > 0` for every pair, not on the
+factors' own definiteness.
+
+Two scratch matrices the factor owns make it unsafe to solve with from two tasks at once.
+"""
+struct KroneckerSquareRoot{T <: Real} <: AbstractMatrix{T}
+    U1::Matrix{T}
+    U2::Matrix{T}
+    # `D^{1/2}`'s diagonal, so a solve divides rather than taking a square root per element.
+    d::Vector{T}
+    X::Matrix{T}
+    Y::Matrix{T}
+end
+
+function KroneckerSquareRoot(P1::AbstractMatrix, P2::AbstractMatrix, shift)
+    T = promote_type(eltype(P1), eltype(P2), typeof(shift))
+    E1 = eigen(Symmetric(Matrix{T}(P1)))
+    E2 = eigen(Symmetric(Matrix{T}(P2)))
+    eps = convert(T, shift)
+    n1, n2 = length(E1.values), length(E2.values)
+    d = Vector{T}(undef, n1 * n2)
+    # Column-major, the second factor fastest, matching `KroneckerOperator`'s ordering.
+    k = 0
+    for i in 1:n1, j in 1:n2
+        v = E1.values[i] * E2.values[j] + eps
+        v > 0 || throw(indefinite_kronecker(E1.values[i], E2.values[j], eps))
+        d[k += 1] = sqrt(v)
+    end
+    return KroneckerSquareRoot{T}(
+        E1.vectors, E2.vectors, d, Matrix{T}(undef, n2, n1), Matrix{T}(undef, n2, n1)
+    )
+end
+
+# States the condition the factor itself has, in the factors' own terms: the eigenvalues of
+# `P₁ ⊗ P₂ + shift*I` are `λ₁ᵢλ₂ⱼ + shift`, so one non-positive pair is what rules the factor
+# out, whatever either factor's own definiteness. The wording says "not positive definite" so a
+# caller distinguishing this from an indefinite dense `P` does not have to.
+function indefinite_kronecker(lambda1, lambda2, eps)
+    return ArgumentError(
+        lazy"P1 ⊗ P2 + $eps*I is not positive definite: its eigenvalues are the products of the factors' eigenvalues shifted, and $lambda1 * $lambda2 + $eps is not positive. A Kronecker P is positive definite when every such product is, which holds when both factors are positive definite and also when both are negative definite."
+    )
+end
+
+Base.size(R::KroneckerSquareRoot) = (n = length(R.d); (n, n))
+
+function Base.getindex(R::KroneckerSquareRoot, i::Integer, j::Integer)
+    @boundscheck checkbounds(R, i, j)
+    n2 = size(R.U2, 1)
+    j1, j2 = divrem(j - 1, n2)
+    # Row `i` of `D^{1/2}(U₁ ⊗ U₂)ᵀ` is `d[i]` times column `i` of `U₁ ⊗ U₂`.
+    i1, i2 = divrem(i - 1, n2)
+    return R.d[i] * R.U1[j1 + 1, i1 + 1] * R.U2[j2 + 1, i2 + 1]
+end
+
+function LinearAlgebra.ldiv!(R::KroneckerSquareRoot, v::AbstractVector)
+    check_solve_operand(R, v)
+    v ./= R.d
+    copyto!(R.X, v)
+    mul!(R.Y, R.U2, R.X)
+    mul!(R.X, R.Y, transpose(R.U1))
+    copyto!(v, R.X)
+    return v
+end
+
+function LinearAlgebra.ldiv!(Rt::Transpose{<:Any, <:KroneckerSquareRoot}, v::AbstractVector)
+    R = parent(Rt)
+    check_solve_operand(R, v)
+    copyto!(R.X, v)
+    mul!(R.Y, transpose(R.U2), R.X)
+    mul!(R.X, R.Y, R.U1)
+    copyto!(v, R.X)
+    v ./= R.d
+    return v
 end

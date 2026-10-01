@@ -305,6 +305,35 @@ Two consequences the converter should build to:
   rows in `O(nnz)`, asks for S6.
 - **The equilibrated forms.** `ActiveSet` requires `scaling = 0` today and keeps requiring it.
 
+### 5a. Why the Kronecker factors are written here rather than taken from Kronecker.jl
+
+Kronecker.jl holds the same algebra: its `eigen(K) + λI` is a lazy spectral decomposition of
+`K + λI`, and `(A ⊗ B + λI) \ v` from it is accurate to 1.25e-15, against 1.1e-15 for the factor
+here. Three measured differences decide it, and none is a judgement about that package:
+
+| | Kronecker.jl 0.5.5 | here |
+|---|---|---|
+| a one-sided factor, `R⁻¹` and `R⁻ᵀ` applied separately | `(K + λI)⁻¹v` only; `CholeskyKronecker` exposes `.A` and `.B`, no `.U` or `.L` | `KroneckerSquareRoot` |
+| `ldiv!` into the caller's vector | no method, for either type | both directions |
+| allocation per solve | 2224 bytes | 0 bytes |
+| both factors negative definite, product positive definite | `PosDefException` | factored |
+
+The reduction forms `M = A R⁻¹`, which is a one-sided apply, so a two-sided solve cannot serve
+it however accurate; and the iteration's guarantee is zero allocation, which 2224 bytes per
+solve inside a proximal-point loop breaks. Wrapping the package would still leave the one-sided
+allocation-free apply to write here, and would add a dependency to a package mid-registration.
+
+There is no Cholesky of a general `LinearMap` to adopt or to write: a map that supplies only
+products has no entries to factor, which is why `:indirect` is the rung below the factorizations
+rather than a factorization of its own.
+
+The factor types are self-contained — two eigenvector matrices, a vector of shifted eigenvalue
+products, scratch, and `size`/`getindex`/`ldiv!` — and name no QP concept, so they would move to
+a package of their own as a file move. What previously tied them here was the shared
+`not_positive_definite` error, whose text names `ActiveSet` and `eps_prox`;
+`indefinite_kronecker` replaces it for the square root and states the condition on
+`λ₁ᵢλ₂ⱼ + shift` instead.
+
 ## 6. Requirements
 
 | # | requirement | status |
@@ -375,6 +404,7 @@ all three, the wrapper and nothing else.
 | R13 | A sparse `P` or `A` keeps its representation through `ActiveSet`'s reduction | not started |
 | R14 | `linsys = :auto` does not choose a materialising backend for a structured `P` or `A`, in any algorithm | **done**. `holds_structure(M)` in the base is the predicate, separate from `is_materializable` because polishing and the derivatives do read a structured operand's entries; the rungs that form the reduced matrix decline on it. `OperatorSplitting` reaches the matrix-free backend instead, measured on a Kronecker pair at `n = 1600` as 0.72 MiB against 43.77 MiB and 43.3 ms against 190.6 ms. `InteriorPoint` has no structured rung for such a pair and refuses by name, since its own matrix-free path needs a caller's preconditioner |
 | R15 | `:kronecker` serves a structured `P` with a differently-represented `A`, and the reverse | not started |
+| R18 | A Kronecker `P` is factored wherever `P₁ ⊗ P₂ + shift*I` is positive definite, not only where `R₁ ⊗ R₂` exists | **done**. `KroneckerSquareRoot` holds `D^{1/2}(U₁ ⊗ U₂)ᵀ` from the factors' eigendecompositions. This reaches a nonzero `shift`, which has no Kronecker triangular factor, and a pair of negative definite factors, whose product is positive definite while neither factor has a Cholesky factor. A singular Kronecker `P` with `eps_prox = 1e-5` solves and agrees with the dense pair to 4.3e-12, in 9.21 MiB against 23.09 MiB |
 | R16 | The structured backends admit a weight per row, so `InteriorPoint` can reach them | not started |
 | R17 | `InteriorPoint` accepts an unmaterialized pair | not started |
 

@@ -7,9 +7,11 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
 - `eps_prox = 0` — the proximal regularization `ε`. Zero runs the method on its own, which
   needs `P ≻ 0`. Any positive value runs outer proximal-point iterations instead, solving a
   sequence of problems in `P + εI`, which accepts a singular `P` and improves conditioning.
-  `1e-4` is the value the method's authors report. A [`PureQPBase.KroneckerOperator`](@ref)
-  `P` needs `0`: `P₁ ⊗ P₂ + εI` is not a Kronecker product, so it has no Kronecker factor, and
-  a positive `eps_prox` is refused by name.
+  `1e-4` is the value the method's authors report. A [`PureQPBase.KroneckerOperator`](@ref) `P`
+  takes a positive value through a [`PureQPBase.KroneckerSquareRoot`](@ref), which factors
+  `P₁ ⊗ P₂ + εI` from the factors' eigendecompositions; that matrix is not a Kronecker product,
+  so the factor is not `R₁ ⊗ R₂` and not triangular, and neither property is one the reduction
+  needs.
 - `eta_prox = sqrt(eps(T))` — the proximal-point loop stops once the iterate moves less than
   this in the ∞-norm.
 - `max_prox = 100` — the most outer proximal-point iterations in one solve.
@@ -57,7 +59,7 @@ position, and to an `A` that supplies products only, such as a `LinearMap`.
 
 Two requirements follow, and neither is a setting. `P` must have a Cholesky factor: a dense
 matrix, a `Diagonal`, a `BlockDiagonal` of dense blocks, or a `KroneckerOperator` of two dense
-matrices with `eps_prox = 0`. An operator that supplies products only is refused as `P`, by
+matrices, at any `eps_prox`. An operator that supplies products only is refused as `P`, by
 name. `A` has no such requirement, since it is only multiplied and read by row, but an operator
 `A` needs a transpose. **A sparse or banded `P` or `A`, and a `RowCoupled` one, is read into a
 dense matrix**, since there is no sparse factor and no row read in `O(nnz)`.

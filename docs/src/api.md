@@ -195,6 +195,7 @@ PureQPBase.has_cholesky_factor
 PureQPBase.cholesky_factor
 PureQPBase.CholeskyFactor
 PureQPBase.KroneckerCholesky
+PureQPBase.KroneckerSquareRoot
 PureQPBase.scalar_diagonal
 PureQPBase.dense_row!
 PureQPBase.is_scalar_multiple

@@ -707,11 +707,11 @@ end
     @test occursin("KroneckerOperator", err.msg)
     @test occursin("OperatorSplitting()", err.msg)
 
-    # `P1 ⊗ P2 + εI` is not a Kronecker product, so the proximal-point shift has no Kronecker
-    # factor to be the factor of.
-    @test_throws "is not a Kronecker product" PureDAQP.setup(
-        Pop, q, Aop, l, u, ActiveSet(; eps_prox = 1.0e-6)
-    )
+    # `P1 ⊗ P2 + εI` is not a Kronecker product, so the shift has no `R₁ ⊗ R₂`. It does have a
+    # square root built from the factors' eigendecompositions, so the proximal-point loop runs.
+    wprox = PureDAQP.setup(Pop, q, Aop, l, u, ActiveSet(; eps_prox = 1.0e-6))
+    @test wprox.red.R isa PureQPBase.KroneckerSquareRoot
+    @test PureQPBase.solve!(wprox).status == SOLVED
 
     # The reduction is held concretely, so its representation is fixed at setup.
     ws = PureDAQP.setup(Pop, q, Aop, l, u, ActiveSet())
@@ -721,4 +721,45 @@ end
     # Replacing them with operators of the same representation is the supported path.
     PureQPBase.update!(ws; P = PureQPBase.KroneckerOperator(P1, P2))
     @test PureQPBase.solve!(ws).status == SOLVED
+end
+
+@testitem "a singular Kronecker P solves through the proximal-point loop" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, Random
+
+    Random.seed!(19)
+    k = 25
+    # A first factor of rank `k - 2`, so `P₁ ⊗ P₂` is singular and `eps_prox = 0` cannot
+    # factor it. `P₁ ⊗ P₂ + εI` is not a Kronecker product, so what factors it is the square
+    # root built from the factors' eigendecompositions rather than `R₁ ⊗ R₂`.
+    V = qr(randn(k, k)).Q * Matrix(1.0I, k, k)
+    P1 = Matrix(Symmetric(V * Diagonal([rand(k - 2) .+ 1; 0.0; 0.0]) * V'))
+    G = randn(k, k)
+    P2 = Matrix(Symmetric(G'G / k + I))
+    A1, A2 = randn(k + 5, k), randn(k + 3, k)
+    Pop = PureQPBase.KroneckerOperator(P1, P2)
+    Aop = PureQPBase.KroneckerOperator(A1, A2)
+    n = size(Pop, 1)
+    b = Aop * randn(n)
+    q, l, u = randn(n), b .- 1, b .+ 1
+
+    @test rank(P1) == k - 2
+    @test PureQPBase.cholesky_factor(Pop, 1.0e-5) isa PureQPBase.KroneckerSquareRoot
+
+    # Without the shift the reduction has no factor to build, and says so.
+    @test_throws "not positive definite" PureDAQP.solve(Pop, q, Aop, l, u, ActiveSet())
+
+    for eps_prox in (1.0e-5, 1.0e-4)
+        alg = ActiveSet(; eps_prox)
+        sop = PureDAQP.solve(Pop, q, Aop, l, u, alg; max_iter = 20_000)
+        sdn = PureDAQP.solve(kron(P1, P2), q, kron(A1, A2), l, u, alg; max_iter = 20_000)
+        @test sop.status == SOLVED
+        @test sdn.status == SOLVED
+        @test isapprox(sop.obj_val, sdn.obj_val; rtol = 1.0e-9)
+        @test maximum(abs, sop.x - sdn.x) < 1.0e-6
+    end
+
+    # The operator path holds the four factors, not the product the dense pair holds.
+    wop = PureDAQP.setup(Pop, q, Aop, l, u, ActiveSet(; eps_prox = 1.0e-5))
+    wdn = PureDAQP.setup(kron(P1, P2), q, kron(A1, A2), l, u, ActiveSet(; eps_prox = 1.0e-5))
+    @test Base.summarysize(wop) < Base.summarysize(wdn) / 2
 end

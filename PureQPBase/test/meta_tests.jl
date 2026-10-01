@@ -7,7 +7,7 @@
         "banded_tests.jl" => 3,
         "base_tests.jl" => 5,
         "block_tests.jl" => 3,
-        "cholesky_tests.jl" => 6,
+        "cholesky_tests.jl" => 7,
         "indirect_tests.jl" => 1,
         "kronecker_tests.jl" => 6,
         "linsys_tests.jl" => 19,

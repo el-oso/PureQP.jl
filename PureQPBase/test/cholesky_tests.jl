@@ -107,16 +107,11 @@ end
     )
     @test_throws DimensionMismatch PureQPBase.cholesky_factor(ones(2, 3), 0.0)
 
-    K = PureQPBase.KroneckerOperator([2.0 0.5; 0.5 3.0], [1.0 0.2; 0.2 2.0])
-    @test_throws "a Kronecker P has no Kronecker Cholesky factor once a shift is added" PureQPBase.cholesky_factor(K, 1.0e-8)
-    @test_throws "Pass eps_prox = 0" PureQPBase.cholesky_factor(K, 1.0e-8)
+    # A shifted or sign-flipped Kronecker pair has no `R₁ ⊗ R₂` and is factored by the square
+    # root instead, which is a factor rather than a refusal; see the test item for it. Only a
+    # product that is genuinely indefinite is refused here.
     Kbad = PureQPBase.KroneckerOperator(indefinite, [1.0 0.2; 0.2 2.0])
-    @test_throws "each factor of a Kronecker P must be positive definite" PureQPBase.cholesky_factor(Kbad, 0.0)
-    # Two negative definite factors give a positive definite product that no factor-wise
-    # Cholesky reaches, and the refusal says so.
-    Kneg = PureQPBase.KroneckerOperator(-[2.0 0.5; 0.5 3.0], -[1.0 0.2; 0.2 2.0])
-    @test isposdef(Matrix(Kneg))
-    @test_throws "also positive definite when both factors are negative definite" PureQPBase.cholesky_factor(Kneg, 0.0)
+    @test_throws "is not positive definite" PureQPBase.cholesky_factor(Kbad, 0.0)
 end
 
 @testitem "has_cholesky_factor is true for the representations it factors and false for the rest" begin
@@ -170,4 +165,68 @@ end
     mul!(y, K, x)
     @test norm(y - b) <= 1.0e-9 * norm(b) * max(cond(P1), cond(P2))
     @test Base.summarysize(R) < 100_000
+end
+
+@testitem "a Kronecker P is factored where no Kronecker Cholesky exists" begin
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(44)
+    k1, k2 = 7, 6
+    sym(k) = (G = randn(k, k); Matrix(Symmetric(G'G / k + k * I)))
+    P1, P2 = sym(k1), sym(k2)
+    K = PureQPBase.KroneckerOperator(P1, P2)
+    n = k1 * k2
+
+    solved(R, M) = let v = randn(size(M, 1)), w = copy(v)
+        ldiv!(transpose(R), w)
+        ldiv!(R, w)
+        norm(M \ v - w) / norm(w)
+    end
+
+    # An unshifted pair of positive definite factors keeps the triangular factor, which is the
+    # cheaper of the two and the one the Kronecker product of two upper triangles gives.
+    R0 = PureQPBase.cholesky_factor(K, 0.0)
+    @test R0 isa PureQPBase.KroneckerCholesky
+    @test solved(R0, kron(P1, P2)) < 1.0e-12
+
+    # `P₁ ⊗ P₂ + εI` is not a Kronecker product, so it has no `R₁ ⊗ R₂`. The square root
+    # factors it from the factors' eigendecompositions, holding two `kᵢ×kᵢ` bases and an
+    # `n`-vector, never the `n×n` product.
+    for ε in (1.0e-8, 1.0e-3, 1.0)
+        R = PureQPBase.cholesky_factor(K, ε)
+        @test R isa PureQPBase.KroneckerSquareRoot
+        @test size(R) == (n, n)
+        @test solved(R, kron(P1, P2) + ε * I) < 1.0e-10
+        @test Base.summarysize(R) < 4 * (k1^2 + k2^2 + n) * sizeof(Float64)
+        # `RᵀR = P + εI` is the contract, and `getindex` must agree with the solves.
+        @test norm(Matrix(R)' * Matrix(R) - (kron(P1, P2) + ε * I)) /
+            norm(kron(P1, P2) + ε * I) < 1.0e-12
+    end
+
+    # Two negative definite factors give a positive definite product, which no factor-wise
+    # Cholesky reaches: the condition is on `λ₁ᵢλ₂ⱼ + shift`, not on either factor's own sign.
+    Kneg = PureQPBase.KroneckerOperator(-P1, -P2)
+    @test isposdef(Symmetric(kron(-P1, -P2)))
+    Rneg = PureQPBase.cholesky_factor(Kneg, 0.0)
+    @test Rneg isa PureQPBase.KroneckerSquareRoot
+    @test solved(Rneg, kron(-P1, -P2)) < 1.0e-10
+
+    # A genuinely indefinite product is refused, and the refusal names the condition in the
+    # factors' own terms rather than in any one algorithm's settings.
+    for shift in (0.0, 1.0e-6)
+        @test_throws "is not positive definite" PureQPBase.cholesky_factor(
+            PureQPBase.KroneckerOperator(P1, -P2), shift
+        )
+        @test_throws "products of the factors' eigenvalues" PureQPBase.cholesky_factor(
+            PureQPBase.KroneckerOperator(P1, -P2), shift
+        )
+    end
+
+    # Both solves leave nothing behind on a warm factor, which the reduction relies on.
+    R = PureQPBase.cholesky_factor(K, 1.0e-4)
+    Rt = transpose(R)
+    v = randn(n)
+    ldiv!(R, v)
+    ldiv!(Rt, v)
+    alloc(R, Rt, v) = @allocated (ldiv!(R, v); ldiv!(Rt, v))
+    @test alloc(R, Rt, v) == 0
 end
