@@ -23,6 +23,7 @@ using StrictMode: @strict_contract, @assert_noalloc, @assert_trim_compatible
 include("blockdiagonal.jl")
 include("kronecker.jl")
 include("rowcoupled.jl")
+include("stacked.jl")
 include("problem.jl")
 include("options.jl")
 include("weights.jl")
@@ -55,7 +56,8 @@ export backend_info, backend_name, factor_fill, BackendInfo
 export PolishStatus
 export adjoint_derivative, forward_derivative
 export LinearSystem, ReducedCholesky, FullKKT
-export Preconditioner, IdentityPreconditioner, JacobiPreconditioner, update_preconditioner!
+export Preconditioner, IdentityPreconditioner, JacobiPreconditioner, KroneckerPreconditioner
+export update_preconditioner!
 export SOLVED, PRIMAL_INFEASIBLE, DUAL_INFEASIBLE, MAX_ITER_REACHED, NON_CONVEX, UNSOLVED
 export TIME_LIMIT_REACHED, INTERRUPTED, NUMERICAL_ERROR
 export PolishStatus, POLISH_SUCCESS, POLISH_FAILED, POLISH_NOT_PERFORMED

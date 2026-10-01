@@ -36,6 +36,7 @@ import PureQPBase:
     empty_solution, eps_prim, eps_dual, eps_duality_gap, factorize!, factors, formed_rung,
     gap_terms, no_certificate, unit_certificate!, unscale!, holds_structure,
     increment!, indirect_backend, indirect_rung, inner_iterations, invscaled_norm_inf,
+    ProductReduced,
     is_convex, is_dual_infeasible, is_materializable, is_primal_infeasible, is_scalar_multiple,
     is_symmetric, kkt_rung, kronecker_rung, last_solve_converged, lowrank_rung, mul_A!,
     mul_At!, mul_P!, multiply!, named_backend, norm_inf, polish_kernel!, reduced_diagonal!,

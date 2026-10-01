@@ -305,18 +305,16 @@ end
     @test_throws "linsys = :kronecker is not available with InteriorPoint()" setup(
         Pk, qk, K, lk, uk, InteriorPoint(); linsys = :kronecker, scaling = 0
     )
-    # On `:auto` the Kronecker rung declines too, and every rung below it either needs uniform
-    # weights or would form the matrix from `K`'s entries, which two factors stand in place of.
-    @test_throws "no interior-point backend serves this pair" setup(
-        Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0
-    )
-    # The refusal names both ways forward, so a caller is not left guessing.
-    @test_throws "linsys = :indirect with a caller-supplied preconditioner" setup(
-        Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0
-    )
-    @test_throws "or use OperatorSplitting()" setup(
-        Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0
-    )
+    # On `:auto` the Kronecker rung declines, because it needs one weight for every row. What
+    # serves the pair instead assembles the reduced matrix by contracting the two factors, so
+    # neither `K` nor the KKT matrix is ever formed.
+    wk = setup(Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0)
+    @test PureQPBase.backend_name(wk.linsys) === :product_reduced
+    sk = solve!(wk)
+    @test sk.status == SOLVED
+    # And it reaches the answer the formed matrix reaches.
+    sdense = solve(Pk, qk, Matrix(K), lk, uk, InteriorPoint(); scaling = 0)
+    @test isapprox(sk.obj_val, sdense.obj_val; rtol = 1.0e-7)
     # The same numbers as a matrix are formed because the caller asked for that, and solve.
     ws = setup(Pk, qk, Matrix(K), lk, uk, InteriorPoint(); scaling = 0)
     @test PureQPBase.backend_name(ws.linsys) !== :kronecker

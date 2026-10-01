@@ -51,12 +51,14 @@ end
     # backend solves the reduced matrix, and forming it at weights reaching `1/reg_dual` loses
     # the accuracy the method needs, so its rung declines -- for a positive definite `P` as much
     # as for the linear program. The rung below forms the KKT matrix from `A`'s entries, and
-    # `RowCoupled` holds `k` dense rows and a diagonal in place of those entries, so no rung
-    # serves the pair and it is refused rather than formed.
+    # `RowCoupled` holds `k` dense rows and a diagonal in place of those entries, so the rung
+    # below assembles the reduced matrix from products with `A` instead of from its entries.
     for Pc in (P, Diagonal(zeros(n)))
-        @test_throws "no interior-point backend serves this pair" setup(
-            Pc, q, A, l, u, InteriorPoint()
-        )
+        ws = setup(Pc, q, A, l, u, InteriorPoint())
+        @test PureQPBase.backend_name(ws.linsys) === :product_reduced
+        s = solve!(ws)
+        @test s.status == SOLVED
+        @test maximum(kkt_residuals(Matrix(Pc), q, Matrix(A), l, u, s.x, s.y)) < 1.0e-5
     end
     # The same numbers as a matrix are formed because the caller asked for that, and solve.
     for Pc in (P, Diagonal(zeros(n)))

@@ -118,11 +118,16 @@ Only the factors are handed over; the product they stand for is never formed.
 | `LinearMap(B)` for a matrix `B` | `B` itself; `λ * B`, a copy, when `λ ≠ 1` |
 | `kron(LinearMap(B₁), LinearMap(B₂))` | `KroneckerOperator(λ * B₁, B₂)` |
 | `blockdiag(LinearMap(B₁), …)` | `BlockDiagonal([λ * B₁, …])` |
+| `vcat(M₁, …)` | `StackedOperator` of what each `λ * Mᵢ` becomes |
 | `c * M′` | what `M′` becomes, with `λ * c` in place of `λ` |
 
 Every other map, such as a `FunctionMap`, a sum, a general product, a Kronecker product of more
 than two maps or a factor that is not itself a wrapped matrix, is `nothing`, and stays a
 [`PureQPBase.ProductOperator`](@ref).
+
+A `vcat` is the one case that never declines: its blocks go through [`as_operator`](@ref), so a
+block the table does not cover becomes a `ProductOperator` within the stack while its siblings
+keep their own representation.
 """
 unwrap(::Type{T}, ::LinearMap, λ) where {T} = nothing
 unwrap(::Type{T}, M::LinearMaps.WrappedMap, λ) where {T} = matrix_factor(T, M, λ)
@@ -146,6 +151,19 @@ function unwrap(::Type{T}, M::LinearMaps.BlockDiagonalMap, λ) where {T}
     blocks = map(m -> matrix_factor(T, m, λ), M.maps)
     any(isnothing, blocks) && return nothing
     return PureQPBase.BlockDiagonal(uniform(T, blocks))
+end
+
+# `vcat` of maps is a `BlockMap` laying one block per row of blocks, so `rows` is all ones; any
+# other `rows` describes an `hvcat` whose blocks share rows, where the weighted product does not
+# split and a `StackedOperator` would be wrong.
+function unwrap(::Type{T}, M::LinearMaps.BlockMap, λ) where {T}
+    all(isone, M.rows) || return nothing
+    # Every block takes `λ`, since scaling a stack scales each of its blocks. `as_operator`
+    # rather than `unwrap`: a block it does not recognize becomes a `ProductOperator` instead of
+    # declining the whole stack, so the blocks it does recognize keep their own reduction. This
+    # is what the stack is for — one opaque block does not cost the others their structure.
+    blocks = map(m -> as_operator(T, isone(λ) ? m : λ * m), M.maps)
+    return PureQPBase.StackedOperator(blocks...)
 end
 
 "`λ * B` for the matrix a wrapped map holds, or `nothing` when the map holds anything else."
