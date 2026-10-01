@@ -249,8 +249,24 @@ end
     @test opaque(LinearMap(B) + LinearMap(C))
     @test opaque(LinearMap(B) * LinearMap(C))
     @test opaque(LinearMap(B)' * LinearMap(B))
-    @test opaque(vcat(LinearMap(B), LinearMap(C)))
+    # `vcat` has a representation: the stack keeps its blocks, so each one's own structure
+    # survives. `hcat` shares rows between blocks, where a row-weighted product does not split,
+    # and has none.
+    @test !opaque(vcat(LinearMap(B), LinearMap(C)))
+    @test wrap(vcat(LinearMap(B), LinearMap(C))) isa PureQPBase.StackedOperator
     @test opaque(hcat(LinearMap(B), LinearMap(C)))
+    # A stack whose block is opaque keeps the stack: the opaque block becomes a `ProductOperator`
+    # inside it rather than costing its sibling its structure.
+    let stacked = wrap(vcat(LinearMap(B), fn))
+        @test stacked isa PureQPBase.StackedOperator
+        @test map(b -> b isa PureQPBase.ProductOperator, stacked.blocks) == (false, true)
+        # Compared by its products: the opaque block has no entries, so the stack has none to read
+        # over those rows either, and asking for them is what it refuses.
+        xs, ys = randn(n), randn(2n)
+        @test mul!(zeros(2n), stacked, xs) ≈ [B; B] * xs
+        @test mul!(zeros(n), adjoint(stacked), ys) ≈ [B; B]' * ys
+        @test_throws "no entries to read" stacked[n + 1, 1]
+    end
     @test opaque(LinearMap(I, n))
     # Only real entries have a place in the base.
     @test opaque(LinearMap(complex.(B)))

@@ -7,6 +7,7 @@ JLArrays = "27aeb0d3-9eb9-45fb-866b-73c2ecf80fcb"
 Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
 LDLFactorizations = "40e66cde-538c-5869-a4ad-c39174c6795b"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 OSQP = "ab2f91bb-94b4-55e3-9ba0-7f65df51de79"
 PureQPBase = "2fc88845-7e3c-4d5a-ae99-1d63540d249b"
@@ -18,3 +19,5 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
 
+[sources]
+PureQPBase = {path = "../../PureQPBase"}

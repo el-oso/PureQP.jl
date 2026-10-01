@@ -25,11 +25,15 @@ and `--trim` compatible even where the blocks differ from one another. A `Vector
 would be a `Vector{Any}` and hold none of the three.
 
 The type names every block, so a stack of hundreds costs compile time proportional to its length.
+
+`work` is the intermediate the transposed product needs, so `mul!` allocates nothing. It makes an
+operator single-use at a time: one `StackedOperator` must not be multiplied from two tasks at once.
 """
-struct StackedOperator{T <: Real, B <: Tuple} <: AbstractMatrix{T}
+struct StackedOperator{T <: Real, B <: Tuple, V <: AbstractVector{T}} <: AbstractMatrix{T}
     blocks::B
     rowstart::Vector{Int}    # rowstart[i] is the first row of block i; rowstart[K+1] is m+1
     cols::Int
+    work::V                  # `n`, holds one block's `Aᵢᵀxᵢ` while it is added to the sum
 
     function StackedOperator{T, B}(blocks::B) where {T, B <: Tuple}
         isempty(blocks) && throw(ArgumentError("a StackedOperator needs at least one block"))
@@ -44,7 +48,8 @@ struct StackedOperator{T <: Real, B <: Tuple} <: AbstractMatrix{T}
             )
             rowstart[i + 1] = rowstart[i] + size(Ai, 1)
         end
-        return new{T, B}(blocks, rowstart, cols)
+        work = similar(first(blocks), T, cols)
+        return new{T, B, typeof(work)}(blocks, rowstart, cols, work)
     end
 end
 
@@ -109,22 +114,32 @@ LinearAlgebra.mul!(y::AbstractVector, A::StackedOperator, x::AbstractVector) =
     return stack_mul!(y, Base.tail(blocks), x, off + rows)
 end
 
-# `Aᵀy = Σᵢ Aᵢᵀ y[rowrange(A, i)]`, accumulated rather than written, so `y` is zeroed first.
+# `Aᵀy = Σᵢ Aᵢᵀ y[rowrange(A, i)]`. The first block writes the sum and the rest add to it, so `y`
+# needs no zeroing.
 function LinearAlgebra.mul!(
         y::AbstractVector, At::Union{Adjoint{<:Any, <:StackedOperator}, Transpose{<:Any, <:StackedOperator}},
         x::AbstractVector
     )
     A = parent(At)
-    fill!(y, zero(eltype(y)))
-    return stack_mul_adjoint!(y, A.blocks, x, 1)
+    A1 = first(A.blocks)
+    rows = size(A1, 1)
+    mul!(y, adjoint(A1), view(x, 1:rows))
+    return stack_mul_adjoint!(y, Base.tail(A.blocks), x, 1 + rows, A.work)
 end
 
-@inline stack_mul_adjoint!(y, ::Tuple{}, x, off) = y
-@inline function stack_mul_adjoint!(y, blocks::Tuple, x, off)
+@inline stack_mul_adjoint!(y, ::Tuple{}, x, off, work) = y
+
+@inline function stack_mul_adjoint!(y, blocks::Tuple, x, off, work)
     A1 = first(blocks)
     rows = size(A1, 1)
-    mul!(y, adjoint(A1), view(x, off:(off + rows - 1)), true, true)
-    return stack_mul_adjoint!(y, Base.tail(blocks), x, off + rows)
+    # Three-argument `mul!` into scratch, then added: the five-argument form that would accumulate
+    # in place is not defined for every operator a block may be, and its generic fallback reads
+    # entries one at a time — which an operator supplying only products refuses outright.
+    mul!(work, adjoint(A1), view(x, off:(off + rows - 1)))
+    for j in eachindex(y)
+        y[j] += work[j]
+    end
+    return stack_mul_adjoint!(y, Base.tail(blocks), x, off + rows, work)
 end
 
 "Row `i` of the stack is a row of the one block that holds it."
@@ -177,3 +192,46 @@ end
 
 reduced_term_scratch(::Type{T}, A::StackedOperator) where {T} =
     map(Ai -> reduced_term_scratch(T, Ai), A.blocks)
+
+"""
+    reduced_diagonal!(dest, T, P, A::StackedOperator, rho, E, D, sigma, c) -> dest
+
+The inverted diagonal of the reduced matrix, taking each block's contribution from the block.
+
+`Aᵀ diag(ρ) A` is a sum over the blocks, so its diagonal is the sum of theirs, and each block
+supplies its own through [`structural_rows`](@ref): a block that declares its structure touches
+only the rows it has. A block that cannot be indexed at all leaves the diagonal unavailable, and
+conjugate gradients then run unpreconditioned, which costs iterations rather than the answer.
+"""
+function reduced_diagonal!(dest, ::Type{T}, P, A::StackedOperator, rho, E, D, sigma, c) where {T}
+    is_materializable(A) || return unpreconditioned!(dest)
+    # `rho` and `E` are workspace vectors indexed by the same `i` that indexes the stack's rows,
+    # so a block's rows are offset into them rather than read from one.
+    Base.require_one_based_indexing(rho, E)
+    for j in eachindex(dest)
+        dj = D[j]
+        dest[j] = c * dj * T(P[j, j]) * dj + sigma
+    end
+    stacked_diagonal!(dest, T, A.blocks, rho, E, D, 1)
+    for j in eachindex(dest)
+        dest[j] = inv(max(dest[j], sqrt(eps(T))))
+    end
+    return dest
+end
+
+@inline stacked_diagonal!(dest, ::Type{T}, ::Tuple{}, rho, E, D, off) where {T} = dest
+
+@inline function stacked_diagonal!(dest, ::Type{T}, blocks::Tuple, rho, E, D, off) where {T}
+    A1 = first(blocks)
+    for j in eachindex(dest)
+        dj = D[j]
+        acc = zero(T)
+        for ib in structural_rows(A1, j)
+            i = off + ib - 1
+            a = E[i] * T(A1[ib, j]) * dj
+            acc += rho[i] * a * a
+        end
+        dest[j] += acc
+    end
+    return stacked_diagonal!(dest, T, Base.tail(blocks), rho, E, D, off + size(A1, 1))
+end

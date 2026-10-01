@@ -171,6 +171,7 @@ PureQPBase.Preconditioner
 PureQPBase.check_preconditioner
 PureQPBase.IdentityPreconditioner
 PureQPBase.JacobiPreconditioner
+PureQPBase.KroneckerPreconditioner
 PureQPBase.choose_backend
 PureQPBase.ReducedInverse
 PureQPBase.ReducedCholesky
@@ -192,6 +193,7 @@ PureQPBase.coupling_rank
 PureQPBase.BlockDiagonal
 PureQPBase.KroneckerOperator
 PureQPBase.StackedOperator
+PureQPBase.add_reduced_term!
 PureQPBase.factors
 PureQPBase.has_cholesky_factor
 PureQPBase.cholesky_factor

@@ -974,3 +974,59 @@ julia --project=bench bench/consolidate.jl
 
 which also names any cache no script writes any more, and any benchmark script that has
 never been run.
+
+## What unmaterialized operators cost
+
+Each solver reaches an operator `A` on two paths, one that iterates the linear system and one that
+factors it, and each row below is one problem solved twice: once with `A` held as its factors, once
+with `Matrix(A)` and no backend named, which is what a caller gets for handing over a matrix and
+letting the solver choose. The backends therefore differ between the two columns — that is the
+comparison — so the iteration counts are given for both, and a time ratio that is really an
+iteration-count difference is visible rather than hidden.
+
+Reproduce with `julia --project=bench bench/unmaterialized_paths.jl`; samples are written to
+`bench/results/unmaterialized_paths.json`. The six problems are defined in
+`bench/unmaterialized_problems.jl`, which the [Unmaterialized operators](@ref) examples and one
+test item per algorithm package also read; the test items pin the backend each path reaches and
+compare the problems against the fingerprint recorded in the JSON, so a table built from problems
+that have since changed is a failing test.
+
+| algorithm | path | n | backend | its | matrix backend | its | setup× | solve× | memory× |
+|---|---|---|---|---|---|---|---|---|---|
+| PureOSQP | CG | 576 | `indirect` | 50 | `cholesky` | 25 | 6.5× | 4.1× | 35× |
+| PureOSQP | direct | 576 | `kronecker` | 75 | `cholesky` | 75 | **125×** | **33×** | 35× |
+| PureIPM | CG | 144 | `indirect` | 6 | `bunchkaufman` | 6 | 8.0× | **31×** | 21× |
+| PureIPM | direct | 576 | `product_reduced` | 8 | `bunchkaufman` | 8 | 56× | 2.5× | 8.4× |
+| PureDAQP | direct, QR | 256 | `rows` | 262 | `rows` | 262 | 1.3× | 1.3× | 1.3× |
+| PureDAQP | direct, LDLᵀ | 256 | `gram` | 262 | `gram` | 262 | 1.3× | 1.4× | 1.4× |
+
+The two `PureDAQP` rows are one problem under both of its working-set representations, so their
+iteration counts are equal and their absolute times compare directly: 2.87 ms through the rows and
+a `QR`, 2.05 ms through the Gram matrix and an `LDLᵀ`.
+
+Both columns reach the same answer: the objectives agree to `1e-11` or better on every row, and to
+machine precision on four of them.
+
+The iteration counts match across the two columns on five of the six rows, so there the ratios are
+the representation and nothing else. **The exception is the first row**, where the matrix column
+converges in 25 ADMM iterations against the operator column's 50: conjugate gradients solve each
+step only to a tolerance, and an inexact step costs ADMM iterations that an exact one does not. Its
+4.1× is therefore 50 inexact steps against 25 exact ones, not a per-step comparison — the honest
+reading of that row is that the operator is 4.1× faster end to end *while doing twice the steps*.
+
+**Where the gain comes from differs by path.** On `kronecker` it is algebraic: the reduced matrix is
+diagonalized by the factors' own eigenvectors, so two 24×24 eigenproblems replace a 576×576
+factorization, and setup falls by two orders of magnitude. On `indirect` it is the product: a
+Kronecker product applies in `O(n(m₁+m₂))` against `O(mn)` dense, per conjugate-gradient iteration.
+On `product_reduced` the matrix is assembled rather than avoided, so the saving is bounded by what
+assembling it costs — 2.5× on the solve, against 56× on a setup that no longer forms `A`.
+
+**The dual active-set method gains least, and that is a property of the method.** Its work is the
+factorization of the working set, not reading `A`, so holding `A` as factors saves its storage and
+its row reads and leaves the dominant cost untouched. The ratio does grow with `n` — measured 1.19×
+at `n = 64`, 1.25× at 256 and 1.36× at 576 — but it grows slowly, and an operator is worth it there
+for the storage rather than for the time.
+
+**Memory is a secondary consequence, not the point.** The 35× at `n = 576` is two 24×24 factors
+standing for a 576×576 matrix and the `n²` reduced matrix a direct backend would hold; the reason
+to keep the operator is that the structure survives into the arithmetic, and the storage follows.
