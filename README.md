@@ -15,7 +15,7 @@ path and compiling under `juliac --trim`.
 | [**PureQPBase**](PureQPBase) | the problem, the linear-system backends and their selection, equilibration, the contracts. No algorithm. | MIT |
 | [**PureOSQP**](PureOSQP) | operator splitting — [OSQP](https://osqp.org)'s ADMM iteration | Apache-2.0 |
 | [**PureIPM**](PureIPM) | a Mehrotra predictor–corrector interior-point method | MIT |
-| [**PureDAQP**](PureDAQP) | a dual active-set method, dense matrices only | MIT |
+| [**PureDAQP**](PureDAQP) | a dual active-set method, which needs a Cholesky factor of `P` | MIT |
 
 Every solver re-exports the base, so one `using` is enough; loading several puts all their
 algorithms on the same `solve`, named as the sixth argument:
@@ -31,7 +31,7 @@ u = [1.0, 0.7, 0.7]
 
 solve(P, q, A, l, u, OperatorSplitting())   # ADMM: warm starts, loose tolerances
 solve(P, q, A, l, u, InteriorPoint())       # interior point: few iterations, tight answers
-solve(P, q, A, l, u, ActiveSet())           # active set: dense, few rows active, exact
+solve(P, q, A, l, u, ActiveSet())           # active set: few rows active, exact
 ```
 
 Each solver is measured against the established implementation of its own method, at the same

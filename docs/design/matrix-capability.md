@@ -205,10 +205,13 @@ the superseded plan) is an optimization for later, not part of this design.
     has_cholesky_factor(P) || refuse_unfactorable_P()
     R = cholesky_factor(P, resolved.eps_prox)
 
-and the same in `update!` when `P` or `A` changes. `validate_update!` gains the check that the
-replacement `P` and `A` keep the reduction's type — a Kronecker `P` replaced by a dense one
-would otherwise fail at the `ws.red = …` assignment with a `MethodError` about `convert` — and
-refuses by name, as `check_update(::KroneckerReduced, …)` does in the base.
+and the same in `update!` when `P` or `A` changes. This section first called for a check in
+PureDAQP that the replacement `P` and `A` keep the reduction's type, to refuse a Kronecker `P`
+replaced by a dense one by name instead of failing at the `ws.red = …` assignment. The base's
+`validate_update!` already does that: it requires `P isa MP` and `A isa MA` for the types the
+workspace was built with, which fixes the reduction's type, and refuses with "P must keep the
+representation the workspace was built with". PureDAQP adds nothing, and its test asserts the
+base's message.
 
 The type aliases the guarantees are stated against grow by one: `DenseWorkspace{T}` stays, and
 `KroneckerWorkspace{T}` names the `KroneckerOperator` pair on `ImplicitRows`. `@strict_function
@@ -231,8 +234,8 @@ builds (**measured**):
 | you write | LinearMaps builds | factorable? | how |
 |---|---|---|---|
 | `LinearMap(B)`, `B` a matrix | `WrappedMap{T, Matrix{T}}` | yes | the extension unwraps it to `B`; `cholesky_factor(B, ε)` |
-| `kron(LinearMap(P₁), LinearMap(P₂))` | `KroneckerMap{T, Tuple{WrappedMap, WrappedMap}}` | yes, **with `eps_prox = 0`** | unwrapped to `KroneckerOperator(P₁, P₂)`; `R = R₁ ⊗ R₂` |
-| `blockdiag(LinearMap(P₁), …)` | `BlockDiagonalMap{T, Tuple{WrappedMap, …}}` | yes | unwrapped to `BlockDiagonal([P₁, …])`; block-wise `R` |
+| `kron(LinearMap(P₁), LinearMap(P₂))` | `KroneckerMap{T, Tuple{WrappedMap, WrappedMap}}` | yes, **with `eps_prox = 0`** and `Matrix` factors | unwrapped to `KroneckerOperator(P₁, P₂)`; `R = R₁ ⊗ R₂`. A `Diagonal` or `Symmetric` factor cannot be held by a `KroneckerOperator` (`similar` of it is not that type) and throws in the conversion; sparse factors unwrap but have no factor |
+| `blockdiag(LinearMap(P₁), …)` | `BlockDiagonalMap{T, Tuple{WrappedMap, …}}` | yes, when every block is a dense matrix | unwrapped to `BlockDiagonal([P₁, …])`; block-wise `R`. A `Diagonal` or sparse block unwraps but has no factor, and `ActiveSet` refuses it |
 | `c * P` for `c > 0` | `ScaledMap{T, T, …}` | yes when its map is | `R = √c · R(P)`; the extension folds `c` into the innermost matrix or into one Kronecker factor |
 | `B' * B` or `transpose(B) * B` | `CompositeMap{T, Tuple{WrappedMap{T, Matrix{T}}, WrappedMap{T, Adjoint{T, Matrix{T}}}}}` — `maps[1]` is `B`, `maps[2]` its adjoint | yes when `B` has entries | `R = qr([B; √ε I]).R` (**literature**: `BᵀB + εI = RᵀR` for the `R` of that QR). Recognized by checking `parent(maps[2].lmap) === maps[1].lmap`. S6, on request |
 | `P₁ + P₂` | `LinearCombination` | **no** | `chol(P₁ + P₂)` is not a function of `chol(P₁)` and `chol(P₂)`. Refused |
@@ -306,20 +309,63 @@ Two consequences the converter should build to:
 
 | # | requirement | status |
 |---|---|---|
-| R1 | `ActiveSet` accepts every representation the base owns; the dense, structured and unmaterialized forms never form `P` or `A`, and sparse keeps its densifying path until S6; a `ProductOperator` `A` with a factorable `P` solves | not started |
-| R2 | The base owns `has_cholesky_factor`/`cholesky_factor` for `StridedMatrix`, `Symmetric`, `Diagonal`, `BlockDiagonal`, `KroneckerOperator`; a `ProductOperator` declines; `R`'s `ldiv!` pair is allocation-free and `@verify`-asserted | not started |
-| R3 | The base owns `dense_row!` for materializable matrices, `KroneckerOperator`, `BlockDiagonal`, `ProductOperator` | not started |
-| R4 | The implicit reduction runs `working_set = :rows` with the exact `\|R_ii\|` rank test; the Kronecker pair reaches the dense pair's objective | not started |
-| R5 | A test asserts the workspace's storage does not grow with `m·n` (§8) | not started |
-| R6 | `run_daqp!` and the other loop kernels are proved allocation-free and trim-compatible on `KroneckerWorkspace{Float64}` as they are on `DenseWorkspace{Float64}`; the guarantee is stated as conditional for a caller's operator | not started |
-| R7 | Every unsupported form is refused by name: opaque `P`; Kronecker `P` with `eps_prox > 0`; an `update!` that changes `P`'s or `A`'s representation | not started |
-| R8 | The LinearMaps extension unwraps `WrappedMap`, `KroneckerMap` and `BlockDiagonalMap` of matrices, and `ScaledMap` of any of them, to the base's types; everything else stays a `ProductOperator` | not started |
-| R9 | `docs/src/matrices.md` carries one table of algorithm × representation saying what each does, and the §4 composition table; `linearmaps.md` says what the extension unwraps | not started |
-| R10 | The dense path is unchanged: every existing PureDAQP test item passes without edit, libdaqp comparisons included | not started |
-| R11 | `setup` no longer densifies a `KroneckerOperator` `P` for `is_convex`, `is_symmetric` or `check_finite` | not started |
+| R1 | `ActiveSet` accepts every representation the base owns; the dense, structured and unmaterialized forms never form `P` or `A`, and sparse keeps its densifying path until S6; a `ProductOperator` `A` with a factorable `P` solves | **done** (S3; a solve that reaches `SOLVED` over a `ProductOperator` `A` needed `report` to ask for `Aᵀy` through `adjoint`, closed in S5) |
+| R2 | The base owns `has_cholesky_factor`/`cholesky_factor` for `StridedMatrix`, `Symmetric`, `Diagonal`, `BlockDiagonal`, `KroneckerOperator`; a `ProductOperator` declines; `R`'s `ldiv!` pair is allocation-free and `@verify`-asserted | **done** (S2). `has_cholesky_factor` is `true` for a `BlockDiagonal` only when every block is a dense matrix, and for a `KroneckerOperator` only when its factors are strided |
+| R3 | The base owns `dense_row!` for materializable matrices, `KroneckerOperator`, `BlockDiagonal`, `ProductOperator` | **done** (S1) |
+| R4 | The implicit reduction runs `working_set = :rows` with the exact `\|R_ii\|` rank test; the Kronecker pair reaches the dense pair's objective | **done** (S3) |
+| R5 | A test asserts the workspace's storage does not grow with `m·n` (§8) | **done** (S3) |
+| R6 | `run_daqp!` and the other loop kernels are proved allocation-free and trim-compatible on `KroneckerWorkspace{Float64}` as they are on `DenseWorkspace{Float64}`; the guarantee is stated as conditional for a caller's operator | **done** (S3 proofs; S5 states the condition in `docs/src/guarantees.md` and tests it). The one proof item `a dual active-set iteration allocates nothing and trims, proved` fails, blocked upstream |
+| R7 | Every unsupported form is refused by name: opaque `P`; Kronecker `P` with `eps_prox > 0`; an `update!` that changes `P`'s or `A`'s representation | **done** (S3). The last is refused by the base's `validate_update!`, which already requires `P isa MP`, so PureDAQP carries no check of its own |
+| R8 | The LinearMaps extension unwraps `WrappedMap`, `KroneckerMap` and `BlockDiagonalMap` of matrices, and `ScaledMap` of any of them, to the base's types; everything else stays a `ProductOperator` | **done** (S4). A `KroneckerOperator` can only be built from `Matrix` factors, so a `kron` of wrapped `Diagonal` or `Symmetric` matrices throws in the conversion rather than staying a `ProductOperator` |
+| R9 | `docs/src/matrices.md` carries one table of algorithm × representation saying what each does, and the §4 composition table; `linearmaps.md` says what the extension unwraps | **done** (S5; the composition table is under "What a composed map becomes" in `matrices.md`) |
+| R10 | The dense path is unchanged: every existing PureDAQP test item passes without edit, libdaqp comparisons included | **done** (S3) |
+| R11 | `setup` no longer densifies a `KroneckerOperator` `P` for `is_convex`, `is_symmetric` or `check_finite` | **done** (S1) |
 
 Dropped from the superseded plan: its R3 (opaque `P` via `P`-solves on `:gram`) and R7 (the
 IPM gap), both on the measurements in §5.
+
+### 6a. The invariant the whole package owes, and where it is broken
+
+R1–R11 cover one algorithm reaching every representation. They do not state the property that
+motivates it, which applies to all three:
+
+> A dense `P` and `A` are dense. Symmetry stated by the caller is used, not discarded. A sparse
+> `P` or `A` stays sparse. A structured one stays structured. An unmaterialized one is never
+> materialized. For every algorithm.
+
+**Measured** on `kron_problem(11)` at `scaling = 0` — `n = 625`, `m = 2208`, four Kronecker
+factors totalling 0.027 MiB, against 13.5 MiB for the dense pair:
+
+| | dense | `Symmetric` `P` | sparse | structured | unmaterialized |
+|---|---|---|---|---|---|
+| `OperatorSplitting` | held | discarded | stays sparse | **densified**, 13.99 MiB, backend `cholesky` | held, 0.52 MiB, backend `indirect` |
+| `InteriorPoint` | held | discarded | stays sparse | **densified**, 124.63 MiB, backend `bunchkaufman` | **refused** |
+| `ActiveSet` | held | discarded | **densified** | held (R1) | held (R1) |
+
+Two findings behind that table. **Unmaterialized does not force an iterative solve**: the base
+owns direct backends that form nothing — `:kronecker` eigendecomposes the two factors,
+`:lowrank` solves by Woodbury, `:block` solves block by block. What is true is narrower, that
+those backends are unreachable here. `:kronecker` refuses an `A` that is not itself a
+`KroneckerOperator` (`PureQPBase`), and `InteriorPoint` refuses `:kronecker` and `:lowrank`
+outright, because both assume one weight for every row while an interior-point method's weights
+differ per row and an active row's reaches `1/reg_dual`. And **symmetry costs rather than
+saves**: `setup` allocates 32 bytes *more* for `Symmetric(P)` than for the same `Matrix`, in
+all three, the wrapper and nothing else.
+
+| # | requirement | status |
+|---|---|---|
+| R12 | A caller's `Symmetric` is used rather than re-derived: the symmetrising copy is skipped and the factorisation reads one triangle. All three algorithms, so it belongs in the base | not started |
+| R13 | A sparse `P` or `A` keeps its representation through `ActiveSet`'s reduction | not started |
+| R14 | `linsys = :auto` does not choose a materialising backend for a structured `P` or `A`, in any algorithm | not started |
+| R15 | `:kronecker` serves a structured `P` with a differently-represented `A`, and the reverse | not started |
+| R16 | The structured backends admit a weight per row, so `InteriorPoint` can reach them | not started |
+| R17 | `InteriorPoint` accepts an unmaterialized pair | not started |
+
+R14 is a choice among backends the base already has, so it is the cheapest of these and worth
+measuring first. R16 carries the algebra: a Kronecker product times a general diagonal weight is
+not a Kronecker product, the same obstruction as `chol(P₁⊗P₂ + εI)` in §3.1. Only the active
+rows reach `1/reg_dual`, so splitting the weights into a uniform part and a low-rank correction
+over those rows is the candidate — **unverified**, and to be measured before it is designed.
 
 ## 7. Steps
 
@@ -342,6 +388,11 @@ needs judgment about the loop's invariants.
 Order: S1, S2, S4 are independent of each other and of S3; S3 needs S1 and S2; S5 needs S3
 and S4. Dispatch S1, S2 and S4 in parallel if hands allow; nothing in S4 touches a file S1 or
 S2 touches.
+
+Status: S1 (`ea83d38`), S2 (`1c543ed`), S4 (`675828d`), S3 (`fcadf30`) and S5 are done. Only S6
+remains, on request. S5 also fixed what the documentation pass found wrong in the code: `report`
+asked for `Aᵀy` through `transpose`, which an operator `A` answers by reading entries, so a
+solve over a `ProductOperator` `A` threw when it came to report its residuals.
 
 ## 8. Verification
 

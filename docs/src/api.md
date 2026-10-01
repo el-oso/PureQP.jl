@@ -18,7 +18,7 @@ PureQPBase.adjoint_derivative
 PureQPBase.forward_derivative
 PureQPBase.Solution
 Base.copy(::PureQPBase.Solution)
-Base.copyto!(::PureQPBase.Solution, ::PureQPBase.Solution)
+Base.copyto!(::PureQPBase.Solution{T}, ::PureQPBase.Solution{T}) where {T}
 ```
 
 ## Algorithms and options
@@ -191,6 +191,12 @@ PureQPBase.coupling_rank
 PureQPBase.BlockDiagonal
 PureQPBase.KroneckerOperator
 PureQPBase.factors
+PureQPBase.has_cholesky_factor
+PureQPBase.cholesky_factor
+PureQPBase.CholeskyFactor
+PureQPBase.KroneckerCholesky
+PureQPBase.scalar_diagonal
+PureQPBase.dense_row!
 PureQPBase.is_scalar_multiple
 PureQPBase.scalar_multiple
 PureQPBase.nblocks

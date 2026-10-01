@@ -109,9 +109,11 @@ store.
 A_1 \otimes A_2 = \begin{pmatrix} a_{11}A_2 & a_{12}A_2 \\ a_{21}A_2 & a_{22}A_2 \end{pmatrix}
 ```
 
-**[`PureQPBase.ProductOperator`](@ref) and `LinearMaps.LinearMap`.** No entries at all. The
-matrix is a *program*: a chain of cheap steps you apply to `x`. Nothing is assembled. The
-running-sum constraint further down this page takes three steps:
+**[`PureQPBase.ProductOperator`](@ref) and `LinearMaps.LinearMap`.** No entries at all, for a
+map built from functions. The matrix is a *program*: a chain of cheap steps you apply to `x`.
+Nothing is assembled. (A map over a matrix, or a `kron` or `blockdiag` of two, arrives as that
+matrix instead: [What a composed map becomes](@ref).) The running-sum constraint further down
+this page takes three steps:
 
 ```math
 x \in \mathbb{R}^{n}
@@ -153,9 +155,70 @@ what shape it has, so they bring no backend of their own.
 | `BlockDiagonal` pair | `K` blocks | `block` |
 | `Diagonal` with `RowCoupled` | diagonal plus rank `k` | `lowrank` |
 | `μI` with `KroneckerOperator` | diagonal in the factors' eigenbasis | `kronecker` |
-| an operator | never formed | `indirect` |
 
-`PureQPBase.backend_name(ws.linsys)` reports which one you got.
+`PureQPBase.backend_name(ws.linsys)` reports which one you got. The table covers
+[`OperatorSplitting`](@ref) and [`InteriorPoint`](@ref), which solve against the reduced matrix.
+[`ActiveSet`](@ref) has no backend and does not form that matrix. The next section says what
+each of the three does with each kind of type, an operator included.
+
+### What each algorithm does with each type
+
+Each cell says what the algorithm does with a `P` and `A` of that kind. The `indirect` backend
+is conjugate gradients, which needs Krylov.jl.
+
+| | dense | sparse | structured | unmaterialized |
+|---|---|---|---|---|
+| [`OperatorSplitting`](@ref) | `cholesky` | `cholmod`, `ldlfactorizations` or `sparse_formed`, by the pattern | the structured backend its conditions admit, else the dense one | `indirect` with `scaling = 0`; a direct backend when the type unwraps to a structured one ([What a composed map becomes](@ref)) |
+| [`InteriorPoint`](@ref) | the full KKT system, `bunchkaufman` | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; a Kronecker or low-rank pair takes the full KKT system | only with a caller-supplied preconditioner, `linsys = :indirect` and `scaling = 0` |
+| [`ActiveSet`](@ref) | `A R⁻¹` formed once and stored | read into a dense matrix first | `Diagonal`, `BlockDiagonal` and `KroneckerOperator` are held as they are and `A R⁻¹` is not formed: implicit `A R⁻¹`, `R` in `P`'s form. Banded, tridiagonal and `RowCoupled` are read into a dense matrix first | `A`: implicit `A R⁻¹`, each row read as one adjoint product. `P`: refused, since `P` must have a Cholesky factor |
+
+Three things in that table are conditions on your problem, not choices.
+
+**`ActiveSet` needs a factor of `P`, and nothing of `A` but its products.** The method solves
+against `M = A R⁻¹`, where `R` is the Cholesky factor of `P`. `A` is multiplied and read one row
+at a time, so every kind of `A` works, an operator included, as long as it can multiply by its
+transpose. `P` has a Cholesky factor when it is a dense matrix, a `Diagonal`, a `BlockDiagonal`
+of dense blocks, or a `KroneckerOperator` of two dense matrices with `eps_prox = 0`. A `P` that
+supplies products only has none, so `setup` throws and names the types that do.
+
+When `A` and the factor of `P` are both dense, `M` is formed once and stored. In every other
+case the workspace holds `A` and `R`, derives a row of `M` from them when the working set asks
+for it, and computes the product `Mu` as one solve and one product with `A`.
+
+**`InteriorPoint` on an operator needs a preconditioner of your own, and a factor of `P` is not
+one.** On the problem measured below, with `cholesky(P)` as the preconditioner the reduced
+matrix `P + δI + Aᵀ diag(w) A` has condition number `3.5e14`, against `6.6e14` without it. That
+matrix is dominated by `Aᵀ diag(w) A`, whose weights `w` span many orders of magnitude, and a
+factor of `P` does nothing about that term. A factorization of the whole reduced matrix,
+refreshed as the weights change, is a preconditioner that works
+([Operators under the interior-point method](@ref)).
+
+**A Kronecker `P` under `ActiveSet` needs `eps_prox = 0`.** `P₁ ⊗ P₂ + εI` is not a Kronecker
+product, so it has no Kronecker factor, and a positive `eps_prox` is refused by name. A singular
+Kronecker `P` therefore has no `ActiveSet` path in that form. Passing it as a dense `Matrix`
+factors it densely.
+
+#### Unmaterialized is smaller and faster
+
+Holding `A` and `R` instead of `M` is not a trade of speed for memory. Both go down. The
+problem has `n = 625` variables and `m = 2208` rows, with `P = P₁ ⊗ P₂`, `A = A₁ ⊗ A₂`,
+`cond(P) = 8.3e8` and `cond(A) = 2.4e11`. The first column holds both as
+[`PureQPBase.KroneckerOperator`](@ref)s, the second as dense matrices:
+
+| | held as factors | dense |
+|---|---|---|
+| workspace | 9.363 MiB | 36.270 MiB |
+| cold solve | 78.9 ms | 194.8 ms |
+| pricing all 2208 rows | 6.33 µs | 97.30 µs |
+
+The whole solve is 2.47× faster and pricing is 15.4× faster. The two solves take the same
+number of iterations and agree to `3.7e-13` relative. A warm `solve!` on the factors allocates
+0 bytes. `kron_problem(11)` in `PureDAQP/test/helpers.jl` builds the problem.
+
+What the workspace stores grows with `m` through vectors of length `m` only. Adding 6624 rows
+at the same `n` adds 812,736 B, where a reduction that formed `M` adds 33,120,000 B. The growth
+is not zero because 8.970 MiB of the 9.363 MiB is the working set's own factor, which has
+`n × (min(m, n) + 1)` entries and so depends on `n`, not on `m`.
 
 ### What `P` has to be
 
@@ -542,8 +605,8 @@ function adjoint_(x, y)
 end
 A = LinearMap{Float64}((y, x) -> forward(y, x), (x, y) -> adjoint_(x, y), m, n)
 
-# The traits are declared, not inferred -- see below.
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+# A map built from a function reports only the traits it is told -- see below.
+P = LinearMap{Float64}((y, x) -> (y .= 2 .* x), n, n; issymmetric = true, isposdef = true)
 q = randn(n)
 l, u = fill(-1.0, m), fill(1.0, m)
 
@@ -565,19 +628,22 @@ means reading down each column of `A` to find its largest entry. A map has no co
 Passing `scaling = 0` turns that step off. If you forget, `setup` throws and says so — it does
 not silently skip the rescaling.
 
-**3. Declaring `issymmetric` and `isposdef` on `P`.** This one catches most people. Write
-`LinearMap(Diagonal(fill(2.0, n)))` — clearly a positive definite matrix — then ask it, and it
-answers `isposdef == false`. LinearMaps does not look at what you gave it. It reports only what
-you *told* it. So the solver sees an objective that does not claim to be convex, and `setup`
-throws.
-
-The solver cannot factor an operator to find out, so a property you do not claim is a property
-it does not know. Declare both when you build the map, as in the example. You can also build the
-wrapper yourself with `ProductOperator{T}(map; symmetric, posdef)` to override what a map claims.
+**3. Declaring `issymmetric` and `isposdef` on a `P` built from a function.** This one catches
+most people. A map built from a function has no entries, and LinearMaps reports only what you
+*told* it: ask an undeclared one `isposdef` and it answers `false`. The solver cannot factor an
+operator to find out, so it sees an objective that does not claim to be symmetric and convex,
+and `setup` throws. Declare both when you build the map, as in the example. You can also build
+the wrapper yourself with `ProductOperator{T}(map; symmetric, posdef)` to override what a map
+claims.
 
 That is also what LinearMaps gives you over an operator you write by hand. The two declarations
 travel with the map, so [`PureQPBase.is_convex`](@ref) reads a flag instead of factoring a
 matrix.
+
+A map over a matrix needs neither declaration. `LinearMap(Diagonal(fill(2.0, n)))` reaches the
+solver as that `Diagonal`, not as a `ProductOperator`, so it is checked from its entries and
+the backends that dispatch on `Diagonal` apply to it. [What a composed map becomes](@ref) lists
+which maps arrive as matrices.
 
 **Expect one more thing: a map runs without a preconditioner.** A preconditioner is a cheap
 approximation of the problem that makes the iteration converge faster. The one used here comes
@@ -608,6 +674,9 @@ and they mix freely. No product is ever formed:
 | `[B C; D E]` | `hvcat` — both at once |
 | `B'` | the adjoint |
 
+When the pieces are matrices, `kron` and `blockdiag` arrive as structured types, not as a
+program. [What a composed map becomes](@ref) says which.
+
 Here `A` is a scaled running sum stacked over a box, built from three maps and never
 assembled:
 
@@ -629,23 +698,69 @@ B = LinearMap(Matrix(1.0I, n, n))   # a plain box block
 
 A = [C * W; B]                      # vcat of a product over an identity block
 
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))   # arrives as the Diagonal itself
 q = randn(n)
 l = vcat(fill(-3.0, n), fill(-0.4, n))
 u = vcat(fill(3.0, n), fill(0.4, n))
 
 sol = PureOSQP.solve(P, q, A, l, u; scaling = 0, eps_abs = 1e-10, eps_rel = 1e-10)
-(size(A), sol.status, round.(sol.x; digits = 5))
+
+# The same problem with every block written out.
+Ad = [Matrix(C) * Matrix(W); Matrix(B)]
+dense = PureOSQP.solve(Diagonal(fill(2.0, n)), q, Ad, l, u; eps_abs = 1e-10, eps_rel = 1e-10)
+(size(A), sol.status, round.(sol.x; digits = 5), maximum(abs, sol.x .- dense.x))
 ```
 
-Solved against the same problem with every block materialized, the two answers agree to
-`6.3e-11`.
+The last value is the largest difference between the two answers.
 
 **Every function-based map you combine needs its adjoint.** The solver applies `Aᵀ` once per
 iteration. A `LinearMap` built from a forward function alone fails with
 `transpose not implemented`, and it fails partway into the first iteration — not when you build
 it, and not on the first product. A map built from a matrix supplies its own adjoint. A map
 built from functions does not, which is why `C` above gives both directions.
+
+#### What a composed map becomes
+
+A `LinearMap` reaches the solver as one of this package's own types when it can, and wrapped in
+a [`PureQPBase.ProductOperator`](@ref) when it cannot. The difference matters: an unwrapped map
+is a matrix the algorithms read through its structure, and a wrapped one has no entries and is
+reached only by products. These are the maps that arrive unwrapped:
+
+| you write | the solver receives |
+|---|---|
+| `LinearMap(B)`, `B` a matrix | `B` itself, so a `Diagonal` stays a `Diagonal` |
+| `kron(LinearMap(B₁), LinearMap(B₂))`, exactly two maps | a [`PureQPBase.KroneckerOperator`](@ref) of `B₁` and `B₂` |
+| `blockdiag(LinearMap(B₁), …)` | a [`PureQPBase.BlockDiagonal`](@ref) of the `Bᵢ` |
+| `c * M`, `c` real, for any `M` above | what `M` becomes, with `c` multiplied into the matrix (a scaled copy), into the first Kronecker factor, or into each block |
+
+Everything else stays a `ProductOperator`: a map built from functions, a sum, a general
+product, a `kron` of three maps, a `vcat` or `hcat`. A `KroneckerOperator` can only be built from
+dense `Matrix` factors: a `Diagonal` or `Symmetric` factor throws when the map is converted, so
+wrap `Matrix` factors.
+
+**`A` composes freely.** Every `LinearMap` composition works as `A`, because `ActiveSet` only
+multiplies by `A` and reads it one row at a time, and the other two algorithms multiply by it.
+A composition that arrives unwrapped is read through its structure. A wrapped one costs one
+product with its adjoint for each row, which is `m` of them at setup and one more for every row
+that enters the working set.
+
+**`P` is where `ActiveSet` branches**, because it needs the Cholesky factor of `P`. What a
+`LinearMap` `P` can be, and what `ActiveSet` does with it:
+
+| you write | `P` arrives as | `ActiveSet` |
+|---|---|---|
+| `LinearMap(B)` | `B` | factors it. A sparse or banded `B` is read into a dense matrix first |
+| `kron(LinearMap(P₁), LinearMap(P₂))` | `KroneckerOperator` | factors the two factors, never the product, and needs `eps_prox = 0` |
+| `blockdiag(LinearMap(P₁), …)` | `BlockDiagonal` | factors each block, when every block is a dense matrix. A `Diagonal` or sparse block is refused |
+| `c * P′` | `P′` with `c` folded in | factors it when `P′` is factorable and `c > 0` |
+| `B' * B` | `ProductOperator` | refused. Pass `B'B` as a matrix |
+| `P₁ + P₂` | `ProductOperator` | refused: a factor of the sum is not a function of the two summands' factors. For `P + εI`, pass `ε` as `eps_prox` |
+| `B * C` in general | `ProductOperator` | refused |
+| a map built from functions | `ProductOperator` | refused by name |
+| `vcat`, `hcat` | `ProductOperator` | not a square matrix, so not a `P` |
+
+A refused `P` is refused by `setup`, and the message names the types that would work. None of
+this limits [`OperatorSplitting`](@ref), which takes any `P` that supplies products.
 
 ## Structured operators the package ships
 

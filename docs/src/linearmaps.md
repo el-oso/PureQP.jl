@@ -4,14 +4,22 @@ A [`LinearMap`](https://github.com/JuliaLinearAlgebra/LinearMaps.jl) is a matrix
 store. You give it two functions instead of entries: one that multiplies by it, one that
 multiplies by its transpose. The solver takes it anywhere it takes a matrix.
 
+A map built from functions reaches the solver as an operator with no entries. A map over a
+matrix does not: `LinearMap(B)` arrives as `B`, `kron` of two such maps as a
+[`PureQPBase.KroneckerOperator`](@ref), `blockdiag` of them as a
+[`PureQPBase.BlockDiagonal`](@ref), and a real multiple of any of these as the same type with
+the scalar folded in. Every other composition, and every map built from functions, is an
+operator. [What a composed map becomes](@ref) has the full list.
+
 Three worked problems follow. Each has a constraint matrix that would be large, dense, or that
 nobody ever assembles, and each one is solved without building it.
 
-All three need the same three things, listed in
-[An operator from LinearMaps.jl](@ref): load `Krylov`, pass `scaling = 0`, and declare
-`issymmetric` and `isposdef` on `P`. Each example states the problem, draws the operator, then
-solves it twice — once with the map, once with every matrix written out — and prints the
-difference between the two answers.
+All three need the two things listed in [An operator from LinearMaps.jl](@ref): load `Krylov`
+and pass `scaling = 0`. The objective is a `LinearMap` over a `Diagonal`, which arrives as that
+`Diagonal`, so it needs no declaration of `issymmetric` or `isposdef`; a `P` built from a
+function would. Each example states the problem, draws the operator, then solves it twice — once
+with the map, once with every matrix written out — and prints the difference between the two
+answers.
 
 All three use [`OperatorSplitting`](@ref), the default, which needs nothing more.
 [`InteriorPoint`](@ref) solves an operator too, but it wants a preconditioner you supply
@@ -74,7 +82,7 @@ A = LinearMap{Float64}(
 truth = [sin(2pi * k / n) for k in 1:n]
 b = truth[idx]                                           # what the sensors read
 
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))
 q = -2 .* truth .+ 0.05 .* randn(n)
 
 sol = PureOSQP.solve(P, q, A, b .- 0.05, b .+ 0.05; scaling = 0, eps_abs = 1e-9, eps_rel = 1e-9)
@@ -240,7 +248,7 @@ Ik = LinearMap(Matrix(1.0I, k, k))
 A = [kron(Ik, D); kron(D, Ik)]     # down the columns, then across the rows
 
 img = [exp(-((i - 7)^2 + (j - 7)^2) / 18) for i in 1:k, j in 1:k]
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))
 q = -2 .* vec(img)
 
 sol = PureOSQP.solve(
@@ -329,7 +337,7 @@ end
 
 A = LinearMap{Float64}(forward!, adjoint!, n, n)
 
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))
 q = -2 .* randn(n)
 
 sol = PureOSQP.solve(
@@ -380,7 +388,7 @@ takes either.
 | a composition, `B * C` | about 1.7 kB | **0 B** |
 | stacking, `[B; C]` | yes | not supported |
 | values carried with the operator | no | `p`, replaced by `update_coefficients` |
-| `issymmetric`, `isposdef` | declared at construction | declared at construction |
+| `issymmetric`, `isposdef` | declared at construction, for a map built from functions | declared at construction |
 | a transpose | required | required |
 
 **Use LinearMaps unless `A` is a product of operators.** It is simpler: two functions and no

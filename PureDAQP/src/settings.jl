@@ -7,7 +7,9 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
 - `eps_prox = 0` — the proximal regularization `ε`. Zero runs the method on its own, which
   needs `P ≻ 0`. Any positive value runs outer proximal-point iterations instead, solving a
   sequence of problems in `P + εI`, which accepts a singular `P` and improves conditioning.
-  `1e-4` is the value the method's authors report.
+  `1e-4` is the value the method's authors report. A [`PureQPBase.KroneckerOperator`](@ref)
+  `P` needs `0`: `P₁ ⊗ P₂ + εI` is not a Kronecker product, so it has no Kronecker factor, and
+  a positive `eps_prox` is refused by name.
 - `eta_prox = sqrt(eps(T))` — the proximal-point loop stops once the iterate moves less than
   this in the ∞-norm.
 - `max_prox = 100` — the most outer proximal-point iterations in one solve.
@@ -33,17 +35,32 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
   to active rows, nor how often the window finds a violator, nor how good its choice is
   separates the two outcomes. So there is no automatic setting, and `:all` is the default
   because it is the one that is never much worse. [`faster_scan`](@ref) measures both on a
-  problem of yours and says which to pass.
+  problem of yours and says which to pass. When `M` is not stored (below), one product prices
+  every row, so a window saves nothing; and in an iteration where the window holds no violated
+  row, every row is priced a second time before the run ends, so `:window` can cost more than
+  `:all` there.
 
-The method reduces the problem to a least-distance problem, `min ‖u‖²` subject to `Mu ≤ d`
-with `M = A R⁻¹` for the Cholesky factor `R` of `P` (or of `P + εI`), and solves that by
-maintaining an `LDLᵀ` of the Gram matrix of the working set under rank-one updates.
+The method reduces the problem to a least-distance problem, `min ‖u‖²` subject to
+`lo ≤ Mu ≤ hi` with `M = A R⁻¹` for the Cholesky factor `R` of `P` (or of `P + εI`), and solves
+that by maintaining an `LDLᵀ` of the Gram matrix of the working set under rank-one updates.
 
-Two consequences follow from that reduction and are not settings you can turn off. `P` must
-have a Cholesky factor, so an operator that supplies products only is refused by name; and
-**a sparse `P` or `A` is read into a dense matrix**, since the factor and the row reads are
-dense either way. A structured or unmaterialized pair is not: `M` is then held as `A` and `R`
-rather than formed, and each row and each product is derived from them.
+What it keeps of `M` depends on `P` and `A`, and is not a setting. When `A` is a dense matrix
+and `R` is a dense triangular factor, `M` is formed once and stored, `m×n`. In every other case
+`M` is never formed: the reduction holds `A` and `R`, where `R` is the Cholesky factor in `P`'s
+own form ([`PureQPBase.cholesky_factor`](@ref)), and derives a row of `M` as one row of `A`
+([`PureQPBase.dense_row!`](@ref)) and one triangular solve, and `Mu` as one solve and one
+product with `A`. Storage then grows with `m` only through vectors of length `m`, not through
+`m·n`; the working set's own factor, which is `n × (min(m, n) + 1)`, does not depend on `m`
+once `m ≥ n`. This applies to a `Diagonal`, a
+[`PureQPBase.BlockDiagonal`](@ref) or a [`PureQPBase.KroneckerOperator`](@ref) in either
+position, and to an `A` that supplies products only, such as a `LinearMap`.
+
+Two requirements follow, and neither is a setting. `P` must have a Cholesky factor: a dense
+matrix, a `Diagonal`, a `BlockDiagonal` of dense blocks, or a `KroneckerOperator` of two dense
+matrices with `eps_prox = 0`. An operator that supplies products only is refused as `P`, by
+name. `A` has no such requirement, since it is only multiplied and read by row, but an operator
+`A` needs a transpose. **A sparse or banded `P` or `A`, and a `RowCoupled` one, is read into a
+dense matrix**, since there is no sparse factor and no row read in `O(nnz)`.
 
 `linsys` is refused other than `:auto` and `:dense`: the method has no choice of backend to
 make. `scaling` must be `0` — the reduction does its own row normalization.

@@ -591,6 +591,46 @@ end
     @test PureQPBase.solve!(ws).status == PRIMAL_INFEASIBLE
 end
 
+@testitem "an operator A that supplies products only is solved, residuals included" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps, Random
+
+    # The solve ends by reporting residuals against the caller's own data, which needs `Aᵀy`
+    # and an operator answers that only as a product.
+    rng = MersenneTwister(21)
+    n, m = 8, 20
+    X = randn(rng, n, n)
+    P = X' * X + I
+    A = randn(rng, m, n)
+    q = randn(rng, n)
+    b = A * randn(rng, n)
+    l, u = b .- 0.1, b .+ 0.1
+    fm = LinearMap{Float64}(
+        (y, x) -> mul!(y, A, x), (y, x) -> mul!(y, adjoint(A), x), m, n
+    )
+    ws = PureDAQP.setup(P, q, fm, l, u, ActiveSet())
+    @test ws.prob.A isa PureQPBase.ProductOperator
+    op = PureQPBase.solve!(ws)
+    dense = solve(P, q, A, l, u, ActiveSet())
+    @test op.status == SOLVED
+    @test op.iter == dense.iter
+    @test op.x ≈ dense.x atol = 1.0e-10
+    @test op.obj_val ≈ dense.obj_val atol = 1.0e-10
+    @test op.dual_res < 1.0e-10
+    @test op.prim_res < 1.0e-10
+
+    # The same through a Kronecker `A` that is not a dense matrix, so the product is the
+    # operator's own and not a `gemv`.
+    A1, A2 = randn(rng, 3, 2), randn(rng, 4, 3)
+    Ak = PureQPBase.KroneckerOperator(A1, A2)
+    nk = size(Ak, 2)
+    Xk = randn(rng, nk, nk)
+    Pk = Xk' * Xk + I
+    bk = Ak * randn(rng, nk)
+    sk = solve(Pk, randn(rng, nk), Ak, bk .- 0.1, bk .+ 0.1, ActiveSet())
+    @test sk.status == SOLVED
+    @test sk.dual_res < 1.0e-10
+end
+
 @testitem "both working sets reach the same answer on a Kronecker pair" begin
     using PureDAQP, PureQPBase, LinearAlgebra
 

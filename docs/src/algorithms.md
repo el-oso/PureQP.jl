@@ -13,9 +13,9 @@ Read down the table and take the first row that describes your problem.
 |---|---|---|
 | you re-solve a sequence, changing only `q`, `l` or `u` | `OperatorSplitting` | it keeps the factorization across [`update!`](@ref) and warm starts from the last answer |
 | `P` or `A` is matrix-free, and you have no preconditioner | `OperatorSplitting` | the only one that takes an operator with the built-in Jacobi preconditioner |
-| the data is dense **and** few rows are active at the solution | `ActiveSet` | it costs about one iteration per active row and returns the exact answer |
+| few rows are active at the solution **and** `P` has a Cholesky factor | `ActiveSet` | it costs about one iteration per active row and returns the exact answer |
 | you want `1e-8` or better from a single solve | `InteriorPoint` | a handful of Newton steps reach it whatever the conditioning |
-| `P` or `A` is large and sparse or structured | `InteriorPoint` | it factors the pattern; `ActiveSet` would densify it |
+| `P` or `A` is large and sparse | `InteriorPoint` | it factors the pattern; `ActiveSet` reads a sparse matrix into a dense one |
 | none of the above | `OperatorSplitting` | the default, and the cheapest per iteration |
 
 **"Few rows active" is the whole of the active-set question**, and it is a property of the
@@ -146,15 +146,17 @@ from the previous answer's active rows, which is the whole of what a warm start 
 
 ## What each algorithm throws on
 
-`ActiveSet` takes dense `P` and `A` and nothing else: the reduction forms `A R⁻¹`, which an
-operator cannot supply and which is dense whatever `A` was, so a matrix it cannot read entry by
-entry throws at [`setup`](@ref). The other two limit none of the matrix types in
-[Matrix types](matrices.md) or [Structured operators](@ref) beyond what `linsys` asks for. They
-differ in what an operator you supply needs, and in which `linsys` backends each one accepts.
+`ActiveSet` needs a Cholesky factor of `P` and takes `A` as it comes: the reduction solves
+against `A R⁻¹`, so a `P` that supplies products only throws at [`setup`](@ref), while an
+operator `A` is read one row at a time. A sparse `P` or `A` is read into a dense matrix. The
+other two limit none of the matrix types in [Matrix types](matrices.md) or
+[Structured operators](@ref) beyond what `linsys` asks for. They differ in what an operator you
+supply needs, and in which `linsys` backends each one accepts. [What each algorithm does with
+each type](@ref) has the full table.
 
 | | `OperatorSplitting` | `InteriorPoint` | `ActiveSet` |
 |---|---|---|---|
-| matrix-free operators (`linsys = :indirect`) | works with the built-in Jacobi preconditioner, or none | needs `linsys = :indirect`, a **caller-supplied** preconditioner, and `scaling = 0`; passing the built-in preconditioners or equilibration throws, naming the remedy ([Operators under the interior-point method](@ref)) | throws: the reduction needs entries |
+| matrix-free operators (`linsys = :indirect`) | works with the built-in Jacobi preconditioner, or none | needs `linsys = :indirect`, a **caller-supplied** preconditioner, and `scaling = 0`; passing the built-in preconditioners or equilibration throws, naming the remedy ([Operators under the interior-point method](@ref)) | throws: no backend to select. A `P` that supplies products only is refused; an operator `A` is read by row |
 | `linsys = :kronecker` | works | throws: the Kronecker backend needs one weight for every row, and the interior-point method's weights are per-row | throws: no backend to select |
 | `linsys = :lowrank` | works | throws: the Woodbury solve misses the tolerance on linear programs ([Algorithm](@ref "Backends under the interior-point method")) | throws: no backend to select |
 | `scaling` | any value | any value | throws unless `0`: the reduction normalizes its own rows |
@@ -338,8 +340,10 @@ one that is never much worse.
 
 ### What does not decide the working set
 
-- **Sparsity and structure.** `M = A R⁻¹` is dense whatever `A` was, so neither form sees
-  them, and `ActiveSet` ignores both regardless.
+- **Sparsity and structure.** The working set takes each row of `M = A R⁻¹` as a dense
+  vector, so neither form sees the sparsity or structure of `A` or `P`. What those change is
+  how a row is produced, which [Matrix types](@ref "What each algorithm does with each type")
+  describes.
 - **The shape of the problem.** How many rows there are relative to variables moves the
   cost of a solve a great deal, but it moves both representations together.
 - **Rows that are exact combinations of other rows.** Dependence that is *exact* is not the
@@ -357,9 +361,9 @@ and the problems behind them.
 |---|---|---|---|
 | iteration cost | many cheap iterations, one factorization reused until `ρ` changes | a few iterations, a fresh factorization each | a few iterations, each an update of the working set's factorization |
 | default tolerance | `1e-3` | `1e-8` | exact at the working set; `primal_tol` decides which rows enter |
-| matrices | any `AbstractMatrix`, structure and sparsity exploited | the same | dense only, structure and sparsity ignored |
+| matrices | any `AbstractMatrix`, structure and sparsity exploited | the same | any `A`; `P` needs a Cholesky factor. Dense, `Diagonal`, `BlockDiagonal` and `KroneckerOperator` are used as they are, and sparse and banded types are read into dense matrices |
 | `update!` | can skip refactorization entirely (`q`-only updates always do) | refactorizes every outer iteration regardless | keeps the reduction unless `P` or `A` changes |
-| matrix-free operators | no restriction | needs a caller-supplied preconditioner and `scaling = 0` | not supported |
+| matrix-free operators | no restriction | needs a caller-supplied preconditioner and `scaling = 0` | `A` yes, read by row; `P` not supported |
 | `linsys` | every backend | all but `:kronecker` and `:lowrank` | none: it has no backend to choose, but `working_set` picks what its own factorization holds |
 | derivatives | ready from the iterate as it stands | require `polishing = true` first | ready: inactive multipliers are exactly zero |
 | infeasibility certificates | yes | yes, through the same test | primal only, and without a certificate |

@@ -22,10 +22,10 @@ Three algorithms solve it, sharing the same problem interface.
 its best on repeated solves, warm starts and matrix-free operators. [`InteriorPoint`](@ref),
 which PureIPM.jl supplies, is a Mehrotra predictor–corrector method that reaches `1e-8` in a
 few iterations. [`ActiveSet`](@ref), which PureDAQP.jl supplies, is a dual active-set method
-for dense problems with few rows active at the solution, and it stops at the exact answer
+for problems with few rows active at the solution, and it stops at the exact answer
 rather than converging toward one. The first two share the matrix support and the
-linear-system backends described below; `ActiveSet` reads dense matrices and maintains its own
-factorization. [Choosing an algorithm](@ref) compares all three.
+linear-system backends described below; `ActiveSet` works from a Cholesky factor of `P` and
+rows of `A`, and maintains its own factorization. [Choosing an algorithm](@ref) compares all three.
 
 ```julia
 using PureOSQP                                                 # ] add PureOSQP

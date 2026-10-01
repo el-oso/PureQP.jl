@@ -79,7 +79,9 @@ function report(ws::ActiveSetWorkspace{T}) where {T}
     end
 
     r = Px
-    mul!(r, transpose(prob.A), ws.y, one(T), one(T))
+    # `xold` is the proximal centre of the pass in flight, copied from the iterate before
+    # every read, so once a solve has returned it is free for an `Aᵀy` to land in.
+    add_adjoint_product!(r, prob.A, ws.y, ws.red.ws.xold)
     dual = zero(T)
     for j in eachindex(r)
         dual = max(dual, abs(r[j] + prob.q0[j]))
@@ -96,4 +98,20 @@ function report(ws::ActiveSetWorkspace{T}) where {T}
     end
 
     return T(0.5) * quad + linear, prim, dual, quad + linear + support
+end
+
+# `r += Aᵀy`. A strided `A` does it in one `gemv`. Any other `A` forms `Aᵀy` in `scratch` first
+# and adds it: the adjoint product an operator supplies has no accumulating form, and the
+# generic one reads `A` entry by entry.
+function add_adjoint_product!(r, A::StridedMatrix, y, scratch)
+    mul!(r, adjoint(A), y, one(eltype(r)), one(eltype(r)))
+    return r
+end
+
+function add_adjoint_product!(r, A::AbstractMatrix, y, scratch)
+    mul!(scratch, adjoint(A), y)
+    @simd for j in eachindex(r, scratch)
+        r[j] += scratch[j]
+    end
+    return r
 end

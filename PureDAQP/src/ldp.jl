@@ -75,6 +75,10 @@ Write `(M u)[rows]` into `dest[rows]`.
 every row whatever `rows` was: `M u = A(R⁻¹u) ./ scale` reaches all of them for the price of
 one, so a window saves nothing, and pricing all of them leaves the row a caller selects inside
 the window the same row it would have selected from a windowed product.
+
+A window can also cost more than it saves there: `solve_ldp!` prices the window, and when the
+window holds no violated row it prices every row again before deciding the run is optimal, so
+that iteration prices every row twice.
 """
 function price!(
         dest::AbstractVector{T}, M::DenseRows{T}, u::AbstractVector{T}, rows::UnitRange{Int}

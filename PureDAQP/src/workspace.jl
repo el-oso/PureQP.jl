@@ -5,10 +5,11 @@ The state a dual active-set solve runs on: the [`QPData`](@ref), the resolved
 [`ActiveSet`](@ref), the [`Options`](@ref), the reduction to a least-distance problem, and
 the iterates in problem space.
 
-The reduction holds the Cholesky factor of `P` (or `P + εI`) and the transformed constraint
-matrix, both built once at [`setup`](@ref). A re-solve through [`update!`](@ref) keeps them
-whenever `P` and `A` are unchanged, and keeps the working set too, which is what makes a
-warm start cheap here.
+The reduction holds the Cholesky factor of `P` (or `P + εI`), in `P`'s own form, and the
+transformed constraint matrix `A R⁻¹`, both built once at [`setup`](@ref). When `A` and the
+factor are not both dense it holds `A` and the factor instead, and derives rows of `A R⁻¹` from
+them. A re-solve through [`update!`](@ref) keeps them whenever `P` and `A` are unchanged, and
+keeps the working set too, which is what makes a warm start cheap here.
 """
 mutable struct ActiveSetWorkspace{
         T <: Real, MP <: AbstractMatrix, MA <: AbstractMatrix, V <: AbstractVector{T},
@@ -383,11 +384,8 @@ function update!(
             iseq; eps_prox = ws.algorithm.eps_prox,
             working_set = ws.algorithm.working_set
         )
-        # The reduction's type follows from how `P` and `A` are represented, and the workspace
-        # holds it concretely, so a replacement in another representation has no reduction this
-        # workspace can hold. Refused here rather than at the assignment, which would report it
-        # as a failed `convert`.
-        red isa typeof(ws.red) || refuse_changed_representation(typeof(ws.red), typeof(red))
+        # `validate_update!` has already required `P` and `A` to keep their types, which fixes
+        # the reduction's type, so this assignment cannot change what the workspace holds.
         ws.red = red
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)
@@ -400,12 +398,6 @@ function update!(
     ws.update_time += (time_ns() - t0) / 1.0e9
     return ws
 end
-
-@noinline refuse_changed_representation(held, given) = throw(
-    ArgumentError(
-        lazy"update! cannot change how P or A is represented: this workspace holds a $held, and the replacement data reduces to a $given. Build a new workspace with setup."
-    )
-)
 
 """
     update_settings!(ws; kwargs...) -> ws

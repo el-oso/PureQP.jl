@@ -66,7 +66,7 @@
 end
 
 @testitem "a warm re-solve allocates nothing at run time" begin
-    using PureDAQP, PureQPBase, LinearAlgebra, Random
+    using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps, Random
 
     # Measured inside a function so the workspace is a local with a known type; read as a
     # global of the test module, the call itself would allocate. The static proofs above
@@ -106,6 +106,24 @@ end
         @test implicit.red.ws.M isa PureDAQP.ImplicitRows
         @test iszero(resolve_bytes(implicit))
     end
+
+    # An `A` that supplies products only is applied for every row read and every pricing pass,
+    # so the guarantee holds exactly as far as the operator's own products allocate nothing.
+    # Built inside a function so the closures capture locals of known type.
+    function operator_bytes(P, q, A, l, u, allocating)
+        m, n = size(A)
+        op = if allocating
+            LinearMap{Float64}((y, x) -> (y .= A * x), (y, x) -> (y .= A' * x), m, n)
+        else
+            LinearMap{Float64}((y, x) -> mul!(y, A, x), (y, x) -> mul!(y, A', x), m, n)
+        end
+        w = PureDAQP.setup(P, q, op, l, u, ActiveSet())
+        @assert w.prob.A isa PureQPBase.ProductOperator
+        return resolve_bytes(w)
+    end
+    Pd = Matrix(X'X / n + I)
+    @test iszero(operator_bytes(Pd, q, A, l, u, false))
+    @test operator_bytes(Pd, q, A, l, u, true) > 0
 end
 
 @testitem "the dual active-set proofs fail on code that allocates or cannot be trimmed" begin
