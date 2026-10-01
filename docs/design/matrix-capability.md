@@ -314,7 +314,7 @@ Two consequences the converter should build to:
 | R3 | The base owns `dense_row!` for materializable matrices, `KroneckerOperator`, `BlockDiagonal`, `ProductOperator` | **done** (S1) |
 | R4 | The implicit reduction runs `working_set = :rows` with the exact `\|R_ii\|` rank test; the Kronecker pair reaches the dense pair's objective | **done** (S3) |
 | R5 | A test asserts the workspace's storage does not grow with `m·n` (§8) | **done** (S3) |
-| R6 | `run_daqp!` and the other loop kernels are proved allocation-free and trim-compatible on `KroneckerWorkspace{Float64}` as they are on `DenseWorkspace{Float64}`; the guarantee is stated as conditional for a caller's operator | **done** (S3 proofs; S5 states the condition in `docs/src/guarantees.md` and tests it). The one proof item `a dual active-set iteration allocates nothing and trims, proved` fails, blocked upstream |
+| R6 | `run_daqp!` and the other loop kernels are proved allocation-free and trim-compatible on `KroneckerWorkspace{Float64}` as they are on `DenseWorkspace{Float64}`; the guarantee is stated as conditional for a caller's operator | **done** (S3 proofs; S5 states the condition in `docs/src/guarantees.md` and tests it). The proof item `a dual active-set iteration allocates nothing and trims, proved` passes on all three workspaces: `active_product!` copied between two views of a vector, which allocates because the copy cannot tell whether they alias, and an explicit loop replaces it |
 | R7 | Every unsupported form is refused by name: opaque `P`; Kronecker `P` with `eps_prox > 0`; an `update!` that changes `P`'s or `A`'s representation | **done** (S3). The last is refused by the base's `validate_update!`, which already requires `P isa MP`, so PureDAQP carries no check of its own |
 | R8 | The LinearMaps extension unwraps `WrappedMap`, `KroneckerMap` and `BlockDiagonalMap` of matrices, and `ScaledMap` of any of them, to the base's types; everything else stays a `ProductOperator` | **done** (S4). A `KroneckerOperator` can only be built from `Matrix` factors, so a `kron` of wrapped `Diagonal` or `Symmetric` matrices throws in the conversion rather than staying a `ProductOperator` |
 | R9 | `docs/src/matrices.md` carries one table of algorithm × representation saying what each does, and the §4 composition table; `linearmaps.md` says what the extension unwraps | **done** (S5; the composition table is under "What a composed map becomes" in `matrices.md`) |
@@ -400,9 +400,11 @@ solve over a `ProductOperator` `A` threw when it came to report its residuals.
   violate, so it is a test and not a comment. In `PureDAQP/test/solve_tests.jl`: build the
   Kronecker pair at `(n₁, n₂, m₁, m₂) = (25, 25, 46, 48)` and again with `m₂ = 4·48`, so `m`
   grows by `Δm = 3·2208 = 6624` rows at fixed `n = 625`; assert
-  `Base.summarysize(ws₄) - Base.summarysize(ws₁) < Δm · 2n · sizeof(T)`. A materialized
-  reduction grows by `Δm · n · sizeof(T)` — twice the bound — while the implicit one grows by
-  the dozen length-`m` vectors the loop holds plus `A₂`'s own rows, about `Δm · 37 · sizeof(T)`
+  `Base.summarysize(ws₄) - Base.summarysize(ws₁) < Δm · 64 · sizeof(T)`. A materialized
+  reduction grows by `Δm · n · sizeof(T)`, which is `Δm · 625 · sizeof(T)` here and so misses a
+  bound stated per row rather than per row times `n` — the property being asserted is that
+  growth does not scale with `n` at all. The implicit one grows by
+  the dozen length-`m` vectors the loop holds plus `A₂`'s own rows, about `Δm · 16 · sizeof(T)`
   (**measured** components: `Mt` is `10.5 MiB` at `m = 2208`, the whole dense workspace
   `36.3 MiB`). The same assertion once more with `A` as a `ProductOperator` over a
   `FunctionMap` of the Kronecker apply, which is the caller's actual shape.

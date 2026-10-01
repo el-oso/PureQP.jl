@@ -134,6 +134,11 @@ function unwrap(::Type{T}, M::LinearMaps.KroneckerMap, λ) where {T}
     factors = (matrix_factor(T, M.maps[1], λ), matrix_factor(T, M.maps[2], one(T)))
     any(isnothing, factors) && return nothing
     A1, A2 = uniform(T, factors)
+    # `KroneckerOperator` types all its fields alike and builds its scratch with
+    # `similar(A2, T, m, n)` at rectangular sizes, which only a strided factor survives. A
+    # `Diagonal` or `Symmetric` pair stays a `ProductOperator` rather than being converted to
+    # dense, which would materialize what the map is held to avoid.
+    (A1 isa StridedMatrix && A2 isa StridedMatrix) || return nothing
     return PureQPBase.KroneckerOperator(A1, A2)
 end
 

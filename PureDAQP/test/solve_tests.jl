@@ -537,14 +537,16 @@ end
     include(joinpath(@__DIR__, "helpers.jl"))
 
     # Rows are added at a fixed variable count, and the workspace is asked how much bigger it
-    # got. A reduction that formed `A R⁻¹` would grow by `Δm · n` entries; the bound is twice
-    # that, so no materializing path can pass, and an implicit one grows only by the length-`m`
-    # vectors the loop holds and by the second Kronecker factor's own rows.
+    # got. Forming `A R⁻¹` costs one entry per variable for every added row, so its growth
+    # scales with `n`. The bound is a constant number of entries per row instead, independent
+    # of `n`: an implicit reduction grows only by the length-`m` vectors the loop holds and by
+    # the second Kronecker factor's own rows, which together stay far under it, while a
+    # reduction that formed the product misses it by an order of magnitude.
     P1, P2, A1, A2, q, = kron_problem(11)
     Pop = PureQPBase.KroneckerOperator(P1, P2)
     n = size(Pop, 1)
     bound(w1, w4) = let dm = size(w4.prob.A, 1) - size(w1.prob.A, 1)
-        (Base.summarysize(w4) - Base.summarysize(w1), dm * 2n * sizeof(Float64))
+        (Base.summarysize(w4) - Base.summarysize(w1), dm * 64 * sizeof(Float64))
     end
     # `max_iter = 1` because the question is what `setup` holds, not what a solve reaches.
     function kron_ws(reps)

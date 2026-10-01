@@ -182,7 +182,11 @@ function active_product!(
     ) where {T}
     k = W.qr.n
     w = view(scratch, 1:k)
-    copyto!(w, view(mu, 1:k))
+    # An explicit loop rather than `copyto!`: between two views of a vector that checks
+    # whether they alias and copies the source if it cannot tell, which allocates.
+    for i in 1:k
+        w[i] = mu[i]
+    end
     lmul!(W.qr.R, w)
     mul!(u, W.qr.Q, w)
     return u
