@@ -32,8 +32,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2004,
-      "julia_version": "1.13.0",
+      "bytes": 2033,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -152,8 +152,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 4099,
-      "julia_version": "1.13.0",
+      "bytes": 3681,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "julia_threads",
@@ -169,8 +169,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 7759,
-      "julia_version": "1.13.0",
+      "bytes": 7726,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -275,8 +275,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2407,
-      "julia_version": "1.13.0",
+      "bytes": 2411,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "julia_version",
@@ -320,8 +320,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2433,
-      "julia_version": "1.12.7",
+      "bytes": 2431,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -386,7 +386,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 2886,
-      "julia_version": "1.13.0",
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -446,8 +446,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 1556,
-      "julia_version": "1.13.0",
+      "bytes": 1986,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "julia_version",
@@ -462,8 +462,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3173,
-      "julia_version": "1.13.0",
+      "bytes": 3175,
+      "julia_version": "1.13.1",
       "keys": [
         "banded",
         "blas_threads",
@@ -477,8 +477,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3519,
-      "julia_version": "1.12.7",
+      "bytes": 3528,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -491,8 +491,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2381,
-      "julia_version": "1.13.0",
+      "bytes": 2398,
+      "julia_version": "1.13.1",
       "keys": [
         "adaptive_rho_interval",
         "blas_threads",
@@ -523,8 +523,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 1613,
-      "julia_version": "1.13.0",
+      "bytes": 1488,
+      "julia_version": "1.13.1",
       "keys": [
         "julia_version",
         "pureblas_commit",
@@ -908,7 +908,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 4207,
+      "bytes": 5804,
       "julia_version": "1.13.0",
       "keys": [
         "admm_tol",
@@ -945,6 +945,63 @@
     },
     {
       "blas_threads": 1.0,
+      "bytes": 5380,
+      "julia_version": "1.13.1",
+      "keys": [
+        "blas_threads",
+        "families",
+        "julia_version",
+        "seconds_per_solver",
+        "seed",
+        "tol",
+        "versions"
+      ],
+      "name": "illconditioned_shootout",
+      "package": "shared",
+      "results": "bench/results/illconditioned_shootout.json",
+      "script": "illconditioned_shootout.jl"
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 4863,
+      "julia_version": null,
+      "keys": [
+        "blas_threads",
+        "daqp_jl",
+        "daqp_jll",
+        "host",
+        "julia",
+        "measures",
+        "note",
+        "puredaqp",
+        "rows",
+        "tool"
+      ],
+      "name": "puredaqp_vs_libdaqp",
+      "package": "shared",
+      "results": "bench/results/puredaqp_vs_libdaqp.json",
+      "script": null
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 2337,
+      "julia_version": null,
+      "keys": [
+        "blas_threads",
+        "cases",
+        "host",
+        "julia",
+        "measures",
+        "note",
+        "tool"
+      ],
+      "name": "puredaqp_warm_start",
+      "package": "shared",
+      "results": "bench/results/puredaqp_warm_start.json",
+      "script": null
+    },
+    {
+      "blas_threads": 1.0,
       "bytes": 8509,
       "julia_version": "1.13.0",
       "keys": [
@@ -956,6 +1013,40 @@
       "package": "shared",
       "results": "bench/results/snapshot_s0.json",
       "script": null
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 3187,
+      "julia_version": null,
+      "keys": [
+        "blas_threads",
+        "note",
+        "product",
+        "setup",
+        "solve",
+        "tool"
+      ],
+      "name": "symmetric_cost",
+      "package": "shared",
+      "results": "bench/results/symmetric_cost.json",
+      "script": "symmetric_cost.jl"
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 1715,
+      "julia_version": null,
+      "keys": [
+        "blas_threads",
+        "host",
+        "julia",
+        "note",
+        "rows",
+        "tool"
+      ],
+      "name": "working_set_choice",
+      "package": "shared",
+      "results": "bench/results/working_set_choice.json",
+      "script": "working_set_choice.jl"
     }
   ],
   "packages": [
@@ -963,5 +1054,14 @@
     "PureIPM",
     "shared"
   ],
-  "unrun": []
+  "unrun": [
+    {
+      "package": "shared",
+      "script": "daqp_headtohead.jl"
+    },
+    {
+      "package": "shared",
+      "script": "warm_start.jl"
+    }
+  ]
 }
