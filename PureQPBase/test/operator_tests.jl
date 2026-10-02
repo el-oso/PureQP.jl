@@ -245,10 +245,16 @@ end
     @test opaque(blockdiag(LinearMap(B), fn))
     # The base's Kronecker operator has two factors.
     @test opaque(kron(LinearMap(B), LinearMap(C), LinearMap(B)))
-    # Sums and general products have no representation of their own.
-    @test opaque(LinearMap(B) + LinearMap(C))
-    @test opaque(LinearMap(B) * LinearMap(C))
-    @test opaque(LinearMap(B)' * LinearMap(B))
+    # A sum and a two-map product each have a representation that keeps their parts.
+    @test wrap(LinearMap(B) + LinearMap(C)) isa PureQPBase.SumOperator
+    @test wrap(LinearMap(B)' * LinearMap(B)) isa PureQPBase.ComposedOperator
+    # A chain of three has no single inner part to reduce against.
+    @test opaque(LinearMap(B) * LinearMap(B)' * LinearMap(B))
+    # A scalar reaches the parts: it multiplies every term of a sum and one part of a product.
+    let x = randn(n)
+        @test mul!(zeros(n), wrap(2 * (LinearMap(B) + LinearMap(C))), x) ≈ 2 * (B + C) * x
+        @test mul!(zeros(n), wrap(3 * (LinearMap(B)' * LinearMap(B))), x) ≈ 3 * (B'B) * x
+    end
     # `vcat` has a representation: the stack keeps its blocks, so each one's own structure
     # survives. `hcat` shares rows between blocks, where a row-weighted product does not split,
     # and has none.

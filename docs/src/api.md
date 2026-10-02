@@ -193,6 +193,10 @@ PureQPBase.coupling_rank
 PureQPBase.BlockDiagonal
 PureQPBase.KroneckerOperator
 PureQPBase.StackedOperator
+PureQPBase.ComposedOperator
+PureQPBase.SumOperator
+PureQPBase.parts
+PureQPBase.nterms
 PureQPBase.add_reduced_term!
 PureQPBase.factors
 PureQPBase.has_cholesky_factor

@@ -119,15 +119,17 @@ Only the factors are handed over; the product they stand for is never formed.
 | `kron(LinearMap(B₁), LinearMap(B₂))` | `KroneckerOperator(λ * B₁, B₂)` |
 | `blockdiag(LinearMap(B₁), …)` | `BlockDiagonal([λ * B₁, …])` |
 | `vcat(M₁, …)` | `StackedOperator` of what each `λ * Mᵢ` becomes |
+| `M₁ + M₂ + …` | `SumOperator` of what each `λ * Mᵢ` becomes |
+| `M₁ * M₂` | `ComposedOperator(λ * M₁, M₂)` |
 | `c * M′` | what `M′` becomes, with `λ * c` in place of `λ` |
 
-Every other map, such as a `FunctionMap`, a sum, a general product, a Kronecker product of more
-than two maps or a factor that is not itself a wrapped matrix, is `nothing`, and stays a
-[`PureQPBase.ProductOperator`](@ref).
+Every other map, such as a `FunctionMap`, a Kronecker product of more than two maps, a chain of
+more than two composed maps, or a factor that is not itself a wrapped matrix, is `nothing`, and
+stays a [`PureQPBase.ProductOperator`](@ref).
 
-A `vcat` is the one case that never declines: its blocks go through [`as_operator`](@ref), so a
-block the table does not cover becomes a `ProductOperator` within the stack while its siblings
-keep their own representation.
+The three compositions never decline: their parts go through [`as_operator`](@ref), so a part the
+table does not cover becomes a `ProductOperator` inside the composition while the others keep their
+own representation.
 """
 unwrap(::Type{T}, ::LinearMap, λ) where {T} = nothing
 unwrap(::Type{T}, M::LinearMaps.WrappedMap, λ) where {T} = matrix_factor(T, M, λ)
@@ -164,6 +166,23 @@ function unwrap(::Type{T}, M::LinearMaps.BlockMap, λ) where {T}
     # is what the stack is for — one opaque block does not cost the others their structure.
     blocks = map(m -> as_operator(T, isone(λ) ? m : λ * m), M.maps)
     return PureQPBase.StackedOperator(blocks...)
+end
+
+# `λ(B + C) = λB + λC`, so every term takes `λ`.
+function unwrap(::Type{T}, M::LinearMaps.LinearCombination, λ) where {T}
+    terms = map(m -> as_operator(T, isone(λ) ? m : λ * m), M.maps)
+    return PureQPBase.SumOperator(terms...)
+end
+
+# `maps[1]` is the one applied first, so the last is the outer operator. Two maps only: a longer
+# chain has no one inner part to reduce against, and `ComposedOperator` holds exactly two.
+function unwrap(::Type{T}, M::LinearMaps.CompositeMap, λ) where {T}
+    length(M.maps) == 2 || return nothing
+    inner, outer = M.maps
+    # `λ(BE) = (λB)E`, so the scalar goes on the outer part.
+    return PureQPBase.ComposedOperator(
+        as_operator(T, isone(λ) ? outer : λ * outer), as_operator(T, inner)
+    )
 end
 
 "`λ * B` for the matrix a wrapped map holds, or `nothing` when the map holds anything else."

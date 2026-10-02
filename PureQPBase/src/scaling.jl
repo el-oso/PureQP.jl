@@ -423,7 +423,20 @@ from `P` and `A` other than their products. The row sum follows
 representation that cannot be indexed at all overrides this function with whole-matrix
 reductions.
 """
-function reduced_diagonal!(dest, ::Type{T}, P, A, rho, E, D, sigma, c) where {T}
+reduced_diagonal!(dest, ::Type{T}, P, A, rho, E, D, sigma, c) where {T} =
+    indexed_reduced_diagonal!(dest, T, P, A, rho, E, D, sigma, c)
+
+"""
+    indexed_reduced_diagonal!(dest, T, P, A, rho, E, D, sigma, c) -> dest
+
+The reduced diagonal read from entries, which is what [`reduced_diagonal!`](@ref) does for any
+representation that can be indexed.
+
+Named separately so a representation that is sometimes indexable can reach it: a composition
+whose parts all have entries falls back to this, where one holding an operator that supplies only
+products has no diagonal to give.
+"""
+function indexed_reduced_diagonal!(dest, ::Type{T}, P, A, rho, E, D, sigma, c) where {T}
     # `rho` and `E` are workspace vectors indexed by the same `i` that indexes `A`'s rows, so
     # a representation whose rows are not counted from one would read the wrong weights.
     Base.require_one_based_indexing(rho, E)

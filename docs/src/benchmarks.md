@@ -1030,3 +1030,43 @@ for the storage rather than for the time.
 **Memory is a secondary consequence, not the point.** The 35× at `n = 576` is two 24×24 factors
 standing for a 576×576 matrix and the `n²` reduced matrix a direct backend would hold; the reason
 to keep the operator is that the structure survives into the arithmetic, and the storage follows.
+
+## Reducing through a composition's parts
+
+A composition `B E` held as its parts reduces as `Eᵀ (Bᵀ diag(w) B) E`, so the outer part is
+applied once. Reaching the same matrix through products of the composition applies it twice per
+column, `2n` times, which is what the gain below is made of — and why it tracks how expensive the
+outer part is to apply rather than how large the problem is.
+
+Both columns compute the same matrix and agree with it to `7.5e-16` or better on every row.
+Reproduce with `julia --project=bench bench/composition_reduction.jl`; samples go to
+`bench/results/composition_reduction.json`.
+
+| outer part | m | k | n | parts | products | ratio |
+|---|---|---|---|---|---|---|
+| dense | 400 | 50 | 100 | 0.125 ms | 0.278 ms | **2.22×** |
+| dense | 800 | 50 | 200 | 0.280 ms | 1.133 ms | **4.04×** |
+| dense | 1600 | 80 | 200 | 1.278 ms | 3.572 ms | **2.80×** |
+| dense | 3200 | 100 | 300 | 5.180 ms | 15.800 ms | **3.05×** |
+| Kronecker | 64 | 36 | 20 | 0.005 ms | 0.007 ms | 1.39× |
+| Kronecker | 144 | 64 | 40 | 0.021 ms | 0.026 ms | 1.26× |
+| Kronecker | 256 | 100 | 60 | 0.059 ms | 0.077 ms | 1.31× |
+| Kronecker | 400 | 196 | 100 | 0.283 ms | 0.313 ms | 1.10× |
+
+A dense outer part costs `mk` per application, so removing `2n` of them is most of the work and the
+ratio sits between 2.2× and 4.0×. A Kronecker outer part is already cheap to apply — that is what
+its own factors buy — so there is little left for the composition to save, and the ratio is 1.1× to
+1.4×. Keeping the parts is still right there: it is what lets the Kronecker factors be used at all.
+
+The scaling is applied to the inner part's columns once, `(E D)ᵀ G (E D)`, so the result is two
+matrix products accumulated into the reduced matrix rather than `n` matrix-vector products. That
+choice is the difference between this table and a slower one: going column by column measured
+**0.73×–0.85×** against the products it was meant to beat, which is the shape of a reduction that
+reproduces the arithmetic and loses the rate.
+
+**A sum has no reduction of its own, by measurement.** Expanding `(Σ Bᵢ)ᵀ W (Σ Bᵢ)` gives `K`
+diagonal terms at `2n` products of a term each and `K(K-1)/2` cross pairs at `2n` more, so
+`nK(K+1)` in all; a product of the sum costs `2nK`, because `A eⱼ = Σ Bₜ eⱼ` sums the terms in one
+pass. The expansion measured 1.04× at two terms, 0.69× at three and 0.49× at four, and was removed.
+`SumOperator` keeps the terms for every other reason — the sum is never formed, each term keeps its
+representation — and leaves the reduction to the generic path.
