@@ -119,10 +119,15 @@ end
 """
 The representations the reduction reads as they are: a dense matrix, a `Symmetric` of one, and
 the structured and unmaterialized forms the base owns.
+
+A composition belongs here for the same reason a `ProductOperator` does: a working-set change
+needs one row, and each of these answers that from its parts — a stack from the block holding the
+row, a composition by carrying the outer part's row through the inner one — without entries.
 """
 const ReadDirectly{T} = Union{
     StridedMatrix{T}, Symmetric{T, <:StridedMatrix{T}}, Diagonal{T}, BlockDiagonal{T},
     KroneckerOperator{T}, ProductOperator{T},
+    StackedOperator{T}, ComposedOperator{T}, SumOperator{T},
 }
 
 """

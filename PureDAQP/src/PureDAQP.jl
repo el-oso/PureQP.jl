@@ -44,7 +44,8 @@ import PureQPBase:
     empty_solution, norm_inf, support_plain, project_polar_reccone!, DIVISION_TOL,
     has_cholesky_factor, cholesky_factor, factorable_operand, rows_operand,
     scalar_diagonal, dense_row!,
-    BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator
+    BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator,
+    StackedOperator, ComposedOperator, SumOperator
 
 export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
 export dimensions, capabilities
