@@ -33,7 +33,12 @@ using ModifiableFactorizations: ModifiableFactorizations, ModifiableQR, try_inse
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_function, @strict, @assert_noalloc, @assert_trim_compatible,
     @assert_typestable
-using PureQPBase
+using Reexport
+# The base's own exports reach a caller through here, so `using PureDAQP` gives the whole API:
+# the verbs, the `Solution`, the statuses and the options. They stay PureQPBase's — this says
+# where they come from in one line, where a list repeated per solver would make one generic
+# function look like it had four owners.
+@reexport using PureQPBase
 
 import PureQPBase:
     setup, solve, solve!, warm_start!, cold_start!, update!, update_settings!,
@@ -47,15 +52,10 @@ import PureQPBase:
     BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator,
     StackedOperator, ComposedOperator, SumOperator
 
-export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
-export dimensions, capabilities
-export Solution, Status, Options, default_options
-export QPAlgorithm, ActiveSet, faster_scan
-export QPWorkspace, ActiveSetWorkspace
-export has_solution, status_name
-export SOLVED, PRIMAL_INFEASIBLE, DUAL_INFEASIBLE, MAX_ITER_REACHED, NON_CONVEX, UNSOLVED
-export TIME_LIMIT_REACHED, INTERRUPTED, NUMERICAL_ERROR
-export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURATE
+
+# What this package owns. Everything else a caller needs is PureQPBase's and arrives through the
+# `@reexport` above.
+export ActiveSet, faster_scan, ActiveSetWorkspace
 
 # `settings.jl` first: the loop takes its tolerances as an `ActiveSet`, so the type has to
 # exist before the methods that name it.

@@ -12,7 +12,7 @@ PureQPBase.update_rho!
 PureQPBase.dimensions
 PureQPBase.capabilities
 PureQPBase.constraint_violation
-PureOSQP.constraint_violation!
+PureQPBase.constraint_violation!
 PureOSQP.Optimizer
 PureQPBase.adjoint_derivative
 PureQPBase.forward_derivative

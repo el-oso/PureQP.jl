@@ -49,7 +49,12 @@ bound of `±1e30` here, far enough that it never reports a violation of its own.
 
 `out` must have one entry per constraint row. Nothing is allocated.
 """
-function constraint_violation!(out::AbstractVector{T}, ws::OperatorSplittingWorkspace{T}) where {T}
+# `out`'s element type is not tied to the workspace's: the violations are computed in the
+# workspace's own type and converted on assignment, so a caller may collect them in whatever
+# vector it already holds. Tying the two also put this method outside the contract's slot, which
+# is stated as `(::AbstractVector, ::Self)` and cannot match a signature whose two arguments
+# share a parameter.
+function constraint_violation!(out::AbstractVector, ws::OperatorSplittingWorkspace{T}) where {T}
     prob = ws.prob
     length(out) == prob.m || throw(
         DimensionMismatch("out must have one entry per constraint row")

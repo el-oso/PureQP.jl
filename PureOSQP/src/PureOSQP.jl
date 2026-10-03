@@ -22,11 +22,17 @@ module PureOSQP
 using LinearAlgebra
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @assert_noalloc, @assert_trim_compatible
-using PureQPBase
+using Reexport
+# The base's own exports reach a caller through here, so `using PureOSQP` gives the whole API:
+# the verbs, the `Solution`, the statuses and the options. They stay PureQPBase's — this says
+# where they come from in one line, where a list repeated per solver would make one generic
+# function look like it had four owners.
+@reexport using PureQPBase
 
 import PureQPBase:
     setup, solve, solve!, warm_start!, cold_start!, update!, update_settings!, update_rho!,
-    constraint_violation, derivative_ready, setup_backend, algorithm_defaults, element_typed,
+    constraint_violation, constraint_violation!, derivative_ready, setup_backend,
+    algorithm_defaults, element_typed,
     recommend_linsys, OPTION_NAMES,
     ADMMSelection, IPMSelection, SelectionFor, BlockDiagonal, BlockReduced, DiagonalLowRank,
     DiagonalReduced, KroneckerOperator, KroneckerReduced, TridiagonalReduced, Problem,
@@ -46,23 +52,11 @@ import PureQPBase:
     update_x!, update_zy!, use_residual_stop!, validate, validate_update!, validated_problem,
     polish_status_name, check_termination, polish!
 
-export setup, solve, solve!, update!, update_settings!, update_rho!, warm_start!, cold_start!
-export dimensions, capabilities, constraint_violation, constraint_violation!
-export Optimizer, Solution, Status, Options, default_options
-export QPAlgorithm, OperatorSplitting
-export QPWorkspace, OperatorSplittingWorkspace
-export has_solution, status_name
-export recommend_linsys, LinsysAdvice
-export backend_info, backend_name, factor_fill, BackendInfo
-export PolishStatus
-export adjoint_derivative, forward_derivative
-export LinearSystem, ReducedCholesky, FullKKT
-export Preconditioner, IdentityPreconditioner, JacobiPreconditioner, update_preconditioner!
-export SOLVED, PRIMAL_INFEASIBLE, DUAL_INFEASIBLE, MAX_ITER_REACHED, NON_CONVEX, UNSOLVED
-export TIME_LIMIT_REACHED, INTERRUPTED, NUMERICAL_ERROR
-export PolishStatus, POLISH_SUCCESS, POLISH_FAILED, POLISH_NOT_PERFORMED
-export POLISH_NO_ACTIVE_SET_FOUND, POLISH_LINSYS_ERROR
-export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURATE
+
+# What this package owns: its algorithm, its workspace, and the MathOptInterface optimizer the
+# extension defines for it. Everything else a caller needs is PureQPBase's and arrives through
+# the `@reexport` above.
+export OperatorSplitting, OperatorSplittingWorkspace, Optimizer
 
 include("admm/algorithm.jl")
 include("admm/accelerate.jl")

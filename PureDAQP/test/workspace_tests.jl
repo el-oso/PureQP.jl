@@ -128,6 +128,14 @@ end
     # algorithm is held to one statement of what their values mean rather than to whatever
     # its own suite happens to check.
     PureQPBase.conforms(ActiveSet(); eps = 1.0e-8, slow_iters = 1)
+
+    # `using PureDAQP` alone reaches the whole API, because the module re-exports the base's
+    # names rather than listing them again. A list would drift from what it copied, and did:
+    # four packages each held their own copy of this surface.
+    @test issubset(names(PureQPBase), names(PureDAQP))
+    # And the names this package adds are its own, so nothing here shadows the base.
+    @test setdiff(names(PureDAQP), names(PureQPBase)) ==
+        [:ActiveSet, :ActiveSetWorkspace, :PureDAQP, :faster_scan]
 end
 
 @testitem "setup then solve! matches a one-shot solve" begin

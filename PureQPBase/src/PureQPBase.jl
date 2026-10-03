@@ -47,7 +47,7 @@ include("api.jl")
 include("conformance.jl")
 
 export setup, solve, solve!, update!, update_settings!, update_rho!, warm_start!, cold_start!
-export dimensions, capabilities, constraint_violation
+export dimensions, capabilities, constraint_violation, constraint_violation!
 export Solution, Status, Options, default_options
 export QPAlgorithm
 export QPWorkspace

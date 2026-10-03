@@ -1,5 +1,5 @@
 @testitem "the QPWorkspace contract is enforced, not decorative" begin
-    using PureIPM, TypeContracts
+    using PureQPBase, PureIPM, TypeContracts
     W = PureOSQP.QPWorkspace
     spec = TypeContracts.list_contract(W)
     required = [s.description for s in spec if !s.optional]
@@ -14,12 +14,41 @@
         "derivative_ready(::Self) :: Nothing",
     ]
     @test sort([nameof(s.f) for s in spec if s.optional]) ==
-        [:constraint_violation, :update_rho!]
+        [:constraint_violation, :constraint_violation!, :update_rho!]
+
+    # A mutating verb named in a slot's description is itself a slot. `constraint_violation`'s
+    # description once ended "`constraint_violation!` writes it in place", and that verb was
+    # declared nowhere, defined only by PureOSQP as a generic of its own, and absent from the
+    # other two workspaces — a promise the contract made and no checker could see, because a
+    # description is prose. Checking the `!` names keeps the prose honest; the rest of a
+    # description names arguments and fields, which are not slots and are not checked here.
+    slot_names = Set(nameof(s.f) for s in spec)
+    for s in spec, m in eachmatch(r"`(\w+!)`", s.description)
+        @test Symbol(m.captures[1]) in slot_names
+    end
+
+    # `using PureOSQP` alone reaches the whole API, because the module re-exports the base's
+    # names rather than listing them again. A list would drift from what it copied, and did:
+    # four packages each held their own copy of this surface.
+    @test issubset(names(PureQPBase), names(PureOSQP))
+    @test setdiff(names(PureOSQP), names(PureQPBase)) ==
+        [:OperatorSplitting, :OperatorSplittingWorkspace, :Optimizer, :PureOSQP]
+    @test issubset(names(PureQPBase), names(PureIPM))
+    @test setdiff(names(PureIPM), names(PureQPBase)) ==
+        [:InteriorPoint, :InteriorPointWorkspace, :PureIPM]
 
     for T in (OperatorSplittingWorkspace, InteriorPointWorkspace)
         @test TypeContracts.satisfies(T, W).satisfied
     end
     @test isempty(TypeContracts.satisfies(OperatorSplittingWorkspace, W).missing_optional)
+    # The interior-point workspace implements none of the optional slots, which is what optional
+    # means. Recorded here so that implementing one is a deliberate change to this list rather
+    # than a silent divergence between the two solvers.
+    @test sort(TypeContracts.satisfies(InteriorPointWorkspace, W).missing_optional) == [
+        "constraint_violation!(::AbstractVector, ::Self) :: AbstractVector",
+        "constraint_violation(::Self) :: AbstractVector",
+        "update_rho!(::Self, ::Real) :: Self",
+    ]
 
     # A workspace that declares the supertype and implements nothing inherits only the
     # methods written for every `QPWorkspace`; the rest are reported by name.
