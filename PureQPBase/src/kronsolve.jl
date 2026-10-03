@@ -279,9 +279,12 @@ function LinearAlgebra.ldiv!(
     mul!(M.Z, M.U2t, M.X)
     mul!(M.X, M.Z, M.U1)
     # An explicit loop rather than `.*=`: the broadcast's machinery carries allocation sites the
-    # scan counts even where the runtime takes none.
+    # scan counts even where the runtime takes none. The index runs over one of the two rather
+    # than over both: the constructor builds `X` and `dinv` at one size, so they cannot disagree,
+    # and the two-argument `eachindex` reports a disagreement through a message built by
+    # `Base.join`, which `--trim=safe` rejects on Julia 1.12.
     X, dinv = M.X, M.dinv
-    for i in eachindex(X, dinv)
+    for i in eachindex(X)
         X[i] *= dinv[i]
     end
     mul!(M.Z, M.U2, M.X)

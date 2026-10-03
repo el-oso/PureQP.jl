@@ -774,8 +774,14 @@ end
     # A first factor of rank `k - 2`, so `P₁ ⊗ P₂` is singular and `eps_prox = 0` cannot
     # factor it. `P₁ ⊗ P₂ + εI` is not a Kronecker product, so what factors it is the square
     # root built from the factors' eigendecompositions rather than `R₁ ⊗ R₂`.
-    V = qr(randn(k, k)).Q * Matrix(1.0I, k, k)
-    P1 = Matrix(Symmetric(V * Diagonal([rand(k - 2) .+ 1; 0.0; 0.0]) * V'))
+    #
+    # The deficiency is structural — two rows and columns that are exactly zero — rather than
+    # two zero eigenvalues of a full matrix. Those arrive through `V D Vᵀ` as values near
+    # `±eps`, and a pivot that rounds positive is factored instead of refused, so whether the
+    # refusal below happens at all would depend on the BLAS. An exactly zero pivot cannot.
+    Gs = randn(k - 2, k - 2)
+    P1 = zeros(k, k)
+    P1[1:(k - 2), 1:(k - 2)] = Matrix(Symmetric(Gs'Gs / (k - 2) + I))
     G = randn(k, k)
     P2 = Matrix(Symmetric(G'G / k + I))
     A1, A2 = randn(k + 5, k), randn(k + 3, k)
