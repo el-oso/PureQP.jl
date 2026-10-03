@@ -4,18 +4,25 @@
     # A disabled tier prints exactly like a clean one.
     StrictMode.assert_enabled()
 
-    # Verify against the Base `juliac --trim=safe` compiles, not against stock Base. The working
-    # set inserts and deletes columns through ModifiableFactorizations, whose multi-argument
-    # `eachindex` and reductions stock inference leaves unresolved — `Base.join` over a tuple of
-    # axes, and a `MappingRF` whose function parameters widen to `Function`. juliac patches both
-    # before trim inference, so a real trimmed build accepts them and only this scan does not.
-    # Checked both ways on 1.12: blocked on stock, clean patched.
+    # `--trim` is proved on 1.13 and up; allocation is proved on every version. The working set
+    # inserts and deletes columns through ModifiableFactorizations, which reaches a multi-argument
+    # `eachindex` and a reduction that Base 1.12 leaves unresolved: `Base.join` over a tuple of
+    # axes, and a `MappingRF` whose function parameters widen to `Function`. Base 1.13 resolves
+    # both — 1.12 specializes less in `mapreduce_empty_iter` and takes `_mapreduce_dim`'s `init`
+    # through the recursive `_xfadjoint_unwrap`.
     #
-    # The patched verifier runs in a child process and falls back to stock, with a warning, for a
-    # function that child cannot load. A fallback here would reinstate the stock verdict, so a
-    # failure rather than a pass is what it produces — the signatures below are the ones stock
-    # rejects.
-    StrictModeTest.set_juliac_patches!(true)
+    # The gate covers every signature below rather than the entry point alone: the rejection
+    # enters at `add_row!`, so everything that reaches the working set inherits it.
+    #
+    # `juliac` patches both constructs before its own trim inference, so a real trimmed build
+    # accepts this code and only the 1.12 scan does not. Verifying against those patches is what
+    # `StrictModeTest.set_juliac_patches!(true)` does, and it is not used here: it spawns a child
+    # process per signature, which took this suite's CI job from 120 s to 2556 s, and three of
+    # those children cannot load `PureDAQP` — `solve!` is `PureQPBase`'s function extended here,
+    # and the child loads only the module that owns the function — so they fall back to the stock
+    # verdict after paying for the attempt.
+    const TRIM_GUARANTEES = VERSION >= v"1.13" ? (:typestable, :noalloc, :trim_compatible) :
+        (:typestable, :noalloc)
 
     Random.seed!(1)
     n, m = 12, 30
@@ -48,11 +55,13 @@
         LW = typeof(ws.red.ws)       # the least-distance workspace the iteration runs on
         ALG = typeof(ws.algorithm)
         V = Vector{Float64}
-        both = (:noalloc, :trim_compatible)
+        both = filter(!=(:typestable), TRIM_GUARANTEES)
 
         # `solve!` reads the clock, and AllocCheck counts `time_ns`'s `jl_hrtime` foreign
         # call as an allocation. Everything the clock brackets is proved on both counts.
-        @test test_signatures([(PureDAQP.solve!, (W,))]; guarantees = (:trim_compatible,)) isa Vector
+        if :trim_compatible in TRIM_GUARANTEES
+            @test test_signatures([(PureDAQP.solve!, (W,))]; guarantees = (:trim_compatible,)) isa Vector
+        end
 
         @test test_signatures(
             [
