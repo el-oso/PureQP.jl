@@ -220,6 +220,49 @@ end
     @test obj(sol.x) < obj(x0)
 end
 
+@testitem "the Gram working set gives up loudly where it cannot decide rank" begin
+    using PureDAQP, LinearAlgebra, Random
+
+    #=
+    The same fixture as the test above, run through both representations. `:gram` factors
+    `Mₐ Mₐᵀ`, whose conditioning is `cond(M)` squared, and at `cond(M) ≈ 1e17` its pivots
+    carry no rank information at all. What it must not do is turn that into an answer: a
+    direction drawn from a collapsed factorization finds nothing blocking it, which reads as a
+    proof of infeasibility, and the problem here is feasible with room to spare.
+
+    `certifiable` is what stops it. The infeasibility claim is checked against the caller's own
+    rows before it is made, so the representation that cannot decide rank reports
+    `NUMERICAL_ERROR` instead. The guarantee is therefore asymmetric and only one half of it
+    belongs to `:gram`: `:rows` solves this, and `:gram` may fail, but neither may call it
+    infeasible.
+    =#
+    rng = MersenneTwister(5)
+    n, m = 30, 200
+    U, _ = qr(randn(rng, n, n))
+    V, _ = qr(randn(rng, m, m))
+    A = Matrix(V)[:, 1:n] * Diagonal(exp10.(range(0, -14; length = n))) * Matrix(U)'
+    W, _ = qr(randn(rng, n, n))
+    P = Matrix(Symmetric(W * Diagonal(exp10.(range(0, -8; length = n))) * W'))
+    q = randn(rng, n)
+    x0 = randn(rng, n)
+    b = A * x0
+    l, u = b .- 1.0, b .+ 1.0
+
+    # Past the limit by eight orders of magnitude: the Gram path needs `cond(M) < 1/sqrt(eps)`.
+    condM = cond(A / cholesky(Symmetric(P)).U)
+    @test condM > inv(sqrt(eps(Float64)))
+
+    rows = solve(P, q, A, l, u, ActiveSet(working_set = :rows))
+    gram = solve(P, q, A, l, u, ActiveSet(working_set = :gram))
+
+    @test rows.status == SOLVED
+    @test gram.status != PRIMAL_INFEASIBLE
+    @test gram.status == NUMERICAL_ERROR
+    # A status that is not a solution carries no point to read, so nothing here is a near miss
+    # that a caller might use.
+    @test all(isnan, gram.x)
+end
+
 @testitem "a genuinely infeasible problem is still reported infeasible" begin
     using PureDAQP, LinearAlgebra
 

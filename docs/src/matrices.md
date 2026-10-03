@@ -1047,3 +1047,33 @@ Under [`InteriorPoint`](@ref), `linsys = :auto` never picks this backend, and
 `linsys = :lowrank` throws. The Woodbury solve misses the tolerance on linear programs
 ([Backends under the interior-point method](@ref)). A `Diagonal` `P` with a `RowCoupled` `A`
 gets the full KKT factorization instead.
+
+## What each representation costs, on all three algorithms
+
+One problem — a `576 × 576` Kronecker pair — written five ways and solved by each algorithm, with
+the workspace it builds measured. Every cell solves; the column that distinguishes them is storage,
+and what it shows is whether the representation survived into the solve or was formed on the way in.
+
+| `P`, `A` as | OperatorSplitting | InteriorPoint | ActiveSet |
+|---|---|---|---|
+| dense | `cholesky`, 10.28 MiB | `bunchkaufman`, 26.12 MiB | `rows`, 17.86 MiB |
+| `Symmetric` | `cholesky`, 10.28 MiB | `bunchkaufman`, 26.12 MiB | `rows`, 17.86 MiB |
+| sparse | `sparse_formed`, 17.88 MiB | `bunchkaufman`, 31.19 MiB | `rows`, 28.04 MiB |
+| structured | `indirect`, **0.24 MiB** | `product_reduced`, **2.84 MiB** | `rows`, **7.81 MiB** |
+| unmaterialized | `indirect`, **0.24 MiB** | `product_reduced`, **2.84 MiB** | `rows`, **7.81 MiB** |
+
+A structured pair costs `43×` less than the dense form under `OperatorSplitting` and `9.2×` less
+under `InteriorPoint`, because neither forms the `n × n` reduced matrix: the Kronecker factors
+reach the backend and the arithmetic is done on them. Declaring `Symmetric` costs exactly what
+dense costs, to the byte — it is free to say, and it halves the products in the iteration.
+
+Two rows need reading in context. `structured` and `unmaterialized` are identical here because the
+same Kronecker pair reaches the same backend whether it is written as this package's own type or as
+a `kron` of two `LinearMap`s; the distinction is in what the caller writes, not in two different
+paths. And `ActiveSet` gains least from structure — `2.3×`, not `43×` — because its work is the
+factorization of the working set, which does not shrink when `A` stops being a matrix. The same
+reason bounds its timings at about `1.3×`.
+
+A sparse pair is larger than a dense one under every algorithm here, which is what this problem's
+density costs in sparse storage: `P` is 70% nonzero and `A` is 53%, so the index arrays are paid
+for almost every entry. [Sparse A](@ref) measures where sparse storage starts to pay.

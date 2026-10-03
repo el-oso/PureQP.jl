@@ -372,6 +372,40 @@ pays for once. [When it is the wrong tool](@ref) has the measured comparison.
 [An operator is not always solved with CG](@ref) has the conditioning limit, where a bare map
 does not converge at all.
 
+## What each composition becomes, and which algorithms take it
+
+A `LinearMap` that is built from matrices is recognized rather than treated as opaque: the
+composition becomes the base's own representation of it, and the parts stay available to the
+reduction. Every form below solves on all three algorithms.
+
+| `A` as a `LinearMap` | becomes | OperatorSplitting | InteriorPoint | ActiveSet |
+|---|---|---|---|---|
+| `LinearMap(B)` | the matrix itself | `cholesky` | `bunchkaufman` | `rows` |
+| `c * M` | the matrix, scaled | `cholesky` | `bunchkaufman` | `rows` |
+| `kron(M₁, M₂)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
+| `cat(M₁, M₂; dims = (1, 2))` | [`PureQPBase.BlockDiagonal`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `M₁ + M₂` | [`PureQPBase.SumOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `M₁ * M₂` | [`PureQPBase.ComposedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `hcat(M₁, M₂)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| a `FunctionMap` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `kron(fn, M)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `vcat(kron(…), fn)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+
+Two things the table is worth reading carefully for. A composition whose parts are not all
+recognized keeps the composition: the last row is a stack of a Kronecker block and an opaque one,
+and the Kronecker block still contracts its factors inside it. And an operator with no entries
+still answers a *row*, as `Aᵀ eᵢ`, which is why the dual active-set method takes every row here —
+entries and rows are different questions, and only equilibration needs the first.
+
+The backends are what these problems reach with a `Diagonal` `P` and `scaling = 0`. A different
+`P` moves some of them: a block-diagonal pair partitioned alike reaches `block` rather than
+`indirect`, and the Kronecker rung needs `P` a scalar multiple of the identity.
+
+Equilibration is the one real restriction, and it is orthogonal to the three columns: column and
+row norms are entries, so an operator that supplies only products needs `scaling = 0`, `probe =
+true`, or a [`PureQPBase.structural_rows`](@ref) method.
+
 ## Two packages supply operators
 
 The examples above use [LinearMaps.jl](https://github.com/JuliaLinearAlgebra/LinearMaps.jl).
