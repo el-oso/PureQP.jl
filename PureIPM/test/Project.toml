@@ -10,6 +10,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
 MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 OSQP = "ab2f91bb-94b4-55e3-9ba0-7f65df51de79"
+PureIPM = "7796d3b0-b4f1-40ab-b599-32a1660dec1b"
 PureQPBase = "2fc88845-7e3c-4d5a-ae99-1d63540d249b"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
@@ -18,6 +19,3 @@ StrictModeTest = "a64655d1-1e86-453c-b761-1219f9f51c2b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 TestItems = "1c621080-faea-4a02-84b6-bbd5e436b8fe"
-
-[sources]
-PureQPBase = {path = "../../PureQPBase"}

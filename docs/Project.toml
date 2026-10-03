@@ -15,8 +15,6 @@ SciMLOperators = "c0aeaf25-5076-4817-a8d5-81caf7dfa961"
 TypeContracts = "c7a3f1e2-84b5-4d69-9e0a-1f2b3c4d5e6f"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
-# Named by path rather than resolved from the workspace, for the reason `bench` is not a
-# member either. Nothing here is registered.
 [sources]
 PureDAQP = {path = "../PureDAQP"}
 PureIPM = {path = "../PureIPM"}
