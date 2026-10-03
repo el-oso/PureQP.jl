@@ -133,6 +133,37 @@ end
     return dest
 end
 
+# The same column, read from the triangle `S` names. Indexing `S` costs a branch per entry and
+# reads the half outside the triangle at stride `size(S, 1)`; splitting the column at the
+# diagonal gives two branch-free runs, the longer of which is contiguous in the parent. The
+# parent is an argument rather than a field read inside the loop, which is what lets the runs
+# vectorize.
+@inline add_scaled_col!(
+    ::Type{T}, dest::AbstractMatrix, S::SymmetricFactorable, j::Integer, f::F
+) where {T, F} = add_scaled_col_triangle!(T, dest, parent(S), j, f, S.uplo == 'U')
+
+@inline function add_scaled_col_triangle!(
+        ::Type{T}, dest::AbstractMatrix, A::AbstractMatrix, j::Integer, f::F, upper::Bool
+    ) where {T, F}
+    n = size(A, 1)
+    if upper
+        for i in 1:j
+            dest[i, j] += f(T(A[i, j]), i)
+        end
+        for i in (j + 1):n
+            dest[i, j] += f(T(A[j, i]), i)
+        end
+    else
+        for i in 1:(j - 1)
+            dest[i, j] += f(T(A[j, i]), i)
+        end
+        for i in j:n
+            dest[i, j] += f(T(A[i, j]), i)
+        end
+    end
+    return dest
+end
+
 """
     column_norms!(d, e, T, pcol, A, D, E, c)
 
@@ -177,6 +208,78 @@ function cost_norms!(pcol, ::Type{T}, P, D, c, n) where {T}
         acc += c * D[j] * pj
     end
     return acc / n
+end
+
+"""
+    cost_norms!(pcol, T, P::SymmetricFactorable, D, c, n) -> mean
+
+The same column norms, read from the triangle `P` names.
+
+Indexing a `Symmetric` column by column would read the half outside its triangle as
+`parent[j, i]` with `i` advancing — across the rows of a column-major array, one cache line per
+element, behind a branch that stops the reduction vectorizing. Reading the stored triangle
+instead visits each entry once, contiguously: entry `(i, j)` is the matrix's `(i, j)` and its
+`(j, i)`, so it bounds column `j` by `D[i]·|v|` and column `i` by `D[j]·|v|`, and one pass over
+half the entries fills every column's norm.
+
+`pcol` is accumulated rather than assigned, so it is zeroed first: a column's norm is complete
+only once every column holding one of its mirrored entries has been visited.
+"""
+function cost_norms!(pcol, ::Type{T}, P::SymmetricFactorable, D, c, n) where {T}
+    # The parent is passed to the kernel rather than read from `P` inside it. A matrix loaded
+    # from a struct field reaches the loop without the `nonnull` and alignment facts a matrix
+    # that arrives as an argument carries, and the reduction then does not vectorize: measured
+    # at n = 500, 0.475 ms against 0.058 ms for the same loop over the same entries.
+    triangle_colmax!(pcol, T, parent(P), D, n, P.uplo == 'U')
+    acc = zero(T)
+    for j in 1:n
+        acc += c * D[j] * pcol[j]
+    end
+    return acc / n
+end
+
+"""
+    triangle_colmax!(pcol, T, A, D, n, upper) -> pcol
+
+`pcol[j] = max(D[i] * |M[i, j]|)` for the symmetric `M` whose `upper` triangle (or lower) is
+stored in `A`, reading each stored entry once.
+
+Entry `(i, j)` of `A` is both `M[i, j]` and `M[j, i]`, so it bounds column `j` by `D[i]·|v|`
+and column `i` by `D[j]·|v|`. `pcol` is accumulated, so it is zeroed first: a column's norm is
+complete only once every column holding one of its mirrored entries has been visited.
+"""
+function triangle_colmax!(
+        pcol::AbstractVector{T}, ::Type{T}, A::AbstractMatrix, D::AbstractVector, n, upper::Bool
+    ) where {T}
+    fill!(pcol, zero(T))
+    # The stored part of column `j` is rows `1:j` of an upper parent and `j:n` of a lower one.
+    # The two cases are separate loops so the test is not repeated for every column.
+    if upper
+        for j in 1:n
+            triangle_colmax_column!(pcol, T, A, D, j, 1:j)
+        end
+    else
+        for j in 1:n
+            triangle_colmax_column!(pcol, T, A, D, j, j:n)
+        end
+    end
+    return pcol
+end
+
+@inline function triangle_colmax_column!(
+        pcol::AbstractVector{T}, ::Type{T}, A::AbstractMatrix, D::AbstractVector,
+        j::Integer, rows::UnitRange{Int}
+    ) where {T}
+    dj = D[j]
+    pj = zero(T)
+    for i in rows
+        v = abs(T(A[i, j]))
+        pj = max(pj, D[i] * v)
+        # At `i == j` this repeats the line above with the same value, which `max` absorbs.
+        pcol[i] = max(pcol[i], dj * v)
+    end
+    pcol[j] = max(pcol[j], pj)
+    return pcol
 end
 
 """
@@ -320,7 +423,20 @@ from `P` and `A` other than their products. The row sum follows
 representation that cannot be indexed at all overrides this function with whole-matrix
 reductions.
 """
-function reduced_diagonal!(dest, ::Type{T}, P, A, rho, E, D, sigma, c) where {T}
+reduced_diagonal!(dest, ::Type{T}, P, A, rho, E, D, sigma, c) where {T} =
+    indexed_reduced_diagonal!(dest, T, P, A, rho, E, D, sigma, c)
+
+"""
+    indexed_reduced_diagonal!(dest, T, P, A, rho, E, D, sigma, c) -> dest
+
+The reduced diagonal read from entries, which is what [`reduced_diagonal!`](@ref) does for any
+representation that can be indexed.
+
+Named separately so a representation that is sometimes indexable can reach it: a composition
+whose parts all have entries falls back to this, where one holding an operator that supplies only
+products has no diagonal to give.
+"""
+function indexed_reduced_diagonal!(dest, ::Type{T}, P, A, rho, E, D, sigma, c) where {T}
     # `rho` and `E` are workspace vectors indexed by the same `i` that indexes `A`'s rows, so
     # a representation whose rows are not counted from one would read the wrong weights.
     Base.require_one_based_indexing(rho, E)

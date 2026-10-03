@@ -29,13 +29,15 @@ sol.x        # the exact solution of the equality QP over the active rows
 
 ## When to use it
 
-Dense problems with few rows active at the solution. The method takes a few expensive steps and
+Problems with few rows active at the solution. The method takes a few expensive steps and
 stops at the exact point, rather than converging toward it, so the answer carries no tolerance
 in it and `polishing` has nothing to add.
 
-It reads `P` and `A` as dense matrices and exploits neither sparsity nor declared structure: the
-reduction forms `A R⁻¹` for the Cholesky factor `R` of `P`, which is dense whatever `A` was. A
-large sparse problem is the other two algorithms' case.
+It needs a Cholesky factor of `P`, so an operator that supplies products only is refused as `P`.
+`A` can be anything that supplies products with itself and its transpose. A dense pair forms
+`A R⁻¹` once; a `Diagonal`, `BlockDiagonal` or `KroneckerOperator` on either side, and an
+operator `A`, are held as they are and `A R⁻¹` is never formed. A sparse or banded `P` or `A` is read into a dense matrix,
+so a large sparse problem is the other two algorithms' case.
 [Choosing an algorithm](https://el-oso.github.io/PureQP.jl/dev/algorithms) compares all three.
 
 On random dense problems at `1e-6`, it is faster than the C implementation it follows from

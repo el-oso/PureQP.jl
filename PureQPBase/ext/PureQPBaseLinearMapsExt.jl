@@ -1,8 +1,11 @@
 """
 Accepts a `LinearMaps.LinearMap` wherever [`PureQPBase.setup`](@ref) takes a matrix.
 
-A `LinearMap` is not an `AbstractMatrix`, so it reaches the solver through
-[`PureQPBase.ProductOperator`](@ref). Wrapping is all this extension does; the protocol the
+A `LinearMap` is not an `AbstractMatrix`, so it reaches the solver either as the base's own
+representation of what it holds or through [`PureQPBase.ProductOperator`](@ref). A wrapped
+matrix, a Kronecker product of two wrapped matrices, a block-diagonal of wrapped matrices and a
+scalar multiple of any of these arrive as a matrix, a `KroneckerOperator` and a `BlockDiagonal`,
+so the algorithms' structured paths see them. Every other map is wrapped. The protocol the
 wrapper implements lives in `PureQPBase/src/operator.jl` and needs no dependency.
 
 What loading LinearMaps buys over wrapping by hand is the two declarations the wrapper cannot
@@ -31,7 +34,7 @@ function PureQPBase.ProductOperator{T}(
     ) where {T <: Real}
     rows, cols = size(map)
     basis = zeros(T, probe ? cols : 0)
-    column = zeros(T, probe ? rows : 0)
+    column = zeros(T, rows)
     mapt = adjoint(map)
     return PureQPBase.ProductOperator{T, typeof(map), typeof(mapt), typeof(basis)}(
         map, mapt, rows, cols, symmetric, posdef, probe, basis, column
@@ -43,8 +46,9 @@ end
 
 Solve with an operator cost, an operator constraint, or both.
 
-Each `LinearMap` is wrapped in a [`PureQPBase.ProductOperator`](@ref); a matrix argument is
-passed through untouched, so mixing the two is ordinary. The element type is taken from `q`,
+Each `LinearMap` goes through [`as_operator`](@ref): the structure the base can hold is
+unwrapped and the rest is wrapped in a [`PureQPBase.ProductOperator`](@ref). A matrix argument
+is passed through untouched, so mixing the two is ordinary. The element type is taken from `q`,
 which is the vector the solve is carried out in.
 
 Equilibration cannot read an operator's entries, so `scaling = 0` is required unless the
@@ -90,8 +94,119 @@ function wrapped_solve(P, q, A, l, u, alg...; kwargs...)
     return PureQPBase.solve(as_operator(T, P), q, as_operator(T, A), l, u, alg...; kwargs...)
 end
 
-"A `LinearMap` becomes a [`PureQPBase.ProductOperator`](@ref); anything else is already one."
-as_operator(::Type{T}, M::LinearMap) where {T} = PureQPBase.ProductOperator{T}(M)
+"""
+    as_operator(T, M)
+
+What `M` is to the solver. A `LinearMap` that `unwrap` recognizes becomes the base's own
+representation of it; any other `LinearMap` becomes a [`PureQPBase.ProductOperator`](@ref), and
+a matrix is already what it needs to be.
+"""
+function as_operator(::Type{T}, M::LinearMap) where {T}
+    unwrapped = unwrap(T, M, one(T))
+    return isnothing(unwrapped) ? PureQPBase.ProductOperator{T}(M) : unwrapped
+end
 as_operator(::Type{T}, M::AbstractMatrix) where {T} = M
+
+"""
+    unwrap(T, M, λ)
+
+`λ * M` in the base's own representation, or `nothing` when `M` is not one the base can hold.
+Only the factors are handed over; the product they stand for is never formed.
+
+| `M` | becomes |
+|---|---|
+| `LinearMap(B)` for a matrix `B` | `B` itself; `λ * B`, a copy, when `λ ≠ 1` |
+| `kron(LinearMap(B₁), LinearMap(B₂))` | `KroneckerOperator(λ * B₁, B₂)` |
+| `blockdiag(LinearMap(B₁), …)` | `BlockDiagonal([λ * B₁, …])` |
+| `vcat(M₁, …)` | `StackedOperator` of what each `λ * Mᵢ` becomes |
+| `M₁ + M₂ + …` | `SumOperator` of what each `λ * Mᵢ` becomes |
+| `M₁ * M₂` | `ComposedOperator(λ * M₁, M₂)` |
+| `c * M′` | what `M′` becomes, with `λ * c` in place of `λ` |
+
+Every other map, such as a `FunctionMap`, a Kronecker product of more than two maps, a chain of
+more than two composed maps, or a factor that is not itself a wrapped matrix, is `nothing`, and
+stays a [`PureQPBase.ProductOperator`](@ref).
+
+The three compositions never decline: their parts go through [`as_operator`](@ref), so a part the
+table does not cover becomes a `ProductOperator` inside the composition while the others keep their
+own representation.
+"""
+unwrap(::Type{T}, ::LinearMap, λ) where {T} = nothing
+unwrap(::Type{T}, M::LinearMaps.WrappedMap, λ) where {T} = matrix_factor(T, M, λ)
+unwrap(::Type{T}, M::LinearMaps.ScaledMap, λ) where {T} =
+    isreal(M.λ) ? unwrap(T, M.lmap, λ * T(real(M.λ))) : nothing
+
+function unwrap(::Type{T}, M::LinearMaps.KroneckerMap, λ) where {T}
+    length(M.maps) == 2 || return nothing
+    factors = (matrix_factor(T, M.maps[1], λ), matrix_factor(T, M.maps[2], one(T)))
+    any(isnothing, factors) && return nothing
+    A1, A2 = uniform(T, factors)
+    # `KroneckerOperator` types all its fields alike and builds its scratch with
+    # `similar(A2, T, m, n)` at rectangular sizes, which only a strided factor survives. A
+    # `Diagonal` or `Symmetric` pair stays a `ProductOperator` rather than being converted to
+    # dense, which would materialize what the map is held to avoid.
+    (A1 isa StridedMatrix && A2 isa StridedMatrix) || return nothing
+    return PureQPBase.KroneckerOperator(A1, A2)
+end
+
+function unwrap(::Type{T}, M::LinearMaps.BlockDiagonalMap, λ) where {T}
+    blocks = map(m -> matrix_factor(T, m, λ), M.maps)
+    any(isnothing, blocks) && return nothing
+    return PureQPBase.BlockDiagonal(uniform(T, blocks))
+end
+
+# `vcat` of maps is a `BlockMap` laying one block per row of blocks, so `rows` is all ones; any
+# other `rows` describes an `hvcat` whose blocks share rows, where the weighted product does not
+# split and a `StackedOperator` would be wrong.
+function unwrap(::Type{T}, M::LinearMaps.BlockMap, λ) where {T}
+    all(isone, M.rows) || return nothing
+    # Every block takes `λ`, since scaling a stack scales each of its blocks. `as_operator`
+    # rather than `unwrap`: a block it does not recognize becomes a `ProductOperator` instead of
+    # declining the whole stack, so the blocks it does recognize keep their own reduction. This
+    # is what the stack is for — one opaque block does not cost the others their structure.
+    blocks = map(m -> as_operator(T, isone(λ) ? m : λ * m), M.maps)
+    return PureQPBase.StackedOperator(blocks...)
+end
+
+# `λ(B + C) = λB + λC`, so every term takes `λ`.
+function unwrap(::Type{T}, M::LinearMaps.LinearCombination, λ) where {T}
+    terms = map(m -> as_operator(T, isone(λ) ? m : λ * m), M.maps)
+    return PureQPBase.SumOperator(terms...)
+end
+
+# `maps[1]` is the one applied first, so the last is the outer operator. Two maps only: a longer
+# chain has no one inner part to reduce against, and `ComposedOperator` holds exactly two.
+function unwrap(::Type{T}, M::LinearMaps.CompositeMap, λ) where {T}
+    length(M.maps) == 2 || return nothing
+    inner, outer = M.maps
+    # `λ(BE) = (λB)E`, so the scalar goes on the outer part.
+    return PureQPBase.ComposedOperator(
+        as_operator(T, isone(λ) ? outer : λ * outer), as_operator(T, inner)
+    )
+end
+
+"`λ * B` for the matrix a wrapped map holds, or `nothing` when the map holds anything else."
+matrix_factor(::Type{T}, ::LinearMap, λ) where {T} = nothing
+function matrix_factor(::Type{T}, M::LinearMaps.WrappedMap, λ) where {T}
+    B = M.lmap
+    (B isa AbstractMatrix && eltype(B) <: Real) || return nothing
+    return isone(λ) ? conform(T, B) : conform(T, λ * B)
+end
+matrix_factor(::Type{T}, M::LinearMaps.ScaledMap, λ) where {T} =
+    isreal(M.λ) ? matrix_factor(T, M.lmap, λ * T(real(M.λ))) : nothing
+
+conform(::Type{T}, B::AbstractMatrix) where {T} = eltype(B) === T ? B : AbstractMatrix{T}(B)
+
+"""
+    uniform(T, mats) -> Vector
+
+`mats` as a vector of one matrix type, which `KroneckerOperator` and `BlockDiagonal` require.
+Matrices of mixed types are all converted to `Matrix{T}`.
+"""
+function uniform(::Type{T}, mats) where {T}
+    M = typeof(first(mats))
+    all(B -> typeof(B) === M, mats) && return collect(mats)
+    return Matrix{T}[Matrix{T}(B) for B in mats]
+end
 
 end

@@ -1,4 +1,32 @@
-@inline norm_inf(v::AbstractVector{T}) where {T} = maximum(abs, v; init = zero(T))
+"""
+    norm_inf(v) -> T
+
+`max|v[i]|`, and zero for an empty `v`.
+
+A loop over `max`, which is the fastest of the three forms at every size a termination check sees.
+What the shape of the loop decides is whether it vectorizes: `max` does, and a comparison that
+branches to assign does not. Measured on one machine against `maximum(abs, v; init = zero(T))`,
+as a ratio to that reduction:
+
+| `n` | this loop | a branching loop |
+|---|---|---|
+| 64 | 0.38 | 0.40 |
+| 256 | 0.58 | 1.29 |
+| 576 | 0.71 | 2.01 |
+| 5000 | 1.00 | 3.19 |
+| 50000 | 1.00 | 3.28 |
+
+Reproduce with `bench/norm_inf_shapes.jl`. The reduction is also what reaches `Base.MappingRF`,
+whose function parameters widen to `Function` where trim verification against stock Base cannot
+resolve them; this form has nothing to resolve.
+"""
+@inline function norm_inf(v::AbstractVector{T}) where {T}
+    r = zero(T)
+    for i in eachindex(v)
+        r = max(r, abs(v[i]))
+    end
+    return r
+end
 
 "`max|s[i] v[i]|`. See `PureQPBase/src/elementwise.jl` on why there are two schedules."
 @inline function scaled_norm_inf(s::Array{T}, v::Array{T}) where {T}

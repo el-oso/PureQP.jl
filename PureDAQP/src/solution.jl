@@ -19,9 +19,18 @@ function build_solution(ws::ActiveSetWorkspace{T}) where {T}
         # `Px` serves the objective, the dual residual and the gap, and `ws.z` already holds
         # `Ax` from the solve. Asking for either again is the same matrix product repeated.
         obj, prim, dual, gap = report(ws)
-    else
-        obj = ws.status == PRIMAL_INFEASIBLE ? T(Inf) : T(-Inf)
+    elseif ws.status == PRIMAL_INFEASIBLE
+        # The conventional objective of an empty feasible set.
+        obj = T(Inf)
         prim = dual = gap = T(NaN)
+    elseif ws.status == DUAL_INFEASIBLE
+        obj = T(-Inf)
+        prim = dual = gap = T(NaN)
+    else
+        # A run that reached no conclusion: hitting the iteration limit, or a factorization
+        # that stopped being trustworthy. An infinity here would read as a verdict on the
+        # problem -- `-Inf` is what an unbounded one reports -- and no verdict was reached.
+        obj = prim = dual = gap = T(NaN)
     end
     sol = ws.sol
     sol.status = ws.status
@@ -70,7 +79,9 @@ function report(ws::ActiveSetWorkspace{T}) where {T}
     end
 
     r = Px
-    mul!(r, transpose(prob.A), ws.y, one(T), one(T))
+    # `xold` is the proximal centre of the pass in flight, copied from the iterate before
+    # every read, so once a solve has returned it is free for an `Aᵀy` to land in.
+    add_adjoint_product!(r, prob.A, ws.y, ws.red.ws.xold)
     dual = zero(T)
     for j in eachindex(r)
         dual = max(dual, abs(r[j] + prob.q0[j]))
@@ -87,4 +98,20 @@ function report(ws::ActiveSetWorkspace{T}) where {T}
     end
 
     return T(0.5) * quad + linear, prim, dual, quad + linear + support
+end
+
+# `r += Aᵀy`. A strided `A` does it in one `gemv`. Any other `A` forms `Aᵀy` in `scratch` first
+# and adds it: the adjoint product an operator supplies has no accumulating form, and the
+# generic one reads `A` entry by entry.
+function add_adjoint_product!(r, A::StridedMatrix, y, scratch)
+    mul!(r, adjoint(A), y, one(eltype(r)), one(eltype(r)))
+    return r
+end
+
+function add_adjoint_product!(r, A::AbstractMatrix, y, scratch)
+    mul!(scratch, adjoint(A), y)
+    @simd for j in paired(r, scratch)
+        r[j] += scratch[j]
+    end
+    return r
 end

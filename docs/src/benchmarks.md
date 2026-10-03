@@ -157,21 +157,30 @@ are in `PureOSQP/bench/results/solvers.json`.
 
 | n | m | PureOSQP | libosqp 1.0 | PureDAQP | DAQP | PureIPM | Clarabel |
 |---|---|---|---|---|---|---|---|
-| 10 | 20 | 0.099 ms | 0.164 ms | 0.0043 ms | **0.0034 ms** | 0.067 ms | 0.127 ms |
-| 25 | 50 | 0.169 ms | 0.538 ms | **0.032 ms** | 0.035 ms | 0.306 ms | 0.641 ms |
-| 50 | 100 | 0.500 ms | 2.13 ms | **0.145 ms** | 0.207 ms | 1.16 ms | 2.88 ms |
-| 100 | 200 | 4.74 ms | 35.9 ms | **0.886 ms** | 1.88 ms | 5.15 ms | 17.1 ms |
-| 200 | 400 | 8.17 ms | 76.1 ms | **6.42 ms** | 16.1 ms | 29.5 ms | 112 ms |
-| 100 | 50 | 0.299 ms | 1.04 ms | **0.113 ms** | 0.360 ms | 1.09 ms | 6.07 ms |
+| 10 | 20 | 0.089 ms | 0.163 ms | 0.008 ms | **0.003 ms** | 0.066 ms | 0.121 ms |
+| 25 | 50 | 0.163 ms | 0.532 ms | 0.043 ms | **0.035 ms** | 0.296 ms | 0.631 ms |
+| 50 | 100 | 0.487 ms | 2.13 ms | **0.162 ms** | 0.207 ms | 1.14 ms | 2.87 ms |
+| 100 | 200 | 4.51 ms | 34.9 ms | **1.20 ms** | 1.87 ms | 5.06 ms | 17.0 ms |
+| 200 | 400 | 8.18 ms | 76.3 ms | **11.6 ms** | 16.0 ms | 28.9 ms | 108 ms |
+| 100 | 50 | 0.297 ms | 1.03 ms | **0.147 ms** | 0.356 ms | 1.08 ms | 6.02 ms |
 
 libosqp and Clarabel read sparse matrices, so each is timed from sparse copies built
 beforehand. Both DAQP implementations read dense ones, which is what they are built for.
 
 **An active-set method wins this shape.** These are dense problems with few rows active at
 the solution, which is what an active-set method is for: a few expensive steps, then it stops
-at the exact vertex. PureDAQP is the fastest solver here at every size from `n = 25` up, and
-beats the C implementation it follows by 1.11× to 3.19×, the margin widening with size. PureIPM
-beats Clarabel at every size, by 1.9× to 5.6×.
+at the exact vertex. PureDAQP is the fastest solver here from `n = 50` up and beats the C
+implementation it follows by 1.28× to 2.42×. PureIPM beats Clarabel at every size, by 1.9× to
+5.6×.
+
+Below `n = 50` it does not, and the reason is per-iteration work rather than a fixed cost:
+setup is about a fifth of a solve at `n = 25`, and the remainder divides into iterations that
+each cost more than the C implementation's. The next table gives the whole picture.
+
+These are the figures for the default `working_set = :rows`, which trades 1.2×–1.5× for a
+rank test that holds on an ill-conditioned reduction; `:gram` is the faster setting, and
+[choosing a working set for `ActiveSet`](@ref "Choosing a working set for `ActiveSet`") says
+when each is right.
 
 For repeated small solves, [`setup`](@ref) with [`update!`](@ref) and [`solve!`](@ref) pays
 the fixed cost once and warm starts from the previous working set, which is a different
@@ -184,6 +193,98 @@ only one of the three that takes an operator it can only multiply by.
 The six solutions agree to about `1e-4`, which is expected at `eps_abs = eps_rel = 1e-6`.
 The active-set and interior-point solvers stop at exact optimality conditions; ADMM stops when
 its residuals fall below the tolerance.
+
+## Against the C implementation, over both dimensions
+
+The table above runs along `m = 2n`, which is one line through a plane. This one is the
+plane: `libdaqp / PureDAQP`, so above `1.00` PureDAQP is faster. Reproduce with
+`julia --project=bench bench/daqp_headtohead.jl`; samples are in
+`bench/results/puredaqp_vs_libdaqp.json`. Single-threaded BLAS, `working_set = :rows`, both
+solvers given the same iteration limit.
+
+| n \ m/n | 0.5 | 1 | 2 | 4 | 8 |
+|---|---|---|---|---|---|
+| 25 | 0.89× | 0.66× | 0.61× | 0.94× | 0.93× |
+| 50 | 1.40× | 1.10× | 1.09× | 1.14× | 1.04× |
+| 100 | 2.30× | 1.80× | 1.64× | 1.11× | 1.64× |
+| 200 | 3.34× | 2.32× | 1.39× | 1.71× | 2.14× |
+| 400 | **4.05×** | 1.70× | 1.49× | 1.85× | 2.19× |
+
+The two agree to between `4.5e-16` and `3.9e-14` in every cell, and the script checks that
+before recording a time.
+
+**`n` decides this, not the aspect ratio.** Reading down a column is a clean progression;
+reading across a row is not. The crossover sits near `n = 50` whichever shape the problem
+has.
+
+**The best case is tall and thin.** `m / n = 0.5` is the strongest column, because few rows
+means a small working set and the per-iteration cost follows `O(nk)`. A sweep along `m = 2n`
+runs through one of the weaker columns, which is why the table above reports a narrower
+range than this one.
+
+**Below `n = 50`, `:gram` recovers it.** The deficit is the extra arithmetic the `:rows`
+representation spends per iteration, not a fixed cost, so changing the representation removes
+it:
+
+| n | m | `:rows` | `:gram` | libdaqp | `:rows` / C | `:gram` / C |
+|---|---|---|---|---|---|---|
+| 25 | 25 | 0.026 ms | 0.017 ms | 0.017 ms | 0.63× | **0.96×** |
+| 25 | 50 | 0.067 ms | 0.047 ms | 0.041 ms | 0.60× | 0.86× |
+| 25 | 100 | 0.080 ms | 0.059 ms | 0.062 ms | 0.78× | **1.06×** |
+| 50 | 50 | 0.117 ms | 0.089 ms | 0.124 ms | 1.06× | **1.39×** |
+| 100 | 100 | 0.527 ms | 0.437 ms | 0.819 ms | 1.55× | **1.87×** |
+
+## Choosing a working set for the active-set method
+
+[`ActiveSet`](@ref) keeps its working set in one of two forms, chosen with `working_set`.
+`:rows` factors the active rows themselves; `:gram` factors their Gram matrix `Mₐ Mₐᵀ`. These
+are the measurements; [choosing a working set for `ActiveSet`](@ref "Choosing a working set
+for `ActiveSet`") says how to decide. Reproduce with
+`julia --project=bench bench/working_set_choice.jl`; samples are in
+`bench/results/working_set_choice.json`. Single-threaded BLAS.
+
+**Well conditioned: `:gram` is faster.**
+
+| n | m | `:gram` | `:rows` | iterations | `:rows` cost |
+|---|---|---|---|---|---|
+| 25 | 50 | 0.039 ms | 0.057 ms | 47 / 47 | 1.48× |
+| 50 | 100 | 0.189 ms | 0.233 ms | 99 / 99 | 1.23× |
+| 100 | 200 | 1.048 ms | 1.236 ms | 214 / 214 | 1.18× |
+| 200 | 400 | 9.631 ms | 12.028 ms | 817 / 817 | 1.25× |
+
+The iteration counts are equal row for row here, so on these problems the whole difference is
+what one iteration costs. The counts are not guaranteed to match — the pivots differ in their
+last digits, so a row priced at the tolerance can enter one and not the other — but the
+answers agree.
+
+Where that cost sits, measured at `k = 100`, `n = 200` against a whole iteration of 14.8 µs:
+
+| | `:rows` |
+|---|---|
+| `add_row!` | 4.5 µs |
+| `remove_row!`, early in the set | 8.1 µs |
+| `remove_row!`, middle | 4.3 µs |
+| `remove_row!`, last | 0.06 µs |
+
+A deletion is repaired by rotations over the columns after it, so dropping the newest row is
+free and dropping the oldest costs the whole factor.
+
+**Ill conditioned: `:gram` cannot decide rank, and stops.**
+
+| case | `:gram` | `:rows` |
+|---|---|---|
+| `cond(A R⁻¹) ≈ 1e17`, 30 variables, 200 rows | `NUMERICAL_ERROR` | `SOLVED`, violation 1.2e-06 |
+
+The problem is feasible and `:rows` solves it.
+
+**What does not separate them: rows that are exact combinations of others.**
+
+| case | `:gram` | `:rows` |
+|---|---|---|
+| 40 of 130 rows are combinations of the rest | `SOLVED`, violation 1.7e-13 | `SOLVED`, violation 7.4e-14 |
+
+Dependence that is exact is not the same difficulty as dependence blurred by rounding. Both
+forms carry the dependent row and walk the direction it opens.
 
 ## Choosing a representation
 
@@ -873,3 +974,96 @@ julia --project=bench bench/consolidate.jl
 
 which also names any cache no script writes any more, and any benchmark script that has
 never been run.
+
+## What unmaterialized operators cost
+
+Each solver reaches an operator `A` on two paths, one that iterates the linear system and one that
+factors it, and each row below is one problem solved twice: once with `A` held as its factors, once
+with `Matrix(A)` and no backend named, which is what a caller gets for handing over a matrix and
+letting the solver choose. The backends therefore differ between the two columns — that is the
+comparison — so the iteration counts are given for both, and a time ratio that is really an
+iteration-count difference is visible rather than hidden.
+
+Reproduce with `julia --project=bench bench/unmaterialized_paths.jl`; samples are written to
+`bench/results/unmaterialized_paths.json`. The six problems are defined in
+`bench/unmaterialized_problems.jl`, which the [Unmaterialized operators](@ref) examples and one
+test item per algorithm package also read; the test items pin the backend each path reaches and
+compare the problems against the fingerprint recorded in the JSON, so a table built from problems
+that have since changed is a failing test.
+
+| algorithm | path | n | backend | its | matrix backend | its | setup× | solve× | memory× |
+|---|---|---|---|---|---|---|---|---|---|
+| PureOSQP | CG | 576 | `indirect` | 25 | `cholesky` | 25 | 6.2× | 7.7× | 35× |
+| PureOSQP | direct | 576 | `kronecker` | 25 | `cholesky` | 25 | **122×** | **12.3×** | 35× |
+| PureIPM | CG | 144 | `indirect` | 5 | `bunchkaufman` | 5 | 8.2× | **32×** | 21× |
+| PureIPM | direct | 576 | `product_reduced` | 5 | `bunchkaufman` | 5 | 55× | 2.5× | 8.4× |
+| PureDAQP | direct, QR | 256 | `rows` | 107 | `rows` | 107 | 1.3× | 2.8× | 1.3× |
+| PureDAQP | direct, LDLᵀ | 256 | `gram` | 107 | `gram` | 107 | 1.3× | 4.6× | 1.4× |
+
+The iteration counts match across the two columns on every row, so the ratios are the
+representation and nothing else.
+
+Both columns reach the same answer. The objectives agree to machine precision on five rows and to
+`1.8e-08` on the first, where both sides stop at the default tolerance and conjugate gradients
+solve each step only to a tolerance of their own.
+
+The two `PureDAQP` rows are one problem under both of its working-set representations, so their
+absolute times compare directly: 0.351 ms through the rows and a `QR`, 0.161 ms through the Gram
+matrix and an `LDLᵀ`.
+
+**Where the gain comes from differs by path.** On `kronecker` it is algebraic: the reduced matrix is
+diagonalized by the factors' own eigenvectors, so two 24×24 eigenproblems replace a 576×576
+factorization, and setup falls by two orders of magnitude. On `indirect` it is the product: a
+Kronecker product applies in `O(n(m₁+m₂))` against `O(mn)` dense, per conjugate-gradient iteration.
+On `product_reduced` the matrix is assembled rather than avoided, so the saving is bounded by what
+assembling it costs — 2.5× on the solve, against 55× on a setup that no longer forms `A`.
+
+**The dual active-set method gains least on setup and on storage**, both 1.3×, and that is a
+property of the method: its setup factors the reduction rather than reading `A`, and its working
+set is what it stores. The solve gains more, 2.8× through the rows and 4.6× through the Gram
+matrix, because each working-set change reads a row, and a Kronecker operator answers that from its
+factors rather than from a stored matrix.
+
+**Memory is a secondary consequence, not the point.** The 35× at `n = 576` is two 24×24 factors
+standing for a 576×576 matrix and the `n²` reduced matrix a direct backend would hold; the reason
+to keep the operator is that the structure survives into the arithmetic, and the storage follows.
+
+## Reducing through a composition's parts
+
+A composition `B E` held as its parts reduces as `Eᵀ (Bᵀ diag(w) B) E`, so the outer part is
+applied once. Reaching the same matrix through products of the composition applies it twice per
+column, `2n` times, which is what the gain below is made of — and why it tracks how expensive the
+outer part is to apply rather than how large the problem is.
+
+Both columns compute the same matrix and agree with it to `7.5e-16` or better on every row.
+Reproduce with `julia --project=bench bench/composition_reduction.jl`; samples go to
+`bench/results/composition_reduction.json`.
+
+| outer part | m | k | n | parts | products | ratio |
+|---|---|---|---|---|---|---|
+| dense | 400 | 50 | 100 | 0.125 ms | 0.278 ms | **2.22×** |
+| dense | 800 | 50 | 200 | 0.280 ms | 1.133 ms | **4.04×** |
+| dense | 1600 | 80 | 200 | 1.278 ms | 3.572 ms | **2.80×** |
+| dense | 3200 | 100 | 300 | 5.180 ms | 15.800 ms | **3.05×** |
+| Kronecker | 64 | 36 | 20 | 0.005 ms | 0.007 ms | 1.39× |
+| Kronecker | 144 | 64 | 40 | 0.021 ms | 0.026 ms | 1.26× |
+| Kronecker | 256 | 100 | 60 | 0.059 ms | 0.077 ms | 1.31× |
+| Kronecker | 400 | 196 | 100 | 0.283 ms | 0.313 ms | 1.10× |
+
+A dense outer part costs `mk` per application, so removing `2n` of them is most of the work and the
+ratio sits between 2.2× and 4.0×. A Kronecker outer part is already cheap to apply — that is what
+its own factors buy — so there is little left for the composition to save, and the ratio is 1.1× to
+1.4×. Keeping the parts is still right there: it is what lets the Kronecker factors be used at all.
+
+The scaling is applied to the inner part's columns once, `(E D)ᵀ G (E D)`, so the result is two
+matrix products accumulated into the reduced matrix rather than `n` matrix-vector products. That
+choice is the difference between this table and a slower one: going column by column measured
+**0.73×–0.85×** against the products it was meant to beat, which is the shape of a reduction that
+reproduces the arithmetic and loses the rate.
+
+**A sum has no reduction of its own, by measurement.** Expanding `(Σ Bᵢ)ᵀ W (Σ Bᵢ)` gives `K`
+diagonal terms at `2n` products of a term each and `K(K-1)/2` cross pairs at `2n` more, so
+`nK(K+1)` in all; a product of the sum costs `2nK`, because `A eⱼ = Σ Bₜ eⱼ` sums the terms in one
+pass. The expansion measured 1.04× at two terms, 0.69× at three and 0.49× at four, and was removed.
+`SumOperator` keeps the terms for every other reason — the sum is never formed, each term keeps its
+representation — and leaves the reduction to the generic path.

@@ -219,3 +219,138 @@ function singular_direction!(p::AbstractVector{T}, F::GramLDL{T}, i::Integer) wh
     p[i] = one(T)
     return p
 end
+
+"""
+    WorkingSetGram{T}
+
+The working set held as the `LDLᵀ` of `Mₐ Mₐᵀ`, with the active rows gathered beside it.
+
+This is the representation the method was published with, and it is the faster of the two:
+a row entering costs one rank-one extension of the factorization against `k` values, where
+[`WorkingSetQR`](@ref) orthogonalizes the entering row against every row held.
+
+What it cannot do is decide rank. The Gram matrix has the condition number of `Mₐ` squared,
+and the pivot that would decide dependence is formed by cancellation, so below roughly
+`sqrt(k·eps)` it cannot tell a dependent row from an independent one. On a reduction whose
+conditioning reaches that far, the method declares a working set singular that is not, walks
+a direction that means nothing, and reports a feasible problem infeasible. `qrset.jl` says
+what the other representation does instead.
+
+Choose it with `ActiveSet(; working_set = :gram)` when the problems are known to be well
+conditioned and the speed matters.
+"""
+struct WorkingSetGram{T <: Real}
+    F::GramLDL{T}
+    # The active rows, gathered as columns in working-set order. A product against the
+    # working set is then one matrix-vector call rather than one short call per row, and the
+    # entering row's products against the set are one more.
+    Ma::Matrix{T}
+    g::Vector{T}    # scratch: the entering row against the rows held
+end
+
+"An empty working set over `n` variables, sized for the largest it can reach."
+function WorkingSetGram{T}(n::Integer, kmax::Integer) where {T <: Real}
+    k = Int(kmax)
+    return WorkingSetGram{T}(GramLDL{T}(k), zeros(T, Int(n), k), zeros(T, k))
+end
+
+@inline nactive(W::WorkingSetGram) = W.F.k
+
+"""
+The most rows this representation can hold.
+
+The `LDLᵀ` is of a `k × k` Gram matrix, which stays square however dependent its rows are, so
+the set has room for the dependent row the singular step needs. [`WorkingSetQR`](@ref) has
+not, which is what [`full_set_step!`](@ref) exists for.
+"""
+@inline maxrows(W::WorkingSetGram) = size(W.Ma, 2)
+
+"""
+    add_row!(W, m_r) -> Bool
+
+Append `m_r` to the working set. `false` when the row is not finite, which is the one case
+the caller cannot continue from.
+
+A dependent row goes in at `D[k] = 0`, which is the value [`first_dependent`](@ref) reads.
+"""
+function add_row!(W::WorkingSetGram{T}, m_r::AbstractVector{T}) where {T}
+    k = W.F.k
+    beta = dot(m_r, m_r)
+    isfinite(beta) || return false
+    g = view(W.g, 1:k)
+    mul!(g, transpose(view(W.Ma, :, 1:k)), m_r)
+    add_row!(W.F, g, beta)
+    # An explicit loop rather than `copyto!`, which checks whether two views of one matrix
+    # alias and copies the source when it cannot tell -- an allocation site the hot-path
+    # guarantee sees whether or not the branch can be reached.
+    dest = view(W.Ma, :, k + 1)
+    @inbounds @simd for i in eachindex(dest)
+        dest[i] = m_r[i]
+    end
+    return true
+end
+
+"Drop the `i`th row of the working set."
+function remove_row!(W::WorkingSetGram, i::Integer)
+    k = W.F.k
+    remove_row!(W.F, Int(i))
+    # Close the gap in the gathered block. Columns `i+1:k` are one contiguous run, so the
+    # tail moves as a single block rather than column by column.
+    if i < k
+        n = size(W.Ma, 1)
+        copyto!(W.Ma, (i - 1) * n + 1, W.Ma, i * n + 1, (k - i) * n)
+    end
+    return W
+end
+
+"""
+    first_dependent(W, zero_tol) -> Int
+
+The first row whose pivot is at or below `zero_tol`, or 0.
+
+The pivot is `‖Mₐᵀp‖²` for the part of the row orthogonal to those before it, a *square*,
+which is why this test cannot see a dependency the [`WorkingSetQR`](@ref) can.
+"""
+@inline function first_dependent(W::WorkingSetGram{T}, zero_tol::T) where {T}
+    F = W.F
+    @inbounds for i in 1:F.k
+        F.D[i] <= zero_tol && return i
+    end
+    return 0
+end
+
+solve_gram!(W::WorkingSetGram{T}, rhs::AbstractVector{T}) where {T} = solve_gram!(W.F, rhs)
+
+null_direction!(p::AbstractVector{T}, W::WorkingSetGram{T}, i::Integer) where {T} =
+    singular_direction!(p, W.F, Int(i))
+
+"`u ← Mₐᵀ μ`, the primal point the working set's multipliers place."
+function active_product!(
+        u::AbstractVector{T}, W::WorkingSetGram{T}, mu::AbstractVector{T}, ::AbstractVector{T}
+    ) where {T}
+    k = W.F.k
+    mul!(u, view(W.Ma, :, 1:k), view(mu, 1:k))
+    return u
+end
+
+"""
+    conditioning(W) -> T
+
+An estimate of `cond(Mₐ)`, or zero when the working set gives none.
+
+`D` holds the squares of what `R`'s diagonal holds in the other representation, so the ratio
+is taken under a square root to estimate the same quantity. That the estimate has to come
+through a square is the same reason this representation cannot decide rank as finely.
+"""
+function conditioning(W::WorkingSetGram{T}) where {T}
+    D = W.F.D
+    dmin = typemax(T)
+    dmax = zero(T)
+    @inbounds for i in 1:W.F.k
+        d = D[i]
+        d > zero(T) || continue
+        dmin = min(dmin, d)
+        dmax = max(dmax, d)
+    end
+    return (dmax > zero(T) && dmin < typemax(T)) ? sqrt(dmax / dmin) : zero(T)
+end

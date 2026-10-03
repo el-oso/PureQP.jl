@@ -7,14 +7,17 @@
         "banded_tests.jl" => 3,
         "base_tests.jl" => 5,
         "block_tests.jl" => 3,
+        "cholesky_tests.jl" => 7,
+        "composition_tests.jl" => 3,
         "indirect_tests.jl" => 1,
-        "kronecker_tests.jl" => 4,
+        "kronecker_tests.jl" => 6,
         "linsys_tests.jl" => 19,
         "meta_tests.jl" => 1,
-        "operator_tests.jl" => 5,
+        "operator_tests.jl" => 9,
+        "rows_tests.jl" => 2,
         "scaling_tests.jl" => 8,
-        "selection_tests.jl" => 6,
-        "strictmode_tests.jl" => 4,
+        "selection_tests.jl" => 7,
+        "strictmode_tests.jl" => 6,
     )
     dir = @__DIR__
     files = sort(filter(f -> endswith(f, "_tests.jl"), readdir(dir)))

@@ -1,0 +1,12 @@
+{
+  "host": "neuromancer",
+  "julia": "1.13.1",
+  "blas_threads": 1,
+  "tool": "Chairmarks, median reported; workspace rebuilt in the untimed setup phase",
+  "measures": "cold includes setup; warm excludes it",
+  "note": "clock unpinned on this host; indicative, not a gate",
+  "cases": [
+    {"name": "generated, ill-conditioned P", "n": 250, "m": 500, "cold_ms": 40.690666, "cold_iter": 1338, "warm_same_ms": 0.072957, "warm_same_bytes": 0, "steps": [{"q_perturbation": 1e-04, "min_ms": 0.094819, "median_ms": 0.117802, "max_ms": 0.247096, "min_iter": 1, "max_iter": 3, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 1e-03, "min_ms": 0.139693, "median_ms": 0.186882, "max_ms": 0.214595, "min_iter": 2, "max_iter": 5, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 1e-02, "min_ms": 0.348997, "median_ms": 0.649713, "max_ms": 1.068783, "min_iter": 9, "max_iter": 35, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 5e-02, "min_ms": 2.398317, "median_ms": 2.767202, "max_ms": 3.997028, "min_iter": 77, "max_iter": 136, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 1e-01, "min_ms": 4.915628, "median_ms": 6.196686, "max_ms": 7.459249, "min_iter": 161, "max_iter": 252, "beat_cold": 8, "draws": 8, "failed_warm": 0}]},
+    {"name": "CSV problem at /home/el_oso/Documents/claude/problem", "n": 629, "m": 2186, "cold_ms": 128.626241, "cold_iter": 973, "warm_same_ms": 1.070186, "warm_same_bytes": 0, "steps": [{"q_perturbation": 1e-04, "min_ms": 1.112916, "median_ms": 1.277176, "max_ms": 1.670055, "min_iter": 1, "max_iter": 2, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 1e-03, "min_ms": 1.393815, "median_ms": 1.641135, "max_ms": 2.709242, "min_iter": 1, "max_iter": 6, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 1e-02, "min_ms": 5.037628, "median_ms": 7.182823, "max_ms": 17.075069, "min_iter": 47, "max_iter": 146, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 5e-02, "min_ms": 14.630374, "median_ms": 18.609384, "max_ms": 25.908896, "min_iter": 142, "max_iter": 244, "beat_cold": 8, "draws": 8, "failed_warm": 0}, {"q_perturbation": 1e-01, "min_ms": 20.638640, "median_ms": 29.556336, "max_ms": 37.239165, "min_iter": 218, "max_iter": 321, "beat_cold": 7, "draws": 8, "failed_warm": 1}]}
+  ]
+}
