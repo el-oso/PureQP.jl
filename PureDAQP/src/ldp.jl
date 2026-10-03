@@ -99,7 +99,7 @@ function price!(
     ldiv!(M.R, tmp)
     mul!(dest, M.A, tmp)
     scale = M.scale
-    @simd for j in eachindex(dest, scale)
+    @simd for j in paired(dest, scale)
         dest[j] /= scale[j]
     end
     return dest

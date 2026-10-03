@@ -927,8 +927,9 @@ structure, for the structure itself. Each solver reaches such an `A` on two path
 iterates the linear system, one that factors it — and this section sets up both for each of the
 three algorithms. [What unmaterialized operators cost](@ref) has their timings.
 
-The six problems here are the ones the benchmark times, defined in
-`bench/unmaterialized_problems.jl`.
+The six paths here are the ones the benchmark times. It runs them on fixed data from
+`bench/unmaterialized_problems.jl`, so its numbers are reproducible; these examples draw their
+matrices at random instead, to keep each one readable on its own.
 
 ### Conjugate gradients
 

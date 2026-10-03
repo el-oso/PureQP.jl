@@ -110,7 +110,7 @@ end
 
 function add_adjoint_product!(r, A::AbstractMatrix, y, scratch)
     mul!(scratch, adjoint(A), y)
-    @simd for j in eachindex(r, scratch)
+    @simd for j in paired(r, scratch)
         r[j] += scratch[j]
     end
     return r

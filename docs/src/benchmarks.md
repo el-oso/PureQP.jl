@@ -993,39 +993,36 @@ that have since changed is a failing test.
 
 | algorithm | path | n | backend | its | matrix backend | its | setup× | solve× | memory× |
 |---|---|---|---|---|---|---|---|---|---|
-| PureOSQP | CG | 576 | `indirect` | 50 | `cholesky` | 25 | 6.5× | 4.1× | 35× |
-| PureOSQP | direct | 576 | `kronecker` | 75 | `cholesky` | 75 | **125×** | **33×** | 35× |
-| PureIPM | CG | 144 | `indirect` | 6 | `bunchkaufman` | 6 | 8.0× | **31×** | 21× |
-| PureIPM | direct | 576 | `product_reduced` | 8 | `bunchkaufman` | 8 | 56× | 2.5× | 8.4× |
-| PureDAQP | direct, QR | 256 | `rows` | 262 | `rows` | 262 | 1.3× | 1.3× | 1.3× |
-| PureDAQP | direct, LDLᵀ | 256 | `gram` | 262 | `gram` | 262 | 1.3× | 1.4× | 1.4× |
+| PureOSQP | CG | 576 | `indirect` | 25 | `cholesky` | 25 | 6.2× | 7.7× | 35× |
+| PureOSQP | direct | 576 | `kronecker` | 25 | `cholesky` | 25 | **122×** | **12.3×** | 35× |
+| PureIPM | CG | 144 | `indirect` | 5 | `bunchkaufman` | 5 | 8.2× | **32×** | 21× |
+| PureIPM | direct | 576 | `product_reduced` | 5 | `bunchkaufman` | 5 | 55× | 2.5× | 8.4× |
+| PureDAQP | direct, QR | 256 | `rows` | 107 | `rows` | 107 | 1.3× | 2.8× | 1.3× |
+| PureDAQP | direct, LDLᵀ | 256 | `gram` | 107 | `gram` | 107 | 1.3× | 4.6× | 1.4× |
+
+The iteration counts match across the two columns on every row, so the ratios are the
+representation and nothing else.
+
+Both columns reach the same answer. The objectives agree to machine precision on five rows and to
+`1.8e-08` on the first, where both sides stop at the default tolerance and conjugate gradients
+solve each step only to a tolerance of their own.
 
 The two `PureDAQP` rows are one problem under both of its working-set representations, so their
-iteration counts are equal and their absolute times compare directly: 2.87 ms through the rows and
-a `QR`, 2.05 ms through the Gram matrix and an `LDLᵀ`.
-
-Both columns reach the same answer: the objectives agree to `1e-11` or better on every row, and to
-machine precision on four of them.
-
-The iteration counts match across the two columns on five of the six rows, so there the ratios are
-the representation and nothing else. **The exception is the first row**, where the matrix column
-converges in 25 ADMM iterations against the operator column's 50: conjugate gradients solve each
-step only to a tolerance, and an inexact step costs ADMM iterations that an exact one does not. Its
-4.1× is therefore 50 inexact steps against 25 exact ones, not a per-step comparison — the honest
-reading of that row is that the operator is 4.1× faster end to end *while doing twice the steps*.
+absolute times compare directly: 0.351 ms through the rows and a `QR`, 0.161 ms through the Gram
+matrix and an `LDLᵀ`.
 
 **Where the gain comes from differs by path.** On `kronecker` it is algebraic: the reduced matrix is
 diagonalized by the factors' own eigenvectors, so two 24×24 eigenproblems replace a 576×576
 factorization, and setup falls by two orders of magnitude. On `indirect` it is the product: a
 Kronecker product applies in `O(n(m₁+m₂))` against `O(mn)` dense, per conjugate-gradient iteration.
 On `product_reduced` the matrix is assembled rather than avoided, so the saving is bounded by what
-assembling it costs — 2.5× on the solve, against 56× on a setup that no longer forms `A`.
+assembling it costs — 2.5× on the solve, against 55× on a setup that no longer forms `A`.
 
-**The dual active-set method gains least, and that is a property of the method.** Its work is the
-factorization of the working set, not reading `A`, so holding `A` as factors saves its storage and
-its row reads and leaves the dominant cost untouched. The ratio does grow with `n` — measured 1.19×
-at `n = 64`, 1.25× at 256 and 1.36× at 576 — but it grows slowly, and an operator is worth it there
-for the storage rather than for the time.
+**The dual active-set method gains least on setup and on storage**, both 1.3×, and that is a
+property of the method: its setup factors the reduction rather than reading `A`, and its working
+set is what it stores. The solve gains more, 2.8× through the rows and 4.6× through the Gram
+matrix, because each working-set change reads a row, and a Kronecker operator answers that from its
+factors rather than from a stored matrix.
 
 **Memory is a secondary consequence, not the point.** The 35× at `n = 576` is two 24×24 factors
 standing for a 576×576 matrix and the `n²` reduced matrix a direct backend would hold; the reason

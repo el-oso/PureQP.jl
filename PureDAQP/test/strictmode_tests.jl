@@ -4,6 +4,19 @@
     # A disabled tier prints exactly like a clean one.
     StrictMode.assert_enabled()
 
+    # Verify against the Base `juliac --trim=safe` compiles, not against stock Base. The working
+    # set inserts and deletes columns through ModifiableFactorizations, whose multi-argument
+    # `eachindex` and reductions stock inference leaves unresolved — `Base.join` over a tuple of
+    # axes, and a `MappingRF` whose function parameters widen to `Function`. juliac patches both
+    # before trim inference, so a real trimmed build accepts them and only this scan does not.
+    # Checked both ways on 1.12: blocked on stock, clean patched.
+    #
+    # The patched verifier runs in a child process and falls back to stock, with a warning, for a
+    # function that child cannot load. A fallback here would reinstate the stock verdict, so a
+    # failure rather than a pass is what it produces — the signatures below are the ones stock
+    # rejects.
+    StrictModeTest.set_juliac_patches!(true)
+
     Random.seed!(1)
     n, m = 12, 30
     X = randn(n, n)
