@@ -221,7 +221,7 @@ function KroneckerPreconditioner(P::KroneckerOperator, A::KroneckerOperator)
     U2, l2 = kron_precond_factor(P.A2, A.A2)
     T = promote_type(eltype(U1), eltype(U2))
     k1, k2 = size(U1, 1), size(U2, 1)
-    u1, u2 = Matrix{T}(U1), Matrix{T}(U2)
+    u1, u2 = dense_copy(T, U1), dense_copy(T, U2)
     M = KroneckerPreconditioner{T}(
         u1, u2, transpose(u1), transpose(u2), Vector{T}(l1), Vector{T}(l2),
         Matrix{T}(undef, k2, k1), Matrix{T}(undef, k2, k1), Matrix{T}(undef, k2, k1),

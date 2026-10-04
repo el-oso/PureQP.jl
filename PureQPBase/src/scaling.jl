@@ -22,7 +22,7 @@ function check_finite(M, rows::Integer, cols::Integer, name::String)
     for j in 1:cols
         for i in structural_rows(M, j)
             v = M[i, j]
-            isfinite(v) || throw(ArgumentError("$name is not finite at entry ($i, $j)"))
+            isfinite(v) || throw(ArgumentError(lazy"$name is not finite at entry ($i, $j)"))
         end
     end
     return nothing

@@ -38,7 +38,7 @@ struct RowCoupled{T <: Real, M <: AbstractMatrix{T}, V <: AbstractVector{T}} <: 
             )
         )
         all(j -> 1 <= j <= n, cols) || throw(
-            ArgumentError("a column index falls outside 1:$n")
+            ArgumentError(lazy"a column index falls outside 1:$n")
         )
         # Equilibration walks a column at a time, so the rows selecting each column are
         # gathered once here rather than searched for `n` times per sweep.
@@ -79,7 +79,7 @@ on a prefix of the variables appear.
 """
 function RowCoupled(coupling::AbstractMatrix{T}, m0::Integer) where {T <: Real}
     n = size(coupling, 2)
-    m0 <= n || throw(ArgumentError("$m0 unit rows cannot select from $n columns"))
+    m0 <= n || throw(ArgumentError(lazy"$m0 unit rows cannot select from $n columns"))
     return RowCoupled(coupling, ones(T, m0), collect(1:m0))
 end
 

@@ -427,7 +427,7 @@ Throw unless `l ≤ u` elementwise, naming the first index that violates it.
 """
 function check_bounds(l::Vector, u::Vector)
     for i in eachindex(l)
-        l[i] <= u[i] || throw(ArgumentError("l must be elementwise ≤ u, violated at index $i: $(l[i]) > $(u[i])"))
+        l[i] <= u[i] || throw(ArgumentError(lazy"l must be elementwise ≤ u, violated at index $i: $(l[i]) > $(u[i])"))
     end
     return nothing
 end
@@ -455,12 +455,12 @@ is_symmetric(M) = issymmetric(M)
 
 function validate(P, q, A, l, u)
     n = size(P, 1)
-    size(P, 2) == n || throw(ArgumentError("P must be square, got size $(size(P))"))
-    size(A, 2) == n || throw(ArgumentError("size(A, 2) = $(size(A, 2)) must equal size(P, 1) = $n"))
+    size(P, 2) == n || throw(ArgumentError(lazy"P must be square, got size $(size(P))"))
+    size(A, 2) == n || throw(ArgumentError(lazy"size(A, 2) = $(size(A, 2)) must equal size(P, 1) = $n"))
     m = size(A, 1)
-    length(q) == n || throw(ArgumentError("length(q) = $(length(q)) must equal size(P, 1) = $n"))
-    length(l) == m || throw(ArgumentError("length(l) = $(length(l)) must equal size(A, 1) = $m"))
-    length(u) == m || throw(ArgumentError("length(u) = $(length(u)) must equal size(A, 1) = $m"))
+    length(q) == n || throw(ArgumentError(lazy"length(q) = $(length(q)) must equal size(P, 1) = $n"))
+    length(l) == m || throw(ArgumentError(lazy"length(l) = $(length(l)) must equal size(A, 1) = $m"))
+    length(u) == m || throw(ArgumentError(lazy"length(u) = $(length(u)) must equal size(A, 1) = $m"))
     # The factorizations run with `check = false` and would not reliably report a non-finite
     # entry, so a stray NaN or Inf is refused here rather than answered with. This precedes
     # the symmetry test because `NaN != NaN`: a `P` holding one is not equal to its own

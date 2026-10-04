@@ -331,7 +331,7 @@ for (fname, elty) in ((:dsytrf_, :Float64), (:ssytrf_, :Float32))
                 ),
                 'L', dim, K, max(1, stride(K, 2)), ipiv, work, -1, info, 1
             )
-            info[] < 0 && throw(ArgumentError("invalid argument #$(-info[]) to LAPACK sytrf workspace query"))
+            info[] < 0 && throw(ArgumentError(lazy"invalid argument #$(-info[]) to LAPACK sytrf workspace query"))
             return Int(real(work[1]))
         end
 
@@ -394,7 +394,7 @@ for (fname, elty) in ((:dsyev_, :Float64), (:ssyev_, :Float32))
                 ),
                 'V', 'L', dim, A, max(1, stride(A, 2)), w, work, -1, info, 1, 1
             )
-            info[] < 0 && throw(ArgumentError("invalid argument #$(-info[]) to LAPACK syev workspace query"))
+            info[] < 0 && throw(ArgumentError(lazy"invalid argument #$(-info[]) to LAPACK syev workspace query"))
             # `syev` needs at least `3n-1`; the query answers with the blocked size.
             return max(Int(real(work[1])), 3 * dim - 1)
         end
@@ -515,7 +515,7 @@ does, where the dense test measures 93× slower at `n = 2000`.
 """
 function is_convex(::Type{T}, P::AbstractMatrix, sigma) where {T}
     isempty(P) && return true
-    return issuccess(cholesky!(Symmetric(Matrix{T}(P) + sigma * I); check = false))
+    return issuccess(cholesky!(Symmetric(dense_copy(T, P) + sigma * I); check = false))
 end
 
 """
@@ -543,7 +543,7 @@ function copy_upper_triangle!(dest::AbstractMatrix{T}, A::AbstractMatrix, n, upp
 end
 
 # A wrapper names the triangle that is the matrix, so the test needs neither a symmetrization
-# nor a second `n×n` matrix for the shift: `Matrix{T}(P)` reads every entry through the
+# nor a second `n×n` matrix for the shift: `dense_copy(T, P)` reads every entry through the
 # wrapper's branching `getindex`, and `+ sigma*I` allocates another `n×n` to hold the sum.
 function is_convex(::Type{T}, P::SymmetricFactorable, sigma) where {T}
     isempty(P) && return true
