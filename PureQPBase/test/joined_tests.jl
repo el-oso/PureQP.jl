@@ -20,6 +20,17 @@
     @test Matrix(J) == ref
     @test all(J[i, j] == ref[i, j] for i in 1:m, j in 1:n)
 
+    # An entry has the eltype the operator promises, whatever its block holds. A `Fill` of an
+    # integer is the natural way to write a constant block, and a caller given an
+    # `AbstractMatrix{Float64}` must not read an `Int` out of it.
+    mixed = PureQPBase.JoinedOperator(randn(3, 2), Fill(1, 3, 2))
+    stacked_mixed = PureQPBase.StackedOperator(randn(2, 3), Fill(1, 2, 3))
+    @test eltype(mixed) === Float64
+    @test all(mixed[i, j] isa Float64 for i in 1:3, j in 1:4)
+    @test all(stacked_mixed[i, j] isa Float64 for i in 1:4, j in 1:3)
+    @test Base.infer_return_type(getindex, (typeof(mixed), Int, Int)) === Float64
+    @test Base.infer_return_type(getindex, (typeof(stacked_mixed), Int, Int)) === Float64
+
     x, y = randn(n), randn(m)
     @test mul!(zeros(m), J, x) ≈ ref * x
     @test mul!(zeros(n), adjoint(J), y) ≈ ref' * y

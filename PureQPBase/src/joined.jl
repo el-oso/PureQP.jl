@@ -90,10 +90,12 @@ Base.size(A::JoinedOperator) = (A.rows, A.colstart[end] - 1)
     return (nblocks(A), j - A.colstart[nblocks(A)] + 1)
 end
 
-function Base.getindex(A::JoinedOperator, i::Integer, j::Integer)
+# Converted rather than returned as the block holds it: the blocks' eltypes need only promote
+# to `T`, so a block of its own type would otherwise reach a caller who was promised `T`.
+function Base.getindex(A::JoinedOperator{T}, i::Integer, j::Integer) where {T}
     @boundscheck checkbounds(A, i, j)
     b, jb = block_of_column(A, j)
-    return joined_block_entry(A.blocks, b, i, jb)
+    return convert(T, joined_block_entry(A.blocks, b, i, jb))
 end
 
 # The blocks are a tuple, so the index is not a compile-time constant and `A.blocks[b]` would

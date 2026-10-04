@@ -86,10 +86,12 @@ holds_structure(::StackedOperator) = true
     return (nblocks(A), i - A.rowstart[nblocks(A)] + 1)
 end
 
-function Base.getindex(A::StackedOperator, i::Integer, j::Integer)
+# Converted rather than returned as the block holds it: the blocks' eltypes need only promote
+# to `T`, so a block of its own type would otherwise reach a caller who was promised `T`.
+function Base.getindex(A::StackedOperator{T}, i::Integer, j::Integer) where {T}
     @boundscheck checkbounds(A, i, j)
     b, ib = block_of_row(A, i)
-    return stacked_block_entry(A.blocks, b, ib, j)
+    return convert(T, stacked_block_entry(A.blocks, b, ib, j))
 end
 
 # The blocks are a tuple, so the index is not a compile-time constant and `A.blocks[b]` would

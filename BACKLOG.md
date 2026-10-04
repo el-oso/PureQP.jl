@@ -174,3 +174,21 @@ every representation — dense, sparse, structured and unmaterialized alike — 
 `working_set = :rows` solves the same problems to a lower objective than the stored answer, with
 constraint violations below 1e-6. The failure is in the Gram working set's own arithmetic, not
 in the operand's representation.
+
+## structural_rows over a join answers with a union of two range types
+
+`structural_rows(::JoinedOperator, j)` delegates to the block owning column `j`, so it returns
+whatever that block's method returns: `Base.OneTo` from a dense block, `UnitRange` from a
+`Diagonal` one. A join holding both infers as their union, which the contract in
+`PureQPBase/src/scaling.jl` forbids in those words — the iterator's state must be concretely
+typed, because equilibration walks it per column.
+
+Measured, the union splits at a specialized caller: an equilibration sweep over a mixed join
+still infers `Float64` and allocates nothing. So the cost is the contract and the `--trim`
+exposure, not a measured regression, and no StrictMode proof covers `structural_rows` or
+`equilibrate!` over a join, so a regression would go unnoticed.
+
+Normalizing the result to one range type is not available: `structural_rows(::RowCoupled, j)`
+is deliberately not a range, so a join is free to hold a block whose answer is not contiguous.
+Either the contract admits a union it can prove splits, or the join needs a representation of
+row sets that every block can answer in.
