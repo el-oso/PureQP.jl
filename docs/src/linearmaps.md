@@ -382,7 +382,8 @@ reduction. Every form below solves on all three algorithms.
 |---|---|---|---|---|
 | `LinearMap(B)` | the matrix itself | `cholesky` | `bunchkaufman` | `rows` |
 | `c * M` | the matrix, scaled | `cholesky` | `bunchkaufman` | `rows` |
-| `kron(M₁, M₂)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
+| `kron(M₁, …, M_k)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
+| `LinearMaps.UniformScalingMap(c, n)` | a `Diagonal` of a `FillArrays.Fill` | `cholesky` | `bunchkaufman` | `rows` |
 | `cat(M₁, M₂; dims = (1, 2))` | [`PureQPBase.BlockDiagonal`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `hcat(M₁, M₂)` | [`PureQPBase.JoinedOperator`](@ref) | `cholesky` | `bunchkaufman` | `rows` |

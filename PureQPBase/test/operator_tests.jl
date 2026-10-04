@@ -243,8 +243,15 @@ end
     @test opaque(kron(fn, LinearMap(C)))
     @test opaque(kron(LinearMap(B), fn))
     @test opaque(blockdiag(LinearMap(B), fn))
-    # The base's Kronecker operator has two factors.
-    @test opaque(kron(LinearMap(B), LinearMap(C), LinearMap(B)))
+    # The base's Kronecker operator has two factors, so a longer product is split in two and
+    # whichever side is not already a strided factor is formed. A side built from a function is
+    # not formed: recovering its entries means applying the function the map was given to avoid.
+    @test wrap(kron(LinearMap(B), LinearMap(C), LinearMap(B))) isa PureQPBase.KroneckerOperator
+    @test wrap(kron(LinearMap(B), LinearMaps.FillMap(2.0, (3, 4)))) isa PureQPBase.KroneckerOperator
+    @test wrap(LinearMaps.UniformScalingMap(2.0, n)) isa Diagonal
+    @test opaque(kron(fn, LinearMap(C), LinearMap(B)))
+    # Every split of this one would form more entries than `KRON_FORM_ENTRIES` allows.
+    @test opaque(kron(ntuple(_ -> LinearMaps.FillMap(1.0, (100, 100)), 3)...))
     # A sum and a two-map product each have a representation that keeps their parts.
     @test wrap(LinearMap(B) + LinearMap(C)) isa PureQPBase.SumOperator
     @test wrap(LinearMap(B)' * LinearMap(B)) isa PureQPBase.ComposedOperator
@@ -293,7 +300,8 @@ end
         @test mul!(zeros(n), adjoint(stacked), ys) ≈ [B; B]' * ys
         @test_throws "no entries to read" stacked[n + 1, 1]
     end
-    @test opaque(LinearMap(I, n))
+    # A uniform scaling is a `Diagonal` of a `Fill`, whatever the eltype it carries.
+    @test wrap(LinearMap(I, n)) == Diagonal(ones(n))
     # Only real entries have a place in the base.
     @test opaque(LinearMap(complex.(B)))
     @test opaque(LinearMap(B) * im)
