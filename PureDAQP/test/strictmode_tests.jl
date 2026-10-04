@@ -53,6 +53,12 @@
         # The trim roots. `solve!` reads the clock, and AllocCheck counts `time_ns`'s `jl_hrtime`
         # foreign call as an allocation, so it is held to trim alone. `set_targets!` is a second
         # root because it belongs to the setup and rebuild paths, which `solve!` does not reach.
+        #
+        # `setup` itself is not asserted here. It reaches `eigen`, whose error messages stock
+        # Base despecializes into a call `--trim` cannot resolve, and the patched Base that
+        # resolves them ships only with some Julia versions — so the answer here depends on the
+        # host rather than on this package. `bench/juliac_trim_build.jl` compiles `setup` for a
+        # dense and a Kronecker problem with the real `juliac`, which is the oracle that counts.
         @test test_signatures(
             [
                 (solve!, (W,)),

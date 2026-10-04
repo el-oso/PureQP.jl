@@ -174,18 +174,34 @@ function LDPWorkspace(M, iseq::AbstractVector{Bool}, scale::Vector{T}, W) where 
 end
 
 """
-    build_working_set(kind, T, n, kmax)
+    working_set_type(kind) -> Type
 
-The working set `kind` names, over `n` variables and at most `kmax` rows.
+The working-set type the `working_set` option names.
 
 `:rows` factors the active rows themselves and `:gram` their Gram matrix; the two answer the
 same questions, at different cost and different accuracy.
+
+The reduction carries the working set as a type parameter, so the type has to be settled
+before it is built rather than chosen inside the constructor: a constructor that returned one
+of two types would leave the reduction's own type a two-way union, which multiplies against
+the two forms [`PureQPBase.cholesky_factor`](@ref) returns for a Kronecker `P` and widens past
+what inference keeps.
 """
-function build_working_set(kind::Symbol, ::Type{T}, n::Integer, kmax::Integer) where {T <: Real}
-    kind === :rows && return WorkingSetQR{T}(n, kmax)
-    kind === :gram && return WorkingSetGram{T}(n, kmax)
+function working_set_type(kind::Symbol)
+    kind === :rows && return WorkingSetQR
+    kind === :gram && return WorkingSetGram
     return throw(ArgumentError(lazy"working_set must be :rows or :gram, got :$kind"))
 end
+
+"""
+    build_working_set(WS, T, n, kmax)
+
+A working set of type `WS` over `n` variables, holding at most `kmax` rows.
+"""
+build_working_set(::Type{WorkingSetQR}, ::Type{T}, n::Integer, kmax::Integer) where {T <: Real} =
+    WorkingSetQR{T}(n, kmax)
+build_working_set(::Type{WorkingSetGram}, ::Type{T}, n::Integer, kmax::Integer) where {T <: Real} =
+    WorkingSetGram{T}(n, kmax)
 
 
 "Row `r` of the reduced constraint matrix the workspace runs on."
@@ -624,11 +640,31 @@ function reduce_qp(
         bupper::AbstractVector{T}, blower::AbstractVector{T},
         iseq::AbstractVector{Bool}; eps_prox::T = zero(T), working_set::Symbol = :rows
     ) where {T <: Real}
+    ws = working_set_type(working_set)
+    ws === WorkingSetQR && return reduce_qp(P, A, bupper, blower, iseq, WorkingSetQR; eps_prox)
+    return reduce_qp(P, A, bupper, blower, iseq, WorkingSetGram; eps_prox)
+end
+
+"""
+    reduce_qp(P, A, bupper, blower, iseq, WS; eps_prox)
+
+The same reduction with the working set given as a type.
+
+A caller that knows the working set at compile time reaches this form, and the reduction it
+returns is then one of the two types `cholesky_factor` can supply rather than one of four,
+which is the difference between a result inference keeps and one it widens past what `--trim`
+resolves. [`working_set_param`](@ref) is where that type comes from.
+"""
+function reduce_qp(
+        P::AbstractMatrix{T}, A::AbstractMatrix{T},
+        bupper::AbstractVector{T}, blower::AbstractVector{T},
+        iseq::AbstractVector{Bool}, ::Type{WS}; eps_prox::T = zero(T)
+    ) where {T <: Real, WS}
     has_cholesky_factor(P) || refuse_unfactorable_P()
     # One factorization answers the convexity question as well as supplying `R`: factoring
     # twice, once to check and once to use, is most of what setup costs.
     R = cholesky_factor(P, eps_prox)
-    return build_reduction(R, A, bupper, blower, iseq, eps_prox, working_set)
+    return build_reduction(R, A, bupper, blower, iseq, eps_prox, WS)
 end
 
 "Refuse a `P` the reduction has no factor of, naming every form that has one."
@@ -652,8 +688,8 @@ what makes the storage independent of `m·n`.
 function build_reduction(
         R::UpperTriangular{T, <:StridedMatrix}, A::StridedMatrix{T},
         bupper::AbstractVector{T}, blower::AbstractVector{T},
-        iseq::AbstractVector{Bool}, eps_prox::T, kind::Symbol
-    ) where {T}
+        iseq::AbstractVector{Bool}, eps_prox::T, ::Type{WS}
+    ) where {T, WS}
     m, n = size(A)
     Mr = Matrix{T}(undef, m, n)
     copyto!(Mr, A)
@@ -697,13 +733,13 @@ function build_reduction(
         bu[j] = bupper[j] / sj
         bl[j] = blower[j] / sj
     end
-    return pack_reduction(R, DenseRows(Mt), bu, bl, iseq, scale, eps_prox, n, m, kind)
+    return pack_reduction(R, DenseRows(Mt), bu, bl, iseq, scale, eps_prox, n, m, WS)
 end
 
 function build_reduction(
         R, A::AbstractMatrix{T}, bupper::AbstractVector{T}, blower::AbstractVector{T},
-        iseq::AbstractVector{Bool}, eps_prox::T, kind::Symbol
-    ) where {T}
+        iseq::AbstractVector{Bool}, eps_prox::T, ::Type{WS}
+    ) where {T, WS}
     m, n = size(A)
     # Every scale is one until the loop below writes it, so the row read back there is the
     # unnormalized one whose norm is that scale.
@@ -720,15 +756,15 @@ function build_reduction(
         bu[j] = bupper[j] / s
         bl[j] = blower[j] / s
     end
-    return pack_reduction(R, M, bu, bl, iseq, scale, eps_prox, n, m, kind)
+    return pack_reduction(R, M, bu, bl, iseq, scale, eps_prox, n, m, WS)
 end
 
 "Wrap the working state around a factor and a reduced constraint matrix."
 function pack_reduction(
         R, M, bu::Vector{T}, bl::Vector{T}, iseq::AbstractVector{Bool}, scale::Vector{T},
-        eps_prox::T, n::Int, m::Int, kind::Symbol
-    ) where {T}
-    ws = LDPWorkspace(M, iseq, scale, build_working_set(kind, T, n, min(m, n) + 1))
+        eps_prox::T, n::Int, m::Int, ::Type{WS}
+    ) where {T, WS}
+    ws = LDPWorkspace(M, iseq, scale, build_working_set(WS, T, n, min(m, n) + 1))
     Rt = transpose(R)
     return DAQPReduction{T, typeof(R), typeof(Rt), typeof(ws.W), typeof(M)}(
         R, Rt, bu, bl, eps_prox, ws, scale

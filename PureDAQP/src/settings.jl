@@ -67,7 +67,7 @@ dense matrix**, since there is no sparse factor and no row read in `O(nnz)`.
 `linsys` is refused other than `:auto` and `:dense`: the method has no choice of backend to
 make. `scaling` must be `0` — the reduction does its own row normalization.
 """
-struct ActiveSet{T <: Real, EE, EZ, EP} <: QPAlgorithm
+struct ActiveSet{T <: Real, EE, EZ, EP, WS} <: QPAlgorithm
     eps_prox::T
     eta_prox::EE
     max_prox::Int
@@ -77,23 +77,38 @@ struct ActiveSet{T <: Real, EE, EZ, EP} <: QPAlgorithm
     scan::Symbol
 end
 
+"""
+The working set's type, as the fifth type parameter of `a`.
+
+The reduction carries its working set as a type parameter, and the factor `P` reduces through
+is one of two types for a Kronecker `P`, chosen by whether its blocks are positive definite.
+Two choices against two is four, and inference keeps two concrete results but widens four to
+`DAQPReduction{T}` — which `--trim` cannot resolve. Carrying the working set in the algorithm's
+type leaves one choice to make while the reduction is built, so `setup` stays trim-compatible.
+`working_set` reads back the `Symbol` the caller passed.
+"""
+working_set_param(::ActiveSet{T, EE, EZ, EP, WS}) where {T, EE, EZ, EP, WS} = WS
+
 "The real type a parameter given as `x` is stored in; `nothing` leaves it to the default."
 stored_real(x::Real) = typeof(x)
 stored_real(::Nothing) = Float64
 
-function ActiveSet(;
+# `:aggressive` so a literal `working_set` resolves the type parameter at the call site: this
+# returns one of two types, and a caller that names the working set should get one of them
+# rather than their union.
+Base.@constprop :aggressive function ActiveSet(;
         eps_prox = 0.0, eta_prox = nothing, max_prox = 100,
         zero_tol = nothing, primal_tol = nothing, working_set = :rows, scan = :all,
     )
     working_set in (:rows, :gram) ||
-        throw(ArgumentError("working_set must be :rows or :gram, got $(repr(working_set))"))
+        throw(ArgumentError(lazy"working_set must be :rows or :gram, got $(repr(working_set))"))
     scan in (:all, :window) ||
-        throw(ArgumentError("scan must be :all or :window, got $(repr(scan))"))
-    eps_prox >= 0 || throw(ArgumentError("eps_prox must be non-negative, got $eps_prox"))
-    max_prox > 0 || throw(ArgumentError("max_prox must be positive, got $max_prox"))
-    isnothing(eta_prox) || eta_prox > 0 || throw(ArgumentError("eta_prox must be positive, got $eta_prox"))
-    isnothing(zero_tol) || zero_tol > 0 || throw(ArgumentError("zero_tol must be positive, got $zero_tol"))
-    isnothing(primal_tol) || primal_tol > 0 || throw(ArgumentError("primal_tol must be positive, got $primal_tol"))
+        throw(ArgumentError(lazy"scan must be :all or :window, got $(repr(scan))"))
+    eps_prox >= 0 || throw(ArgumentError(lazy"eps_prox must be non-negative, got $eps_prox"))
+    max_prox > 0 || throw(ArgumentError(lazy"max_prox must be positive, got $max_prox"))
+    isnothing(eta_prox) || eta_prox > 0 || throw(ArgumentError(lazy"eta_prox must be positive, got $eta_prox"))
+    isnothing(zero_tol) || zero_tol > 0 || throw(ArgumentError(lazy"zero_tol must be positive, got $zero_tol"))
+    isnothing(primal_tol) || primal_tol > 0 || throw(ArgumentError(lazy"primal_tol must be positive, got $primal_tol"))
     F = float(
         promote_type(
             stored_real(eps_prox), stored_real(eta_prox),
@@ -104,10 +119,13 @@ function ActiveSet(;
     zt = isnothing(zero_tol) ? nothing : F(zero_tol)
     pt = isnothing(primal_tol) ? nothing : F(primal_tol)
     # Each optional tolerance carries its own field type, so any mix of given and defaulted
-    # is representable and every instance stays concretely typed.
-    return ActiveSet{F, typeof(et), typeof(zt), typeof(pt)}(
-        F(eps_prox), et, Int(max_prox), zt, pt, Symbol(working_set), Symbol(scan)
-    )
+    # is representable and every instance stays concretely typed. One branch per working set,
+    # so the type parameter is a constant in each: the branches rejoin as a two-way union
+    # here, which inference keeps, and `setup` is reached with one of them.
+    ws = Symbol(working_set)
+    args = (F(eps_prox), et, Int(max_prox), zt, pt, ws, Symbol(scan))
+    ws === :rows && return ActiveSet{F, typeof(et), typeof(zt), typeof(pt), WorkingSetQR}(args...)
+    return ActiveSet{F, typeof(et), typeof(zt), typeof(pt), WorkingSetGram}(args...)
 end
 
 """
@@ -117,7 +135,9 @@ end
 """
 function ActiveSet{T}(a::ActiveSet) where {T <: Real}
     tol = sqrt(eps(float(T)))
-    return ActiveSet{T, T, T, T}(
+    # The working set is carried over rather than re-derived: it is already a parameter of `a`,
+    # so this stays one concrete type rather than reopening the choice.
+    return ActiveSet{T, T, T, T, working_set_param(a)}(
         T(a.eps_prox),
         isnothing(a.eta_prox) ? T(tol) : T(a.eta_prox),
         a.max_prox,

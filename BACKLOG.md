@@ -3,33 +3,21 @@
 Work that is scoped and measured but not yet done. `docs/src/roadmap.md` is a different
 document: it records what libosqp does that PureOSQP does not.
 
-## `setup` is not trim-compatible for a Kronecker pair
+## Error messages in PureQPBase interpolate eagerly
 
-`PureQPBase.setup` is one of the package's two entry points, and `--trim` rejects it when `P`
-and `A` are `KroneckerOperator`s. The dense and diagonal paths pass.
+`ArgumentError("… $x … $y")` lowers to a `string` call, and from four arguments up stock
+inference declines to specialize it and falls back to `print_to_string(::Symbol, ::Vararg{Any})`
+— an `Any` vararg that `--trim=safe` cannot resolve. `juliac` raises that threshold in
+`juliac-trim-base.jl`, so a real build accepts these and only an in-process verifier against
+stock Base refuses them. `lazy"…"` builds a `LazyString` that formats in `show` instead, which
+is clean under both and renders identically.
 
-The cause is two independent runtime branches whose product exceeds what inference keeps as a
-union. `cholesky_factor(::KroneckerOperator, shift)` returns a `KroneckerCholesky` when
-`shift` is zero and both factors are positive definite, and a `KroneckerSquareRoot`
-otherwise — data-dependent, so not resolvable at compile time. `build_working_set` returns a
-`WorkingSetQR` or a `WorkingSetGram` from the `working_set` option. Two by two is four
-concrete results, and inference keeps two but widens four:
+PureDAQP's messages are already `lazy`. PureQPBase has about thirty that are not, `validate`'s
+among them, which every solver's `setup` reaches. Converting them would let `setup` be asserted
+trim-compatible in the test suites rather than only by `bench/juliac_trim_build.jl`.
 
-| `P` | factor arms | × working set | inferred `reduce_qp` return |
-|---|---|---|---|
-| `Matrix` | 1, `UpperTriangular` | 2 | a 2-way union of concrete types |
-| `KroneckerOperator` | 2 | 2 | `DAQPReduction{Float64}`, four parameters unresolved |
-
-The factor branch has to stay dynamic, so the fix is to resolve the working set at compile
-time instead: branch once in `setup_backend` and thread a type rather than a `Symbol` through
-`reduce_qp`, `build_reduction` and `build_working_set`. That leaves two arms per
-specialization. `setup_backend` already takes the backend name as a `::Val{LS}`, so the shape
-is established. Doing it in `ActiveSet`'s type parameters would work too, but that changes a
-public type and breaks reading `alg.working_set` as a `Symbol`.
-
-Until then the trim roots are `solve!` and `set_targets!`, the latter standing in for the
-setup and rebuild paths that `solve!` does not reach. With `setup` fixed it becomes the second
-root and `set_targets!` drops out, since it is internal to `setup`.
+Worth doing as a deliberate sweep over one package, not as collateral while chasing a verdict:
+the one measurement that settles whether `setup` trims is the real build, which passes.
 
 ## Minimize the test suite against per-item coverage
 

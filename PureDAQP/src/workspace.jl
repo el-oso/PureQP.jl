@@ -13,12 +13,14 @@ keeps the working set too, which is what makes a warm start cheap here.
 """
 mutable struct ActiveSetWorkspace{
         T <: Real, MP <: AbstractMatrix, MA <: AbstractMatrix, V <: AbstractVector{T},
-        RD <: DAQPReduction{T},
+        RD <: DAQPReduction{T}, ALG <: ActiveSet{T, T, T, T},
     } <: QPWorkspace{T}
     # Not `const`: `update!` replaces `P` or `A` by handing back another `QPData` around the
     # same vectors, which is what an immutable problem costs and all it costs.
     prob::QPData{T, MP, MA, V}
-    algorithm::ActiveSet{T, T, T, T}
+    # Concretely typed for the same reason `red` is: `ActiveSet{T, T, T, T}` leaves the
+    # working-set parameter free, and a field of that type is abstract.
+    algorithm::ALG
     options::Options{T}
     # Concretely typed: `DAQPReduction{T}` alone leaves the factorization parameter abstract,
     # which costs a dynamic dispatch on every solve. Rebound by `update!` when `P` or `A`
@@ -196,16 +198,21 @@ function setup_backend(
     # `convert` rather than `Vector{T}`: that copies even when the argument already has the
     # type asked for, and the reduction only reads this data.
     iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
+    # The working set comes from the algorithm's type, not its `working_set` field: that leaves
+    # one type for the reduction to settle rather than two, which is what keeps this
+    # construction statically resolvable for a `P` whose factor has two forms.
     red = reduce_qp(
         factored_operand(T, P), row_operand(T, A),
         convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
-        iseq; eps_prox = resolved.eps_prox, working_set = resolved.working_set
+        iseq, working_set_param(resolved); eps_prox = resolved.eps_prox
     )
 
     # The reported point is these arrays, not copies of them, so the solution the workspace
     # hands back is built here and refilled rather than rebuilt.
     x, y, z = zeros(T, n), zeros(T, m), zeros(T, m)
-    ws = ActiveSetWorkspace{T, typeof(prob.P), typeof(prob.A), typeof(prob.q0), typeof(red)}(
+    ws = ActiveSetWorkspace{
+        T, typeof(prob.P), typeof(prob.A), typeof(prob.q0), typeof(red), typeof(resolved),
+    }(
         prob, resolved, options, red,
         x, y, z,
         UNSOLVED, false, POLISH_NOT_PERFORMED, 0, false,
@@ -357,12 +364,12 @@ end
 @strict_function signatures = [(DenseWorkspace{Float64},), (KroneckerWorkspace{Float64},)] function warm_start!(ws::ActiveSetWorkspace{T}; x = nothing, y = nothing) where {T}
     prob = ws.prob
     if !isnothing(x)
-        length(x) == prob.n || throw(ArgumentError("length(x) must be $(prob.n)"))
+        length(x) == prob.n || throw(ArgumentError(lazy"length(x) must be $(prob.n)"))
         all(isfinite, x) || throw(ArgumentError("x must be finite, found NaN or Inf"))
         ws.x .= T.(x)
     end
     if !isnothing(y)
-        length(y) == prob.m || throw(ArgumentError("length(y) must be $(prob.m)"))
+        length(y) == prob.m || throw(ArgumentError(lazy"length(y) must be $(prob.m)"))
         all(isfinite, y) || throw(ArgumentError("y must be finite, found NaN or Inf"))
         ws.y .= T.(y)
     end
@@ -403,8 +410,7 @@ function update!(
         red = reduce_qp(
             factored_operand(T, data.P), row_operand(T, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
-            iseq; eps_prox = ws.algorithm.eps_prox,
-            working_set = ws.algorithm.working_set
+            iseq, working_set_param(ws.algorithm); eps_prox = ws.algorithm.eps_prox
         )
         # `validate_update!` has already required `P` and `A` to keep their types, which fixes
         # the reduction's type, so this assignment cannot change what the workspace holds.
