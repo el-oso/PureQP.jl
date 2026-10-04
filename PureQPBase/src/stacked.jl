@@ -102,8 +102,11 @@ end
 # for a runtime `i` infers as the union of the block types, which boxes and costs a dynamic
 # dispatch, where this recursion is unrolled at compile time and each arm sees one concrete block.
 # Measured on a stack whose blocks differ: 304 bytes per product through the index, 0 through this.
-LinearAlgebra.mul!(y::AbstractVector, A::StackedOperator, x::AbstractVector) =
-    stack_mul!(y, A.blocks, x, 1)
+function LinearAlgebra.mul!(y::AbstractVector, A::StackedOperator, x::AbstractVector)
+    Base.require_one_based_indexing(y, x)
+    check_product_sizes(y, A, x)
+    return stack_mul!(y, A.blocks, x, 1)
+end
 
 @inline stack_mul!(y, ::Tuple{}, x, off) = y
 @inline function stack_mul!(y, blocks::Tuple, x, off)
@@ -121,6 +124,8 @@ function LinearAlgebra.mul!(
         x::AbstractVector
     )
     A = parent(At)
+    Base.require_one_based_indexing(y, x)
+    check_product_sizes(x, A, y)
     A1 = first(A.blocks)
     rows = size(A1, 1)
     mul!(y, adjoint(A1), view(x, 1:rows))

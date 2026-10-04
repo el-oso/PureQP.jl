@@ -874,6 +874,31 @@ there is no such backend and [`indirect_backend`](@ref) says so.
 indirect_rung(P, A, prob, sel::ADMMSelection) =
     (indirect_backend(prob.q0, prob.n, prob.m, nothing), false)
 
+"""
+    structured_rung(P, A, prob, sel) -> (LinearSystem, Bool) or nothing
+
+Serves a pair whose entries can be read but whose representation the dense terminal declines,
+with [`ProductReduced`](@ref): the reduced matrix assembled column by column from products.
+
+[`dense_rung`](@ref) refuses an operand that reports [`holds_structure`](@ref), because forming
+the reduced matrix from it would flatten a representation that answers for itself. Such a pair
+has entries and a factorization is available to it, so the rung below — conjugate gradients —
+is not the only answer, and it is a poor one for an ill-conditioned problem.
+
+It holds the reduced matrix, `n²`, and spends `n` products with `P` and `A` on every
+factorization. A caller for whom that is the wrong trade names `linsys = :indirect`.
+
+Only the operator-splitting method takes it. The interior-point method reaches `ProductReduced`
+from its own `indirect_rung`, so there is nothing for this rung to add there.
+"""
+structured_rung(P, A, prob, sel::SelectionFor) = nothing
+
+function structured_rung(P, A, prob, sel::ADMMSelection)
+    (holds_structure(P) || holds_structure(A)) || return nothing
+    (is_materializable(P) && is_materializable(A)) || return nothing
+    return (ProductReduced(prob.q0, prob.n, prob.m, A), false)
+end
+
 choose_backend(P::Diagonal, A::Diagonal, prob, wt, sel::SelectionFor) =
     (DiagonalReduced(prob.q0, prob.n), false)
 
@@ -917,11 +942,41 @@ sparse_refusal(::IPMSelection) =
     "loaded, and a system that actually factors at this regularization."
 
 """
+    check_formable(::Val{LS}, P, A)
+
+Throw unless every entry of `P` and `A` can be read, which `:dense` and `:kkt` both need.
+
+They assemble a matrix entry by entry, so a pair supplying products only cannot serve them. The
+refusal belongs here, where the backend that was asked for is still known: left to `factorize!`,
+the first unreadable entry raises the refusal an operator owes equilibration, which names
+remedies that do not apply to a factorization.
+"""
+function check_formable(::Val{LS}, P, A) where {LS}
+    (is_materializable(P) && is_materializable(A)) && return nothing
+    throw(
+        ArgumentError(
+            LS === :dense ?
+                "linsys = :dense forms the reduced matrix from the entries of P and A, and " *
+                "this pair supplies products only. Choose linsys = :indirect, which needs no " *
+                "entries, or pass a representation whose entries can be read." :
+                "linsys = :kkt forms the KKT matrix from the entries of P and A, and this " *
+                "pair supplies products only. Choose linsys = :indirect, which needs no " *
+                "entries, or pass a representation whose entries can be read."
+        )
+    )
+end
+
+"""
     named_backend(::Val{LS}, P, A, prob, wt, sel, preconditioner) -> (LinearSystem, Bool) or nothing
 
 The backend `linsys = LS` names, and whether it already carries a factorization of the
 current data. `nothing` for `LS === :auto`, the one name that descends
 [`select_backend`](@ref)'s ladder instead.
+
+!!! note
+    `:dense` and `:kkt` need every entry of `P` and `A`, which an operator supplying products
+    only does not have. [`check_formable`](@ref) refuses such a pair here, where the refusal can
+    name the backend that cannot serve it.
 
 `LS` is a type parameter rather than a value so that naming a backend leaves exactly one
 branch live and the rest are gone by specialization — the same reason [`setup`](@ref)
@@ -943,8 +998,10 @@ is built, so the message can name the reason.
 function named_backend(::Val{LS}, P, A, prob, wt, sel::SelectionFor, preconditioner) where {LS}
     q0, n, m = prob.q0, prob.n, prob.m
     if LS === :kkt
+        check_formable(Val(LS), P, A)
         return (FullKKT(q0, n, m), false)
     elseif LS === :dense
+        check_formable(Val(LS), P, A)
         # Past `choose_backend` entirely. Its rule for a sparse `A` reads the pattern and not
         # the numbers, and this is the way to overrule one that misjudges a problem.
         return (ReducedCholesky(q0, n, m), false)

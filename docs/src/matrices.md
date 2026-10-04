@@ -760,7 +760,7 @@ that enters the working set.
 | `P₁ + P₂` | `ProductOperator` | refused: a factor of the sum is not a function of the two summands' factors. For `P + εI`, pass `ε` as `eps_prox` |
 | `B * C` in general | `ProductOperator` | refused |
 | a map built from functions | `ProductOperator` | refused by name |
-| `vcat` | `StackedOperator` | not a square matrix, so not a `P` |
+| `vcat` | `StackedOperator` | refused by name, square or not: the reduction has no factor for a stack |
 | `hcat` of `vcat`s, square | `JoinedOperator` | read into a dense matrix and factored, when every block has entries |
 
 A refused `P` is refused by `setup`, and the message names the types that would work. None of

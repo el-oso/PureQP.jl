@@ -105,6 +105,10 @@ end
 # `Ax = Σᵢ Aᵢ x[colrange(A, i)]`. The first block writes the sum and the rest add to it through
 # `work`, so `y` needs no zeroing.
 function LinearAlgebra.mul!(y::AbstractVector, A::JoinedOperator, x::AbstractVector)
+    # The blocks are reached by `view(x, off:(off + cols - 1))`, which a longer `x` would satisfy
+    # while answering for a prefix of it, so the lengths are checked rather than left to `view`.
+    Base.require_one_based_indexing(y, x)
+    check_product_sizes(y, A, x)
     A1 = first(A.blocks)
     cols = size(A1, 2)
     mul!(y, A1, view(x, 1:cols))
@@ -131,7 +135,10 @@ function LinearAlgebra.mul!(
         y::AbstractVector, At::Union{Adjoint{<:Any, <:JoinedOperator}, Transpose{<:Any, <:JoinedOperator}},
         x::AbstractVector
     )
-    return join_mul_adjoint!(y, parent(At).blocks, x, 1)
+    A = parent(At)
+    Base.require_one_based_indexing(y, x)
+    check_product_sizes(x, A, y)
+    return join_mul_adjoint!(y, A.blocks, x, 1)
 end
 
 @inline join_mul_adjoint!(y, ::Tuple{}, x, off) = y
@@ -175,6 +182,11 @@ end
 
 # Readable exactly when every block is.
 is_materializable(A::JoinedOperator) = all(is_materializable, A.blocks)
+
+# A join partitions the columns, so a dense backend reads it as it reads a matrix and the blocks
+# supply the entries. Stated here rather than left to the default: every operator declares this,
+# and a join's answer must not move with the default's.
+holds_structure(::JoinedOperator) = false
 
 # Each block checks its own entries in its own way, so a Kronecker block checks its factors.
 function check_finite(M::JoinedOperator, rows::Integer, cols::Integer, name::String)

@@ -450,8 +450,13 @@ representation whose entries are structurally zero outside a known set overrides
 compares only that set — `PureQPBase/ext/PureQPBaseBandedMatricesExt.jl` does, where the generic scan is
 the largest single term in a banded `setup`. It is an override point for the same reason
 [`is_convex`](@ref) is: the cost is a property of the representation, not of the problem.
+
+An `M` whose entries cannot all be read has no entrywise test, so it answers `true` here and
+[`check_symmetric_products`](@ref) decides it: that compares `dot(v, Mw)` against `dot(Mv, w)`,
+which needs only products. An operator that declares the answer, such as a
+[`ProductOperator`](@ref), overrides this with the declaration.
 """
-is_symmetric(M) = issymmetric(M)
+is_symmetric(M) = is_materializable(M) ? issymmetric(M) : true
 
 function validate(P, q, A, l, u)
     n = size(P, 1)
