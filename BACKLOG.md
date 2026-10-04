@@ -150,13 +150,6 @@ both must be answered first:
 This is also where a block-pair `add_reduced_term!` for a join would begin to pay
 (`docs/design/horizontal-operators.md`).
 
-## A square vcat is refused as a P while an hcat is accepted
-
-`PureDAQP` reads a `JoinedOperator` `P` into a dense matrix and factors it, and refuses a
-`StackedOperator` `P` by name even when it is square and every block has entries. Nothing about
-the reduction needs the distinction: both are materializable and `factorable_operand` densifies
-either.
-
 ## Operator splitting does not reach the tolerance at cond(P) = 1e12
 
 On 72 serialized problems from an external solver, `OperatorSplitting` reaches
@@ -192,3 +185,51 @@ Normalizing the result to one range type is not available: `structural_rows(::Ro
 is deliberately not a range, so a join is free to hold a block whose answer is not contiguous.
 Either the contract admits a union it can prove splits, or the join needs a representation of
 row sets that every block can answer in.
+
+## What a products-only operand can reach, and what a Symmetric P would save
+
+An operand supplying only products — a `LinearMaps.FunctionMap`, or any map the extension's
+`unwrap` does not recognize, which arrives as a `ProductOperator` — reaches exactly one backend.
+Measured on a problem with `n = 629`, `m = 2396`:
+
+| path | products-only operand | why |
+|---|---|---|
+| `OperatorSplitting`, `linsys = :indirect` | **served**, and setup is 10.6 ms against 21 ms for the same operand densified | conjugate gradients need no entries, and nothing is copied or scanned |
+| `OperatorSplitting`/`InteriorPoint`, `:dense` or `:kkt` | refused by `check_formable` | both assemble their matrix from the entries of `P` and `A` |
+| `InteriorPoint`, `:indirect` | refused | needs a caller-supplied preconditioner, independent of the operand |
+| `ActiveSet`, either working set | refused by `reduce_qp` | the reduction forms `A R⁻¹` for the Cholesky factor of `P`, which products do not give |
+
+So staying unmaterialized is the cheaper setup wherever it is admissible, and every refusal names
+the condition that failed.
+
+Separately, `unwrap` hands back an `Adjoint{T, Matrix{T}}` for a wrapped adjoint map, where a
+`Symmetric` would serve a `P` better. `validate` requires `P` symmetric, and `is_symmetric`
+measures 1.4 ns on a `Symmetric` against 86.7 µs on that `Adjoint` and 113.2 µs on a plain
+`Matrix` — a type-level answer rather than an `n²` scan. `factorable_operand` then also skips a
+transposing copy of `n²`. Together they are 2–4% of setup and nothing of the solve (2.8 ms of a
+143 ms dual active-set total), so this is a small win, and it belongs in `unwrap` rather than in
+advice to wrap `P` at the call site.
+
+One observation to keep in mind if an operator-splitting trajectory ever has to be reproduced:
+on this problem `linsys = :dense` took 675 iterations with a `Matrix` `P` and 700 with the
+`Adjoint` and `Symmetric` forms of the same matrix, so the wrapper type can move the iterate path
+at the last bit.
+
+## :dense converts its operand and :sparse refuses one
+
+`linsys = :dense` and `:kkt` assemble their matrix from any pair whose entries can be read, so
+they accept a dense matrix, a structured operator or an unwrapped composition alike.
+`linsys = :sparse` instead refuses anything that is not already a `SparseMatrixCSC`. Two named
+backends, two contracts for the same kind of instruction, and the difference is stated only as a
+requirement in `docs/src/selection.md` rather than as a principle.
+
+Refusing is the right default — a sparse factorization of a mostly-dense matrix stores an index
+for nearly every entry and gives up BLAS-3. Measured on a problem with `n = 629`, `m = 2396`:
+`A` is 51.8% dense, `P` 70.5%, and the reduced matrix `P + AᵀA` 74.4%, where
+`InteriorPoint` with `linsys = :sparse` takes 5.57 s against 0.797 s for `:dense`, for the same
+answer.
+
+What has no answer today is the operand that is genuinely sparse without being a
+`SparseMatrixCSC` — a composition over `Fill(0, …)` blocks, say. `:sparse` cannot serve it and
+`:dense` forms the zeros. Either `:sparse` learns to sparsify a readable operand, or the
+asymmetry becomes a documented rule.

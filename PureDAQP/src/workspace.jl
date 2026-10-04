@@ -145,6 +145,15 @@ not kept; see [`row_operand`](@ref).
 """
 factored_operand(::Type{T}, P::ReadDirectly{T}) where {T} = P
 
+# A stack is read directly as an `A`, where the reduction wants its rows. As a `P` it has no
+# Cholesky factor of its own, and its blocks are slices of the rows, which a dense `n×n` factor
+# does not lose — the same reason a join is densified. So a square stack is factored rather than
+# refused for want of a factor.
+function factored_operand(::Type{T}, P::StackedOperator{T}) where {T}
+    is_materializable(P) || refuse_unreadable_operand(T)
+    return factorable_operand(T, P)
+end
+
 function factored_operand(::Type{T}, P::AbstractMatrix) where {T}
     is_materializable(P) || refuse_unreadable_operand(T)
     return factorable_operand(T, P)
@@ -171,11 +180,15 @@ function row_operand(::Type{T}, A::AbstractMatrix) where {T}
     return rows_operand(T, A)
 end
 
+# Two conditions reach this, and the message names the one state both leave the operand in
+# rather than guessing which: an operand with no readable entries, where the reduction needs
+# either entries or a products-only operator of its own element type.
 @noinline refuse_unreadable_operand(::Type{T}) where {T} = throw(
     ArgumentError(
-        "an operator that supplies products only must have the solve's own element type, " *
-            "and this one does not, so it can be neither read nor converted. Build it as a " *
-            "ProductOperator{$T}, or pass P, q, A, l and u in one element type."
+        "the reduction cannot read this operand. It takes entries, or an operator that " *
+            "supplies products only when that operator carries the solve's own element type: " *
+            "build it as a ProductOperator{$T}, pass P, q, A, l and u in one element type, or " *
+            "make every block of a composition readable."
     )
 )
 

@@ -239,6 +239,7 @@ PureQPBase.ADMMSelection
 PureQPBase.IPMSelection
 PureQPBase.refuse_selection
 PureQPBase.named_backend
+PureQPBase.check_formable
 PureQPBase.sparse_refusal
 PureQPBase.select_backend
 PureQPBase.kkt_rung

@@ -412,6 +412,27 @@ Equilibration is the one real restriction, and it is orthogonal to the three col
 row norms are entries, so an operator that supplies only products needs `scaling = 0`, `probe =
 true`, or a [`PureQPBase.structural_rows`](@ref) method.
 
+## What a map supplying only products reaches
+
+A map the table above does not cover arrives as a [`PureQPBase.ProductOperator`](@ref): it
+answers products and rows, and has no entries. One backend serves it, and the rest say why not.
+
+| asked for | answer |
+|---|---|
+| `OperatorSplitting`, `linsys = :indirect` or `:auto` | served — conjugate gradients need no entries |
+| `OperatorSplitting` or `InteriorPoint`, `linsys = :dense` or `:kkt` | refused: both assemble their matrix from the entries of `P` and `A` |
+| `InteriorPoint`, `linsys = :indirect` | refused: it uses conjugate gradients only with a `preconditioner` of your own |
+| `ActiveSet` | refused: the reduction forms `A R⁻¹` for the Cholesky factor of `P`, which products do not give |
+
+Where it is served, leaving the operator alone is also the cheaper setup: nothing is copied and
+no entry is read. On a pair with `n = 629` and `m = 2396`, `setup` for the matrix-free backend
+takes 10.6 ms from the map against 21 ms from a dense copy of it.
+
+A `P` you can materialize is better passed as `Symmetric`, which is the form `setup` wants
+anyway: [`PureQPBase.is_symmetric`](@ref) then answers from the type instead of scanning all `n²`
+entries, and the reduction skips a transposing copy. It is worth a few percent of `setup` and
+nothing of the solve.
+
 ## Two packages supply operators
 
 The examples above use [LinearMaps.jl](https://github.com/JuliaLinearAlgebra/LinearMaps.jl).

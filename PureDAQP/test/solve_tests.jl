@@ -983,4 +983,21 @@ end
     @test solp.status == SOLVED
     @test solp.x ≈ PureDAQP.solve(Matrix(Pj), q, Matrix(A), l, u, ActiveSet()).x atol = 1.0e-8
     @test_throws "must keep the representation" PureQPBase.update!(wsp; P = Matrix(Pj))
+
+    # A square stack is densified for the reduction on the same grounds as a join: its blocks
+    # are slices of the rows, which a dense factor does not lose.
+    Ps = PureQPBase.StackedOperator(Matrix(Pj)[1:5, :], Matrix(Pj)[6:10, :])
+    @test PureQPBase.is_symmetric(Ps)
+    wss = PureDAQP.setup(Ps, q, A, l, u, ActiveSet())
+    @test wss.red.R isa UpperTriangular
+    sols = PureQPBase.solve!(wss)
+    @test sols.status == SOLVED
+    @test sols.x ≈ PureDAQP.solve(Matrix(Ps), q, Matrix(A), l, u, ActiveSet()).x atol = 1.0e-8
+
+    # A block with no entries leaves the stack unreadable, and the refusal says so rather than
+    # naming an element type that is not what failed.
+    Pop = PureQPBase.StackedOperator(
+        Matrix(Pj)[1:5, :], PureQPBase.ProductOperator{Float64}(Matrix(Pj)[6:10, :])
+    )
+    @test_throws "cannot read this operand" PureDAQP.setup(Pop, q, A, l, u, ActiveSet())
 end
