@@ -611,7 +611,12 @@ function build_workspace(
     ) where {T <: Real, LS}
     check_option_names(kwargs, alg)
     options = Options{T}(; algorithm_defaults(alg, T)..., linsys = LS, kwargs...)
+    # A named kind that reads one representation converts the operands here, so the algorithm
+    # builds its problem from what its backend will factor. Converted before `setup_backend`
+    # rather than inside it: that function holds a local closure over its own arguments, and
+    # rebinding one there boxes it and costs the entry points their `--trim` compatibility.
     return setup_backend(
-        alg, Val(LS), T, P, q, A, l, u, options, preconditioner, accelerator
+        alg, Val(LS), T, named_operand(Val(LS), T, P), q,
+        named_operand(Val(LS), T, A), l, u, options, preconditioner, accelerator
     )
 end

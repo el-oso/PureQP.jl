@@ -64,7 +64,9 @@ end
     sparse_names = (SPARSE_FACTOR_BACKENDS..., SPARSE_KKT_BACKENDS..., :sparse_formed)
     name(P, q, A, l, u; kwargs...) = PureQPBase.backend_name(last(backend_for(P, q, A, l, u; kwargs...)))
 
-    # `:sparse` serves a CSC A through a sparse backend, and declines a dense pair.
+    # `:sparse` serves a CSC A through a sparse backend. `backend_for` builds the problem from
+    # the operand it is given, so a dense pair reaches the refusal here; `setup` converts it
+    # first, which `PureOSQP/test/linsys_tests.jl` covers.
     P, q, A, l, u = random_qp(40, 60; seed = 74)
     @test name(P, q, sparse(A), l, u; linsys = :sparse) in sparse_names
     @test_throws "linsys = :sparse" backend_for(P, q, A, l, u; linsys = :sparse)

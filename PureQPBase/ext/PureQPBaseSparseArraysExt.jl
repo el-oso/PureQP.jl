@@ -1657,4 +1657,28 @@ LinearAlgebra.mul!(
 PureQPBase.is_materializable(::SparseRows) = true
 PureQPBase.structural_rows(A::SparseRows, j::Integer) = PureQPBase.structural_rows(A.A, j)
 
+# `linsys = :sparse` factors a `SparseMatrixCSC`, so an operand it can read becomes one. The
+# conversion reads every entry, and for a mostly-dense operand the factorization that follows
+# stores an index per entry and gives up the level-3 kernels — the cost a caller who named the
+# kind has accepted. An operand with no readable entries is left alone, and the sparse rungs
+# refuse it naming the representation they need.
+#
+# One method per argument type rather than a branch returning either: the operand this returns
+# is what the problem holds, so a method answering with a union of the two would leave `P` and
+# `A` inferred as that union and every call reading them type-unstable, which `--trim` rejects.
+PureQPBase.named_operand(::Val{:sparse}, ::Type{T}, M::SparseMatrixCSC{T}) where {T} = M
+
+function PureQPBase.named_operand(::Val{:sparse}, ::Type{T}, M::AbstractMatrix) where {T}
+    PureQPBase.is_materializable(M) || refuse_sparse_operand()
+    return sparse(PureQPBase.dense_copy(T, M))::SparseMatrixCSC{T, Int}
+end
+
+@noinline refuse_sparse_operand() = throw(
+    ArgumentError(
+        "linsys = :sparse factors a SparseMatrixCSC, and this operand supplies products only, " *
+            "so there are no entries to build one from. Choose linsys = :indirect, which needs " *
+            "no entries, or pass a representation whose entries can be read."
+    )
+)
+
 end # module PureQPBaseSparseArraysExt

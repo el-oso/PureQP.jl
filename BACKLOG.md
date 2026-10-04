@@ -215,21 +215,3 @@ on this problem `linsys = :dense` took 675 iterations with a `Matrix` `P` and 70
 `Adjoint` and `Symmetric` forms of the same matrix, so the wrapper type can move the iterate path
 at the last bit.
 
-## :dense converts its operand and :sparse refuses one
-
-`linsys = :dense` and `:kkt` assemble their matrix from any pair whose entries can be read, so
-they accept a dense matrix, a structured operator or an unwrapped composition alike.
-`linsys = :sparse` instead refuses anything that is not already a `SparseMatrixCSC`. Two named
-backends, two contracts for the same kind of instruction, and the difference is stated only as a
-requirement in `docs/src/selection.md` rather than as a principle.
-
-Refusing is the right default — a sparse factorization of a mostly-dense matrix stores an index
-for nearly every entry and gives up BLAS-3. Measured on a problem with `n = 629`, `m = 2396`:
-`A` is 51.8% dense, `P` 70.5%, and the reduced matrix `P + AᵀA` 74.4%, where
-`InteriorPoint` with `linsys = :sparse` takes 5.57 s against 0.797 s for `:dense`, for the same
-answer.
-
-What has no answer today is the operand that is genuinely sparse without being a
-`SparseMatrixCSC` — a composition over `Fill(0, …)` blocks, say. `:sparse` cannot serve it and
-`:dense` forms the zeros. Either `:sparse` learns to sparsify a readable operand, or the
-asymmetry becomes a documented rule.

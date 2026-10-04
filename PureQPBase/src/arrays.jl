@@ -12,6 +12,22 @@ dense_copy(::Type{T}, A::AbstractMatrix) where {T} =
     copyto!(Matrix{T}(undef, size(A, 1), size(A, 2)), A)
 
 """
+    named_operand(::Val{LS}, T, M) -> M, or M in the representation `LS` needs
+
+The operand a named `linsys` is given, converted where that kind reads one representation only.
+
+`:dense` and `:kkt` assemble their matrix from whatever entries they are handed, so they take the
+operand as it is. `:sparse` factors a `SparseMatrixCSC`, so it converts one: a named kind is an
+instruction, and a caller who names it has accepted the cost of meeting it. Forming the sparse
+copy reads every entry of `M`, which is the overhead that buys the factorization.
+
+The generic method returns `M`, so every other kind — and `:sparse` itself without SparseArrays
+loaded, where there is no sparse backend to serve — leaves the operand alone and the rungs refuse
+as they would have.
+"""
+named_operand(::Val, ::Type{T}, M) where {T} = M
+
+"""
     check_product_sizes(y, A, x)
 
 Throw a `DimensionMismatch` unless `y` and `x` have the lengths `y = A * x` requires.
