@@ -12,10 +12,11 @@
     # inference, so a trimmed build accepts code the stock scan rejects, and asking for the
     # patched oracle is what keeps a false alarm out of this gate.
     #
-    # The gate covers every signature below rather than the entry point alone: the rejection
-    # enters at `add_row!`, so everything that reaches the working set inherits it.
+    # Trim is asked of the entry points only. The analysis is reachability over the whole call
+    # graph from a root, so a root covers everything it calls: `solve!` reaches the iteration
+    # core and `setup` reaches `set_targets!`, which `solve!` does not. Allocation is asked of
+    # each function below, where a per-function answer is what locates a violation.
     StrictModeTest.set_juliac_patches!(true)
-    const TRIM_GUARANTEES = (:typestable, :noalloc, :trim_compatible)
 
     Random.seed!(1)
     n, m = 12, 30
@@ -48,12 +49,17 @@
         LW = typeof(ws.red.ws)       # the least-distance workspace the iteration runs on
         ALG = typeof(ws.algorithm)
         V = Vector{Float64}
-        both = filter(!=(:typestable), TRIM_GUARANTEES)
 
-        # `solve!` reads the clock, and AllocCheck counts `time_ns`'s `jl_hrtime` foreign
-        # call as an allocation. Everything the clock brackets is proved on both counts, so
-        # the entry point itself is held to trim compatibility alone.
-        @test test_signatures([(PureDAQP.solve!, (W,))]; guarantees = (:trim_compatible,)) isa Vector
+        # The trim roots. `solve!` reads the clock, and AllocCheck counts `time_ns`'s `jl_hrtime`
+        # foreign call as an allocation, so it is held to trim alone. `set_targets!` is a second
+        # root because it belongs to the setup and rebuild paths, which `solve!` does not reach.
+        @test test_signatures(
+            [
+                (solve!, (W,)),
+                (PureDAQP.set_targets!, (RD, V)),
+            ];
+            guarantees = (:trim_compatible,)
+        ) isa Vector
 
         @test test_signatures(
             [
@@ -74,7 +80,7 @@
                 (PureDAQP.reset_working_set!, (RD,)),
                 (PureDAQP.build_solution, (W,)),
             ];
-            guarantees = both
+            guarantees = (:noalloc,)
         ) isa Vector
     end
 end
