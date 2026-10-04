@@ -257,6 +257,9 @@ A `Solution` that keeps this run's numbers when the workspace solves again.
 A solve refills the workspace's own `Solution` rather than building one, so two results
 read from the same workspace are the same object. Copy the one you need to keep before
 solving again; comparing a run against a later one otherwise compares it against itself.
+
+This allocates. [`copyto!`](@ref) refills a `Solution` you already hold and does not, which is
+what a loop under a no-allocation guarantee wants.
 """
 function Base.copy(sol::Solution{T}) where {T}
     return Solution{T}(
@@ -268,6 +271,57 @@ function Base.copy(sol::Solution{T}) where {T}
         copy(sol.prim_inf_cert), copy(sol.dual_inf_cert),
     )
 end
+
+"""
+    copyto!(dest::Solution, src::Solution) -> dest
+
+Overwrite `dest` with `src`, allocating nothing.
+
+What [`copy`](@ref) is for, for a caller that cannot allocate: keep one `Solution` of your own
+alongside the workspace's, and refill it after each solve. `copy` builds five vectors and is
+the wrong thing inside a loop held to no allocation.
+
+`dest` must already hold vectors of the right lengths, which it does when it came from `copy`
+of a solution of the same problem. Sizes that do not match throw, rather than resizing: a
+`dest` of the wrong length is a different problem's solution, and quietly reshaping it would
+hide that.
+"""
+function Base.copyto!(dest::Solution{T}, src::Solution{T}) where {T}
+    (
+        length(dest.x) == length(src.x) && length(dest.y) == length(src.y) &&
+            length(dest.prim_inf_cert) == length(src.prim_inf_cert) &&
+            length(dest.dual_inf_cert) == length(src.dual_inf_cert)
+    ) || _solution_mismatch()
+    copyto!(dest.x, src.x)
+    copyto!(dest.y, src.y)
+    copyto!(dest.prim_inf_cert, src.prim_inf_cert)
+    copyto!(dest.dual_inf_cert, src.dual_inf_cert)
+    dest.status = src.status
+    dest.obj_val = src.obj_val
+    dest.dual_obj_val = src.dual_obj_val
+    dest.duality_gap = src.duality_gap
+    dest.prim_res = src.prim_res
+    dest.dual_res = src.dual_res
+    dest.rel_kkt_error = src.rel_kkt_error
+    dest.iter = src.iter
+    dest.primdual_int = src.primdual_int
+    dest.primdual_int_log = src.primdual_int_log
+    dest.rho_estimate = src.rho_estimate
+    dest.rho_updates = src.rho_updates
+    dest.accel_declined = src.accel_declined
+    dest.cg_iters = src.cg_iters
+    dest.polished = src.polished
+    dest.status_polish = src.status_polish
+    dest.setup_time = src.setup_time
+    dest.update_time = src.update_time
+    dest.solve_time = src.solve_time
+    dest.polish_time = src.polish_time
+    dest.run_time = src.run_time
+    return dest
+end
+
+@noinline _solution_mismatch() =
+    throw(DimensionMismatch("the destination solution's vectors must match the source's"))
 
 """
     unit_certificate!(dest, scratch, s, src, scaled) -> dest
@@ -323,8 +377,22 @@ end
     derivative_ready(::Self)::Nothing => "throw unless the iterate's multipliers are ones the active-set test can read"
     :optional
     update_rho!(::Self, ::Real)::Self => "set the ADMM step size and refactorize"
-    constraint_violation(::Self)::AbstractVector => "the violation of each row at the current iterate; `constraint_violation!` writes it in place"
+    constraint_violation(::Self)::AbstractVector => "the violation of each row at the current iterate"
+    constraint_violation!(::AbstractVector, ::Self)::AbstractVector => "the same, written into a caller's vector of one entry per row, allocating nothing"
 end
+
+"""
+    constraint_violation!(out, ws) -> out
+
+Write the violation of each row at `ws`'s current iterate into `out`, which holds one entry per
+row, and return it. Allocates nothing.
+
+An optional slot of the [`QPWorkspace`](@ref) contract: an algorithm that computes the row
+residual anyway can offer this, and a control loop re-solving in a tight cycle wants it over the
+allocating [`constraint_violation`](@ref). `out`'s element type is its own — the violations are
+computed in the workspace's and converted on assignment.
+"""
+constraint_violation!
 
 # `setup_backend` declares no return type: inferred through the abstract data arguments of this
 # signature it is `Any`, although every call with concrete arguments returns a concrete workspace.

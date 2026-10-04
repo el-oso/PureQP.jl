@@ -12,11 +12,13 @@ PureQPBase.update_rho!
 PureQPBase.dimensions
 PureQPBase.capabilities
 PureQPBase.constraint_violation
-PureOSQP.constraint_violation!
+PureQPBase.constraint_violation!
 PureOSQP.Optimizer
 PureQPBase.adjoint_derivative
 PureQPBase.forward_derivative
 PureQPBase.Solution
+Base.copy(::PureQPBase.Solution)
+Base.copyto!(::PureQPBase.Solution{T}, ::PureQPBase.Solution{T}) where {T}
 ```
 
 ## Algorithms and options
@@ -26,6 +28,7 @@ PureQPBase.QPAlgorithm
 PureOSQP.OperatorSplitting
 PureIPM.InteriorPoint
 PureDAQP.ActiveSet
+PureDAQP.faster_scan
 PureQPBase.Options
 PureQPBase.LINSYS_OPTIONS
 PureQPBase.default_options
@@ -168,9 +171,11 @@ PureQPBase.Preconditioner
 PureQPBase.check_preconditioner
 PureQPBase.IdentityPreconditioner
 PureQPBase.JacobiPreconditioner
+PureQPBase.KroneckerPreconditioner
 PureQPBase.choose_backend
 PureQPBase.ReducedInverse
 PureQPBase.ReducedCholesky
+PureQPBase.ProductReduced
 PureQPBase.DiagonalReduced
 PureQPBase.TridiagonalReduced
 PureQPBase.DiagonalLowRank
@@ -187,7 +192,20 @@ PureQPBase.RowCoupled
 PureQPBase.coupling_rank
 PureQPBase.BlockDiagonal
 PureQPBase.KroneckerOperator
+PureQPBase.StackedOperator
+PureQPBase.ComposedOperator
+PureQPBase.SumOperator
+PureQPBase.parts
+PureQPBase.nterms
+PureQPBase.add_reduced_term!
 PureQPBase.factors
+PureQPBase.has_cholesky_factor
+PureQPBase.cholesky_factor
+PureQPBase.CholeskyFactor
+PureQPBase.KroneckerCholesky
+PureQPBase.KroneckerSquareRoot
+PureQPBase.scalar_diagonal
+PureQPBase.dense_row!
 PureQPBase.is_scalar_multiple
 PureQPBase.scalar_multiple
 PureQPBase.nblocks
@@ -197,6 +215,7 @@ PureQPBase.structural_rows
 PureQPBase.is_convex
 PureQPBase.is_symmetric
 PureQPBase.is_materializable
+PureQPBase.holds_structure
 PureQPBase.reduced_diagonal!
 PureQPBase.reduced_rhs!
 PureQPBase.ProductOperator

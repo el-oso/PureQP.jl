@@ -55,6 +55,10 @@ KroneckerOperator(A1::AbstractMatrix, A2::AbstractMatrix) =
 "The factors, as `(A1, A2)`."
 factors(K::KroneckerOperator) = (K.A1, K.A2)
 
+# Two factors of `n₁²` and `n₂²` entries stand for `n₁²n₂²`, so a backend that formed the
+# product would hold the square of what this type does.
+holds_structure(::KroneckerOperator) = true
+
 Base.size(K::KroneckerOperator) =
     (size(K.A1, 1) * size(K.A2, 1), size(K.A1, 2) * size(K.A2, 2))
 
@@ -73,11 +77,33 @@ end
 # `O(m)` against two matrix products.
 function LinearAlgebra.mul!(y::AbstractVector, K::KroneckerOperator, x::AbstractVector)
     Base.require_one_based_indexing(y, x)
-    copyto!(K.xmat, x)
+    flat_copy!(K.xmat, x)
     mul!(K.scratch1, K.A2, K.xmat)    # m₂×n₁
     mul!(K.ymat, K.scratch1, K.A1')   # m₂×m₁
-    copyto!(y, K.ymat)
+    flat_copy!(y, K.ymat)
     return y
+end
+
+"""
+    flat_copy!(dest, src) -> dest
+
+Copy `src` into `dest` in linear order, both holding the same number of elements.
+
+The linear path of `copyto!(::IndexStyle, dest, ::IndexStyle, src)`, written out. `copyto!` itself
+checks the destination's bounds up front and constructs a `BoundsError` to throw, which is an
+allocation site, so a product copying into a `SubArray` cannot be proved allocation-free through
+it — the case a block of a [`StackedOperator`](@ref) is in, writing its rows into a slice of the
+stack's result. Indexing here is checked per element instead, so an undersized `dest` still throws
+a `BoundsError`.
+
+The two have different shapes, so they share no axes and the index runs linearly over `src`;
+callers hold one-based indexing, which the products above require of their arguments.
+"""
+function flat_copy!(dest, src)
+    for i in eachindex(IndexLinear(), src)
+        dest[i] = src[i]
+    end
+    return dest
 end
 
 function LinearAlgebra.mul!(
@@ -85,11 +111,31 @@ function LinearAlgebra.mul!(
     )
     K = parent(Kt)
     Base.require_one_based_indexing(y, x)
-    copyto!(K.ymat, x)
+    flat_copy!(K.ymat, x)
     mul!(K.scratch2, K.A2', K.ymat)   # n₂×m₁
     mul!(K.xmat, K.scratch2, K.A1)    # n₂×n₁
-    copyto!(y, K.xmat)
+    flat_copy!(y, K.xmat)
     return y
+end
+
+# `setup` asks a `P` whether it is symmetric and convex before any backend exists. The generic
+# answers walk `n²` entries and factor an `n×n` copy; a Kronecker product answers both from
+# its two factors.
+
+# `(P₁ ⊗ P₂)ᵀ = P₁ᵀ ⊗ P₂ᵀ`, so symmetric factors give a symmetric product. The converse fails
+# only for a product of two antisymmetric factors, which this reports as not symmetric: the
+# answer errs toward refusing, and such a `P` can be passed as its own matrix.
+is_symmetric(K::KroneckerOperator) = issymmetric(K.A1) && issymmetric(K.A2)
+
+# The eigenvalues of `P₁ ⊗ P₂` are the products `λᵢ(P₁) λⱼ(P₂)`. A product of two reals is
+# bilinear, so its extremes over all pairs sit at the extremes of each factor's spectrum, and
+# `P + σI` is positive definite exactly when the smallest of those four products exceeds `-σ`.
+# Two eigenvalue problems of the factors' sizes replace a factorization of the `n×n` product.
+function is_convex(::Type{T}, K::KroneckerOperator, sigma) where {T}
+    isempty(K) && return true
+    lo1, hi1 = extrema(eigvals(Symmetric(Matrix{T}(K.A1))))
+    lo2, hi2 = extrema(eigvals(Symmetric(Matrix{T}(K.A2))))
+    return min(lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2) + sigma > zero(T)
 end
 
 """

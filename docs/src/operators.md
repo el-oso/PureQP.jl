@@ -72,8 +72,9 @@ Selection still ends at the dense backend, so the solver still forms an `n×n` r
 You do not rewrite an operator that comes from another hierarchy, such as
 `LinearMaps.LinearMap` or `SciMLOperators.AbstractSciMLOperator`. You wrap it.
 [`PureQPBase.ProductOperator`](@ref) presents one as an `AbstractMatrix`. Load either package
-and `setup` and `solve` take its operators directly. See [Operators from functions](@ref) for
-which of the two to pick.
+and `setup` and `solve` take its operators directly. A LinearMaps map that holds a matrix is
+handed over as that matrix instead ([What a composed map becomes](@ref)). See
+[Operators from functions](@ref) for which of the two to pick.
 
 ### 2. `structural_rows` — setup stops paying for the zeros
 
@@ -208,10 +209,14 @@ function PureQPBase.update_preconditioner!(M::LaggedCholesky, prob, wt, k::Int)
 end
 LinearAlgebra.ldiv!(y::AbstractVector, M::LaggedCholesky, x::AbstractVector) = ldiv!(y, M.F, x)
 
-Pop = LinearMap(P; issymmetric = true, isposdef = true)
-sol = solve(Pop, q, LinearMap(A), l, u, InteriorPoint(); linsys = :indirect,
+Pop = PureQPBase.ProductOperator{Float64}(LinearMap(P); symmetric = true, posdef = true)
+Aop = PureQPBase.ProductOperator{Float64}(LinearMap(A))
+sol = solve(Pop, q, Aop, l, u, InteriorPoint(); linsys = :indirect,
             preconditioner = LaggedCholesky(P, A), scaling = 0)
 ```
+
+The wrapping is explicit here because a `LinearMap` over a matrix reaches the solver as that
+matrix. Maps built from functions need no such step.
 
 Each Newton solve starts conjugate gradients from zero and stops once the two-norm of its
 recursively updated residual falls below `cg_tol_fraction · min(μ, ‖r‖∞)`. A solve counts as
@@ -224,7 +229,8 @@ iterations of the solve.
 ### Measured
 
 `PureIPM/bench/ipm_matrixfree.jl` writes `PureIPM/bench/results/ipm_matrixfree.json`. It runs dense instances
-with a planted solution as `LinearMap`s through `LaggedCholesky` (`every = 3`) at
+with a planted solution, wrapped as operators that supply products only, through
+`LaggedCholesky` (`every = 3`) at
 `n = m ∈ {500, 1000, 2000}`, `κ(A) ∈ {1, 1e6}`, active fractions `{0.1, 0.9}`, every row
 two-sided and with a mix of 20% equality, 20% lower-only, 20% upper-only and 10% free rows:
 24 instances, at `eps_abs = eps_rel = 1e-6`, `reg_primal = reg_dual = 1e-8`,

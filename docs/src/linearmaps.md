@@ -4,14 +4,22 @@ A [`LinearMap`](https://github.com/JuliaLinearAlgebra/LinearMaps.jl) is a matrix
 store. You give it two functions instead of entries: one that multiplies by it, one that
 multiplies by its transpose. The solver takes it anywhere it takes a matrix.
 
+A map built from functions reaches the solver as an operator with no entries. A map over a
+matrix does not: `LinearMap(B)` arrives as `B`, `kron` of two such maps as a
+[`PureQPBase.KroneckerOperator`](@ref), `blockdiag` of them as a
+[`PureQPBase.BlockDiagonal`](@ref), and a real multiple of any of these as the same type with
+the scalar folded in. Every other composition, and every map built from functions, is an
+operator. [What a composed map becomes](@ref) has the full list.
+
 Three worked problems follow. Each has a constraint matrix that would be large, dense, or that
 nobody ever assembles, and each one is solved without building it.
 
-All three need the same three things, listed in
-[An operator from LinearMaps.jl](@ref): load `Krylov`, pass `scaling = 0`, and declare
-`issymmetric` and `isposdef` on `P`. Each example states the problem, draws the operator, then
-solves it twice — once with the map, once with every matrix written out — and prints the
-difference between the two answers.
+All three need the two things listed in [An operator from LinearMaps.jl](@ref): load `Krylov`
+and pass `scaling = 0`. The objective is a `LinearMap` over a `Diagonal`, which arrives as that
+`Diagonal`, so it needs no declaration of `issymmetric` or `isposdef`; a `P` built from a
+function would. Each example states the problem, draws the operator, then solves it twice — once
+with the map, once with every matrix written out — and prints the difference between the two
+answers.
 
 All three use [`OperatorSplitting`](@ref), the default, which needs nothing more.
 [`InteriorPoint`](@ref) solves an operator too, but it wants a preconditioner you supply
@@ -74,7 +82,7 @@ A = LinearMap{Float64}(
 truth = [sin(2pi * k / n) for k in 1:n]
 b = truth[idx]                                           # what the sensors read
 
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))
 q = -2 .* truth .+ 0.05 .* randn(n)
 
 sol = PureOSQP.solve(P, q, A, b .- 0.05, b .+ 0.05; scaling = 0, eps_abs = 1e-9, eps_rel = 1e-9)
@@ -240,7 +248,7 @@ Ik = LinearMap(Matrix(1.0I, k, k))
 A = [kron(Ik, D); kron(D, Ik)]     # down the columns, then across the rows
 
 img = [exp(-((i - 7)^2 + (j - 7)^2) / 18) for i in 1:k, j in 1:k]
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))
 q = -2 .* vec(img)
 
 sol = PureOSQP.solve(
@@ -329,7 +337,7 @@ end
 
 A = LinearMap{Float64}(forward!, adjoint!, n, n)
 
-P = LinearMap(Diagonal(fill(2.0, n)); issymmetric = true, isposdef = true)
+P = LinearMap(Diagonal(fill(2.0, n)))
 q = -2 .* randn(n)
 
 sol = PureOSQP.solve(
@@ -364,6 +372,40 @@ pays for once. [When it is the wrong tool](@ref) has the measured comparison.
 [An operator is not always solved with CG](@ref) has the conditioning limit, where a bare map
 does not converge at all.
 
+## What each composition becomes, and which algorithms take it
+
+A `LinearMap` that is built from matrices is recognized rather than treated as opaque: the
+composition becomes the base's own representation of it, and the parts stay available to the
+reduction. Every form below solves on all three algorithms.
+
+| `A` as a `LinearMap` | becomes | OperatorSplitting | InteriorPoint | ActiveSet |
+|---|---|---|---|---|
+| `LinearMap(B)` | the matrix itself | `cholesky` | `bunchkaufman` | `rows` |
+| `c * M` | the matrix, scaled | `cholesky` | `bunchkaufman` | `rows` |
+| `kron(M₁, M₂)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
+| `cat(M₁, M₂; dims = (1, 2))` | [`PureQPBase.BlockDiagonal`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `M₁ + M₂` | [`PureQPBase.SumOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `M₁ * M₂` | [`PureQPBase.ComposedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `hcat(M₁, M₂)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| a `FunctionMap` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `kron(fn, M)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `vcat(kron(…), fn)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+
+Two things the table is worth reading carefully for. A composition whose parts are not all
+recognized keeps the composition: the last row is a stack of a Kronecker block and an opaque one,
+and the Kronecker block still contracts its factors inside it. And an operator with no entries
+still answers a *row*, as `Aᵀ eᵢ`, which is why the dual active-set method takes every row here —
+entries and rows are different questions, and only equilibration needs the first.
+
+The backends are what these problems reach with a `Diagonal` `P` and `scaling = 0`. A different
+`P` moves some of them: a block-diagonal pair partitioned alike reaches `block` rather than
+`indirect`, and the Kronecker rung needs `P` a scalar multiple of the identity.
+
+Equilibration is the one real restriction, and it is orthogonal to the three columns: column and
+row norms are entries, so an operator that supplies only products needs `scaling = 0`, `probe =
+true`, or a [`PureQPBase.structural_rows`](@ref) method.
+
 ## Two packages supply operators
 
 The examples above use [LinearMaps.jl](https://github.com/JuliaLinearAlgebra/LinearMaps.jl).
@@ -380,7 +422,7 @@ takes either.
 | a composition, `B * C` | about 1.7 kB | **0 B** |
 | stacking, `[B; C]` | yes | not supported |
 | values carried with the operator | no | `p`, replaced by `update_coefficients` |
-| `issymmetric`, `isposdef` | declared at construction | declared at construction |
+| `issymmetric`, `isposdef` | declared at construction, for a map built from functions | declared at construction |
 | a transpose | required | required |
 
 **Use LinearMaps unless `A` is a product of operators.** It is simpler: two functions and no

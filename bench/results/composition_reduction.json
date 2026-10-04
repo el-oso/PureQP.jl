@@ -1,0 +1,12 @@
+{
+  "composed": [
+    {"kind": "dense outer", "m": 400, "k": 50, "n": 100, "parts_ms": 0.125085, "products_ms": 0.278234, "ratio": 2.2244, "err": 4.461e-16, "agree": 3.942e-16},
+    {"kind": "dense outer", "m": 800, "k": 50, "n": 200, "parts_ms": 0.280037, "products_ms": 1.132703, "ratio": 4.0448, "err": 5.040e-16, "agree": 4.629e-16},
+    {"kind": "dense outer", "m": 1600, "k": 80, "n": 200, "parts_ms": 1.277686, "products_ms": 3.571746, "ratio": 2.7955, "err": 5.558e-16, "agree": 5.670e-16},
+    {"kind": "dense outer", "m": 3200, "k": 100, "n": 300, "parts_ms": 5.180415, "products_ms": 15.800343, "ratio": 3.0500, "err": 5.352e-16, "agree": 5.545e-16},
+    {"kind": "Kronecker outer", "m": 64, "k": 36, "n": 20, "parts_ms": 0.005246, "products_ms": 0.007276, "ratio": 1.3871, "err": 3.419e-16, "agree": 3.181e-16},
+    {"kind": "Kronecker outer", "m": 144, "k": 64, "n": 40, "parts_ms": 0.020709, "products_ms": 0.025999, "ratio": 1.2554, "err": 4.777e-16, "agree": 3.577e-16},
+    {"kind": "Kronecker outer", "m": 256, "k": 100, "n": 60, "parts_ms": 0.058861, "products_ms": 0.077205, "ratio": 1.3116, "err": 6.457e-16, "agree": 4.704e-16},
+    {"kind": "Kronecker outer", "m": 400, "k": 196, "n": 100, "parts_ms": 0.283163, "products_ms": 0.312549, "ratio": 1.1038, "err": 7.460e-16, "agree": 6.531e-16}
+  ]
+}

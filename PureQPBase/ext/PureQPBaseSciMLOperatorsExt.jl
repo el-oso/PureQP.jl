@@ -90,7 +90,7 @@ function PureQPBase.ProductOperator{T}(
     has_adjoint(op) || no_adjoint()
     rows, cols = size(op)
     basis = zeros(T, probe ? cols : 0)
-    column = zeros(T, probe ? rows : 0)
+    column = zeros(T, rows)
     opt = adjoint(op)
     return PureQPBase.ProductOperator{T, typeof(op), typeof(opt), typeof(basis)}(
         op, opt, rows, cols, symmetric, posdef, probe, basis, column

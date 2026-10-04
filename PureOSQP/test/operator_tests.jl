@@ -166,3 +166,63 @@ end
     lie = PureOSQP.ProductOperator{Float64}(S'S + triu(S); symmetric = true, posdef = true)
     @test_throws "P is declared symmetric but is not" update!(ws; P = lie)
 end
+
+@testitem "every LinearMaps composition solves, and equilibration says why it cannot" begin
+    using PureOSQP, PureQPBase, LinearAlgebra, LinearMaps, Krylov, Random
+
+    Random.seed!(5)
+    k = 6
+    n = k * k
+    f1 = Matrix(Symmetric(rand(k, k) + k * I))
+    f2 = Matrix(Symmetric(rand(k, k) + k * I))
+    P = kron(f1, f2)
+    a1, a2 = randn(k + 2, k), randn(k + 1, k)
+    A = kron(a1, a2)
+    q = randn(n)
+
+    # Every way LinearMaps composes a map of the right shape. `vcat`, a sum, a product and a
+    # bare `FunctionMap` reach the solver as a `ProductOperator`; the others unwrap to a type
+    # the base holds. All of them solve, which is what "unmaterialized is supported" means.
+    maps = (
+        ("wrapped matrix", LinearMap(A)),
+        ("kron", kron(LinearMap(a1), LinearMap(a2))),
+        ("vcat", [LinearMap(A); LinearMap(A)]),
+        ("sum", LinearMap(A) + LinearMap(A)),
+        ("product", LinearMap(A) * LinearMap(Matrix(1.0I, n, n))),
+        ("scaled", 2.0 * LinearMap(A)),
+        ("function map", LinearMap(x -> A * x, y -> A' * y, size(A)...)),
+    )
+
+    for (label, M) in maps
+        @test size(M, 2) == n
+        b = M * randn(n)
+        l, u = b .- 1, b .+ 1
+        # `scaling = 0`: equilibration needs column and row norms, which a map supplying only
+        # products has no entries to give. The tolerance is tightened past the default so the
+        # comparison means something: an operator reaches the matrix-free backend and a matrix
+        # a factorization, so at the default `1e-3` the two converge to different points inside
+        # it and agreeing there would say nothing about the representation.
+        tol = (; scaling = 0, eps_abs = 1.0e-9, eps_rel = 1.0e-9, max_iter = 100_000)
+        s = solve(P, q, M, l, u, OperatorSplitting(); tol...)
+        @test s.status == SOLVED
+        dense = solve(P, q, Matrix(M), l, u, OperatorSplitting(); tol...)
+        @test dense.status == SOLVED
+        @test isapprox(s.obj_val, dense.obj_val; rtol = 1.0e-7)
+    end
+
+    # At the default `scaling` an operator with no entries is refused, and the refusal names
+    # all three ways forward rather than leaving the caller to guess.
+    fm = LinearMap(x -> A * x, y -> A' * y, size(A)...)
+    b = fm * randn(n)
+    err = try
+        solve(P, q, fm, b .- 1, b .+ 1, OperatorSplitting())
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("no entries to read", err.msg)
+    @test occursin("probe = true", err.msg)
+    @test occursin("scaling = 0", err.msg)
+    @test occursin("structural_rows", err.msg)
+end

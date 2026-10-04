@@ -919,3 +919,117 @@ value.(x)        # [0.3, 0.7]
 
 `PureOSQP.Optimizer` is the only name the core package owns. The wrapper itself lives in the
 extension, so a caller who does not use MathOptInterface pays nothing for it.
+
+## Unmaterialized operators
+
+An `A` given as an operator is never formed: the solver asks it for products and, where it has
+structure, for the structure itself. Each solver reaches such an `A` on two paths — one that
+iterates the linear system, one that factors it — and this section sets up both for each of the
+three algorithms. [What unmaterialized operators cost](@ref) has their timings.
+
+The six paths here are the ones the benchmark times. It runs them on fixed data from
+`bench/unmaterialized_problems.jl`, so its numbers are reproducible; these examples draw their
+matrices at random instead, to keep each one readable on its own.
+
+### Conjugate gradients
+
+A `LinearMap` reaches the matrix-free backend, which needs nothing but products:
+
+```@example unmat
+using PureOSQP, PureQPBase, LinearMaps, LinearAlgebra, Krylov, Random
+
+blur(k) = diagm(0 => fill(0.6, k), 1 => fill(0.2, k - 1), -1 => fill(0.2, k - 1))
+
+Random.seed!(7201)
+A = kron(LinearMap(blur(24)), LinearMap(blur(24)))     # 576×576, held as two 24×24 factors
+n, m = size(A, 2), size(A, 1)
+ws = setup(Diagonal(fill(2.0, n)), randn(n), A, fill(-1.0, m), fill(1.0, m),
+           OperatorSplitting(); linsys = :indirect, scaling = 0)
+sol = solve!(ws)
+(backend_name(ws.linsys), sol.status, sol.iter)
+```
+
+### A factorization from the factors
+
+The same shape, named onto the Kronecker backend instead. It diagonalizes the reduced matrix by
+the factors' own eigenvectors, so two 24×24 eigenproblems replace one 576×576 factorization:
+
+```@example unmat
+Random.seed!(7202)
+A = kron(LinearMap(randn(24, 24) ./ 5), LinearMap(randn(24, 24) ./ 5))
+n, m = size(A, 2), size(A, 1)
+ws = setup(Diagonal(fill(2.0, n)), randn(n), A, fill(-1.0, m), fill(1.0, m),
+           OperatorSplitting(); linsys = :kronecker, scaling = 0)
+sol = solve!(ws)
+(backend_name(ws.linsys), sol.status, sol.iter)
+```
+
+### Preconditioned conjugate gradients, interior point
+
+The interior-point method takes its conjugate-gradient path only with a preconditioner: measured
+without one, or on the Jacobi diagonal, it does not reach its tolerance on most problems, and it
+says so rather than returning a loose answer. When both `P` and `A` are Kronecker products, one
+preconditioner diagonalizes the whole reduced matrix — `U₁ ⊗ U₂` makes `P` the identity and
+`ÃᵀWÃ` diagonal at the same time:
+
+```@example unmat
+using PureIPM
+
+pd(k) = (S = randn(k, k); Matrix(Symmetric(S'S ./ k + 2I)))
+
+Random.seed!(7203)
+P = PureQPBase.KroneckerOperator(pd(12), pd(12))
+A = PureQPBase.KroneckerOperator(randn(12, 12) ./ 4, randn(12, 12) ./ 4)
+n, m = size(A, 2), size(A, 1)
+ws = setup(P, randn(n), A, fill(-1.0, m), fill(1.0, m), InteriorPoint();
+           linsys = :indirect, scaling = 0,
+           preconditioner = PureQPBase.KroneckerPreconditioner(P, A))
+sol = solve!(ws)
+(backend_name(ws.linsys), sol.status, sol.iter, sol.cg_iters)
+```
+
+### The reduced matrix from products
+
+The interior-point method's direct path needs the reduced matrix itself, which an operator with no
+entries supplies through products: column `j` of `Aᵀ W A` is `Aᵀ(W(A eⱼ))`, so `2n` products give
+the whole matrix and `n²` bounds what is held. An `A` with structure does better than that — a
+Kronecker product contracts its factors into the matrix without forming either the product or its
+columns. No backend is named here; the ladder reaches it:
+
+```@example unmat
+Random.seed!(7204)
+A = kron(LinearMap(randn(24, 24) ./ 5), LinearMap(randn(24, 24) ./ 5))
+n, m = size(A, 2), size(A, 1)
+ws = setup(Diagonal(fill(2.0, n)), randn(n), A, fill(-1.0, m), fill(1.0, m),
+           InteriorPoint(); scaling = 0)
+sol = solve!(ws)
+(backend_name(ws.linsys), sol.status, sol.iter)
+```
+
+### A working set read from the factors
+
+The dual active-set method has no linear-system backend. It reads one row of `A` each time its
+working set changes, which a Kronecker operator answers from its factors, and it keeps one of two
+representations of the set. Both are direct; they differ in what they factor.
+[`ActiveSet`](@ref) carries the choice, since it is a property of the method rather than an option:
+
+```@example unmat
+using PureDAQP
+
+Random.seed!(7205)
+A = PureQPBase.KroneckerOperator(randn(16, 16) ./ 3, randn(16, 16) ./ 3)
+n, m = size(A, 2), size(A, 1)
+prob = (Diagonal(fill(2.0, n)), randn(n), A, fill(-0.05, m), fill(0.05, m))
+
+qr_ws = setup(prob..., ActiveSet(working_set = :rows); scaling = 0)
+qr_sol = solve!(qr_ws)
+(qr_sol.status, qr_sol.iter)
+```
+
+The same problem with the Gram matrix and an `LDLᵀ` instead of the rows and a `QR`:
+
+```@example unmat
+gram_ws = setup(prob..., ActiveSet(working_set = :gram); scaling = 0)
+gram_sol = solve!(gram_ws)
+(gram_sol.status, gram_sol.iter, isapprox(gram_sol.x, qr_sol.x; atol = 1e-6))
+```

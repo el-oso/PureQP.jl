@@ -305,8 +305,18 @@ end
     @test_throws "linsys = :kronecker is not available with InteriorPoint()" setup(
         Pk, qk, K, lk, uk, InteriorPoint(); linsys = :kronecker, scaling = 0
     )
-    # The same pair on `:auto` is declined by the Kronecker rung and still solves.
-    ws = setup(Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0)
+    # On `:auto` the Kronecker rung declines, because it needs one weight for every row. What
+    # serves the pair instead assembles the reduced matrix by contracting the two factors, so
+    # neither `K` nor the KKT matrix is ever formed.
+    wk = setup(Pk, qk, K, lk, uk, InteriorPoint(); scaling = 0)
+    @test PureQPBase.backend_name(wk.linsys) === :product_reduced
+    sk = solve!(wk)
+    @test sk.status == SOLVED
+    # And it reaches the answer the formed matrix reaches.
+    sdense = solve(Pk, qk, Matrix(K), lk, uk, InteriorPoint(); scaling = 0)
+    @test isapprox(sk.obj_val, sdense.obj_val; rtol = 1.0e-7)
+    # The same numbers as a matrix are formed because the caller asked for that, and solve.
+    ws = setup(Pk, qk, Matrix(K), lk, uk, InteriorPoint(); scaling = 0)
     @test PureQPBase.backend_name(ws.linsys) !== :kronecker
     @test solve!(ws).status == SOLVED
 end

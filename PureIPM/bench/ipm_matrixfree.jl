@@ -111,7 +111,12 @@ function instance(n, κ, frac, seed; mixed = false)
     return P, -(P * xstar + A' * ystar), A, l, u
 end
 
-operators(P, A) = (LinearMap(P; issymmetric = true, isposdef = true), LinearMap(A))
+# Wrapped explicitly: a `LinearMap` over a matrix reaches the solver as that matrix, and this
+# benchmark is about a pair that supplies products only.
+operators(P, A) = (
+    PureQPBase.ProductOperator{Float64}(LinearMap(P); symmetric = true, posdef = true),
+    PureQPBase.ProductOperator{Float64}(LinearMap(A)),
+)
 
 function g2(log, iter, n)
     solves = filter(s -> s[1] >= 0, log)

@@ -20,9 +20,9 @@ module PureQPBaseSparseArraysExt
 
 using PureQPBase: PureQPBase
 using TypeContracts: TypeContracts, @verify
-using LinearAlgebra: Symmetric, Diagonal, LowerTriangular, UpperTriangular,
-    UnitLowerTriangular, UnitUpperTriangular, I, diag,
-    cholesky, cholesky!, ldlt, ldlt!, issuccess, ldiv!, transpose, transpose!
+using LinearAlgebra: LinearAlgebra, Symmetric, Diagonal, LowerTriangular, UpperTriangular,
+    UnitLowerTriangular, UnitUpperTriangular, I, diag, Transpose,
+    cholesky, cholesky!, ldlt, ldlt!, issuccess, ldiv!, mul!, transpose, transpose!
 using SparseArrays: SparseMatrixCSC, nnz, nzrange, rowvals, nonzeros, sparse
 using SparseArrays.CHOLMOD: CHOLMOD
 
@@ -295,6 +295,9 @@ function PureQPBase.formed_rung(
     # which indexes. `A` is a `SparseMatrixCSC` here and so always readable; `P` is not
     # constrained by the signature.
     PureQPBase.is_materializable(P) || return nothing
+    # The inverse is `n × n` however `P` is held, so a `P` whose representation is smaller than
+    # that is served below rather than accumulated into it.
+    PureQPBase.holds_structure(P) && return nothing
     n = prob.n
     Rinv = similar(prob.q0, T, n, n)
     # Grouped here rather than on the first `factorize!`: building it there would leave a
@@ -1491,5 +1494,167 @@ function PureQPBase.is_convex(::Type{T}, P::SparseMatrixCSC, sigma) where {T}
     isnothing(answer) || return answer
     return issuccess(cholesky(Symmetric(SparseMatrixCSC{T, Int}(P) + sigma * I); check = false))
 end
+
+
+"""
+    SparseCholesky{T, Ti} <: AbstractMatrix{T}
+
+The factor `R = Lᵀ·Π` of a sparse `P + shift*I`, where CHOLMOD factors the permuted matrix as
+`Π P Πᵀ = L Lᵀ` for a fill-reducing permutation `Π`.
+
+`RᵀR = Πᵀ L Lᵀ Π = P + shift*I`, so this meets [`PureQPBase.CholeskyFactor`](@ref) without
+being triangular: `Lᵀ·Π` is a triangular matrix with its columns permuted. The two solves
+split into the triangular solve and the permutation,
+
+    R⁻¹v = Πᵀ(Lᵀ)⁻¹v        R⁻ᵀv = L⁻¹(Πv)
+
+each `O(nnz(L))` against the dense factor's `O(n²)`. On a banded `P` at `n = 1500`,
+`nnz(L) = 4497` where a dense factor holds 1 125 000 entries, and one solve measures 10.7 µs
+against 85.1 µs.
+
+`Lᵀ` is held as its own matrix rather than transposed per solve: a CSC triangular solve walks
+columns, so the transpose is the form the upper solve wants. The permutation is applied through
+a scratch vector the factor owns, which makes both solves allocation-free and the factor unsafe
+to solve with from two tasks at once.
+"""
+struct SparseCholesky{T <: Real, Ti <: Integer} <: AbstractMatrix{T}
+    L::LowerTriangular{T, SparseMatrixCSC{T, Ti}}
+    Lt::UpperTriangular{T, SparseMatrixCSC{T, Ti}}
+    # `perm` gathers and scatters; `iperm` is what `getindex` needs to name a column of `Lᵀ`.
+    perm::Vector{Ti}
+    iperm::Vector{Ti}
+    scratch::Vector{T}
+end
+
+function PureQPBase.has_cholesky_factor(::SparseMatrixCSC)
+    return true
+end
+function PureQPBase.has_cholesky_factor(::Symmetric{<:Any, <:SparseMatrixCSC})
+    return true
+end
+
+# Factored in its own form, so a consumer asking for a factor of `P` keeps the sparse matrix.
+PureQPBase.factorable_operand(::Type{T}, P::SparseMatrixCSC{T}) where {T} = P
+PureQPBase.factorable_operand(
+    ::Type{T}, P::Symmetric{T, <:SparseMatrixCSC{T}}
+) where {T} = P
+
+function PureQPBase.cholesky_factor(P::SparseMatrixCSC{<:Real}, shift)
+    return sparse_cholesky_factor(P, shift)
+end
+function PureQPBase.cholesky_factor(P::Symmetric{<:Real, <:SparseMatrixCSC}, shift)
+    return sparse_cholesky_factor(parent(P), shift)
+end
+
+function sparse_cholesky_factor(P::SparseMatrixCSC, shift)
+    T = float(eltype(P))
+    # CHOLMOD takes the shift itself, so `P + shift*I` is never formed. `check = false` keeps
+    # an indefinite `P` a value to test rather than an exception to catch.
+    F = cholesky(Symmetric(SparseMatrixCSC{T, Int}(P)); shift = Float64(shift), check = false)
+    issuccess(F) || throw(PureQPBase.not_positive_definite(convert(T, shift)))
+    L = SparseMatrixCSC{T, Int}(sparse(F.L))
+    perm = Vector{Int}(F.p)
+    return SparseCholesky{T, Int}(
+        LowerTriangular(L), UpperTriangular(SparseMatrixCSC{T, Int}(sparse(transpose(L)))),
+        perm, Vector{Int}(invperm(perm)), Vector{T}(undef, size(L, 1)),
+    )
+end
+
+Base.size(R::SparseCholesky) = (n = length(R.scratch); (n, n))
+
+# `R = Lᵀ·Π`, so column `j` of `R` is column `iperm[j]` of `Lᵀ`.
+function Base.getindex(R::SparseCholesky, i::Integer, j::Integer)
+    @boundscheck checkbounds(R, i, j)
+    return R.Lt[i, R.iperm[j]]
+end
+
+function LinearAlgebra.ldiv!(R::SparseCholesky, v::AbstractVector)
+    PureQPBase.check_solve_operand(R, v)
+    ldiv!(R.Lt, v)
+    scatter_perm!(R.scratch, v, R.perm)
+    copyto!(v, R.scratch)
+    return v
+end
+
+function LinearAlgebra.ldiv!(Rt::Transpose{<:Any, <:SparseCholesky}, v::AbstractVector)
+    R = parent(Rt)
+    PureQPBase.check_solve_operand(R, v)
+    gather_perm!(R.scratch, v, R.perm)
+    copyto!(v, R.scratch)
+    ldiv!(R.L, v)
+    return v
+end
+
+"`dest[perm[i]] = src[i]`, the scatter that undoes CHOLMOD's permutation."
+function scatter_perm!(dest::AbstractVector, src::AbstractVector, perm::AbstractVector)
+    for i in eachindex(perm)
+        dest[perm[i]] = src[i]
+    end
+    return dest
+end
+
+"`dest[i] = src[perm[i]]`, the gather that applies it."
+function gather_perm!(dest::AbstractVector, src::AbstractVector, perm::AbstractVector)
+    for i in eachindex(perm)
+        dest[i] = src[perm[i]]
+    end
+    return dest
+end
+
+"""
+    SparseRows{T, Ti} <: AbstractMatrix{T}
+
+A sparse matrix alongside its transpose, for a consumer that reads it by rows.
+
+CSC stores columns, so row `i` of a `SparseMatrixCSC` is reachable only by searching every
+column: `O(n log(nnz/n))` for a row holding a handful of entries. The transpose stores that row
+as a column, so [`PureQPBase.dense_row!`](@ref) walks one `nzrange` and costs `O(nnz)` in the
+row. Measured on a 1500×1500 matrix at 0.33% density, a row of 6 entries: 2.71 µs read from the
+CSC, 0.05 µs read from the transpose, 0.46 µs read from a dense copy of the whole matrix.
+
+Holding both is what makes products and rows each cheap in their own direction, and it costs a
+second copy of the nonzeros — 0.126 MiB against 17.2 MiB for the dense copy it replaces. The
+pair is built together and neither is written afterwards, so they cannot disagree.
+"""
+struct SparseRows{T <: Real, Ti <: Integer} <: AbstractMatrix{T}
+    A::SparseMatrixCSC{T, Ti}
+    At::SparseMatrixCSC{T, Ti}
+end
+
+SparseRows(A::SparseMatrixCSC{T, Ti}) where {T, Ti} =
+    SparseRows{T, Ti}(A, SparseMatrixCSC{T, Ti}(sparse(transpose(A))))
+
+PureQPBase.rows_operand(::Type{T}, A::SparseMatrixCSC{T}) where {T} = SparseRows(A)
+
+Base.size(A::SparseRows) = size(A.A)
+Base.getindex(A::SparseRows, i::Integer, j::Integer) = A.A[i, j]
+
+# Row `i` is column `i` of the transpose, so one `nzrange` writes it.
+function PureQPBase.dense_row!(dest::AbstractVector, A::SparseRows, i::Integer)
+    PureQPBase.check_row_dest(dest, A)
+    @boundscheck checkbounds(A, i, :)
+    At = A.At
+    fill!(dest, zero(eltype(dest)))
+    rows = rowvals(At)
+    vals = nonzeros(At)
+    for k in nzrange(At, i)
+        dest[rows[k]] = vals[k]
+    end
+    return dest
+end
+
+LinearAlgebra.mul!(y::AbstractVector, A::SparseRows, x::AbstractVector) = mul!(y, A.A, x)
+LinearAlgebra.mul!(y::AbstractVector, A::SparseRows, x::AbstractVector, alpha, beta) =
+    mul!(y, A.A, x, alpha, beta)
+# The transpose is held, so an adjoint product reads columns rather than rows.
+LinearAlgebra.mul!(
+    y::AbstractVector, At::Transpose{<:Any, <:SparseRows}, x::AbstractVector
+) = mul!(y, parent(At).At, x)
+LinearAlgebra.mul!(
+    y::AbstractVector, At::Transpose{<:Any, <:SparseRows}, x::AbstractVector, alpha, beta
+) = mul!(y, parent(At).At, x, alpha, beta)
+
+PureQPBase.is_materializable(::SparseRows) = true
+PureQPBase.structural_rows(A::SparseRows, j::Integer) = PureQPBase.structural_rows(A.A, j)
 
 end # module PureQPBaseSparseArraysExt

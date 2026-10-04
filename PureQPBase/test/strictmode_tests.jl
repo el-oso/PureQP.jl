@@ -44,7 +44,10 @@
         (lowrank, (; linsys = :lowrank), PureQPBase.DiagonalLowRank),
         (kronecker, (; linsys = :kronecker, scaling = 0), PureQPBase.KroneckerReduced),
     ]
-    @test Set(map(Base.typename, implementers)) == Set(map(c -> Base.typename(c[3]), cases))
+    # `ProductReduced` is reached through the interior-point ladder rather than by naming a
+    # `linsys`, so `backend_for` cannot build it and it is proved in its own block below.
+    @test Set(map(Base.typename, implementers)) ==
+        Set([map(c -> Base.typename(c[3]), cases); Base.typename(PureQPBase.ProductReduced)])
 
     for (data, kw, LS) in cases
         prob, wt, ls = backend_for(data...; kw...)
@@ -66,6 +69,37 @@
         @test test_signatures(per_iteration; guarantees) isa Vector
         @test test_signatures([(PureQPBase.factorize!, types[1:3])]; guarantees) isa Vector
     end
+
+    # `ProductReduced` assembles the reduced matrix from products, so it is held to the same
+    # per-iteration guarantees on both of its assembly paths: the Kronecker contraction, and the
+    # products that serve anything else.
+    # Built with `raw_problem` rather than `backend_for`: this backend is reached through the
+    # interior-point ladder, so no `linsys` name builds it, and naming one that declines these
+    # pairs would throw before the proof runs.
+    for (label, Pin, Ain) in (
+            ("contraction", kronecker[1], Ak),
+            ("stacked", kronecker[1], PureQPBase.StackedOperator(Matrix(Ak), Diagonal(fill(1.5, 20)))),
+            ("products", Diagonal(fill(2.0, 20)), PureQPBase.ProductOperator{Float64}(Matrix(Ak))),
+        )
+        prob = raw_problem(Pin, Ain, 20, size(Ain, 1))
+        wt = raw_weights(fill(0.75, size(Ain, 1)), 1.0e-6)
+        ls = PureQPBase.ProductReduced(prob.q0, prob.n, prob.m, prob.A)
+        @test TypeContracts.check_contract(typeof(ls), PureQPBase.LinearSystem).passed
+        @test PureQPBase.factorize!(ls, prob, wt)
+        bx, bz = randn(prob.n), randn(prob.m)
+        x, z = zeros(prob.n), zeros(prob.m)
+        PureQPBase.solve_system!(ls, prob, wt, bx, bz, x, z)
+        PureQPBase.solve_multiplier!(ls, prob, wt, bx, bz, x, z)
+        types = map(typeof, (ls, prob, wt, bx, bz, x, z))
+        @test test_signatures(
+            [
+                (PureQPBase.factorize!, types[1:3]),
+                (PureQPBase.solve_system!, types),
+                (PureQPBase.solve_multiplier!, types),
+            ];
+            guarantees = (:typestable, :noalloc, :trim_compatible)
+        ) isa Vector
+    end
 end
 
 @testitem "the built-in preconditioners meet their strict contract, proved" begin
@@ -81,16 +115,30 @@ end
     A = randn(m, n)
     prob, wt, _ = backend_for(P, randn(n), A, -rand(m), rand(m))
     y, x = zeros(n), randn(n)
-    preconditioners = [PureQPBase.IdentityPreconditioner(), PureQPBase.JacobiPreconditioner(zeros(n))]
+    # The Kronecker preconditioner is built from two factor pairs, so it needs a Kronecker pair
+    # of its own rather than the dense `P` and `A` above.
+    k = 4
+    g1, g2 = randn(k, k), randn(k, k)
+    f1 = Matrix(Symmetric(g1'g1 / k + I))
+    f2 = Matrix(Symmetric(g2'g2 / k + I))
+    kronP = PureQPBase.KroneckerOperator(f1, f2)
+    kronA = PureQPBase.KroneckerOperator(randn(k + 1, k), randn(k + 2, k))
+    preconditioners = [
+        PureQPBase.IdentityPreconditioner(), PureQPBase.JacobiPreconditioner(zeros(n)),
+        PureQPBase.KroneckerPreconditioner(kronP, kronA),
+    ]
     defined = filter(T -> parentmodule(T) === PureQPBase, subtypes(PureQPBase.Preconditioner))
     @test Set(map(Base.typename, defined)) == Set(map(M -> Base.typename(typeof(M)), preconditioners))
     for M in preconditioners
         @test TypeContracts.check_contract(typeof(M), PureQPBase.Preconditioner).passed
+        # The Kronecker preconditioner acts on `k₁k₂` variables, not on this problem's `n`.
+        dim = M isa PureQPBase.KroneckerPreconditioner ? k * k : n
+        yv, xv = zeros(dim), randn(dim)
         PureQPBase.update_preconditioner!(M, prob, wt, 0)
-        ldiv!(y, M, x)
+        ldiv!(yv, M, xv)
         @test test_signatures(
             [
-                (ldiv!, map(typeof, (y, M, x))),
+                (ldiv!, map(typeof, (yv, M, xv))),
                 (PureQPBase.update_preconditioner!, map(typeof, (M, prob, wt, 0))),
             ];
             guarantees = (:typestable, :noalloc, :trim_compatible)
@@ -171,4 +219,70 @@ end
     @test_throws StrictMode.StrictViolation test_signatures(
         [(dynamic, (Base.RefValue{Any},))]; guarantees = (:trim_compatible,)
     )
+end
+
+@testitem "dense_row! allocates nothing and trims on every representation, proved" begin
+    using PureQPBase, StrictMode, StrictModeTest, LinearAlgebra
+
+    StrictMode.assert_enabled()
+    struct RowsOnlyMap{T}
+        M::Matrix{T}
+    end
+    struct RowsOnlyMapAdjoint{T}
+        parent::RowsOnlyMap{T}
+    end
+    Base.size(o::RowsOnlyMap) = size(o.M)
+    Base.size(o::RowsOnlyMapAdjoint) = reverse(size(o.parent.M))
+    Base.adjoint(o::RowsOnlyMap) = RowsOnlyMapAdjoint(o)
+    LinearAlgebra.mul!(y::AbstractVector, o::RowsOnlyMap, x::AbstractVector) = mul!(y, o.M, x)
+    LinearAlgebra.mul!(y::AbstractVector, o::RowsOnlyMapAdjoint, x::AbstractVector) =
+        mul!(y, o.parent.M', x)
+
+    for T in (Float64, Float32)
+        V = Vector{T}
+        Kr = typeof(PureQPBase.KroneckerOperator(randn(T, 3, 2), randn(T, 2, 3)))
+        Bd = typeof(PureQPBase.BlockDiagonal([randn(T, 2, 2), randn(T, 3, 1)]))
+        Po = typeof(PureQPBase.ProductOperator{T}(RowsOnlyMap(randn(T, 4, 3))))
+        signatures = [
+            (PureQPBase.dense_row!, (V, Matrix{T}, Int)),
+            (PureQPBase.dense_row!, (V, Diagonal{T, V}, Int)),
+            (PureQPBase.dense_row!, (V, Kr, Int)),
+            (PureQPBase.dense_row!, (V, Bd, Int)),
+            (PureQPBase.dense_row!, (V, Po, Int)),
+        ]
+        @test test_signatures(signatures; guarantees = (:noalloc, :trim_compatible)) isa Vector
+    end
+end
+
+@testitem "both triangular solves of every Cholesky factor allocate nothing and trim, proved" begin
+    using PureQPBase, StrictMode, StrictModeTest, TypeContracts, LinearAlgebra, Random
+    StrictMode.assert_enabled()
+    Random.seed!(5)
+    spd(T, k) = (S = randn(T, k, k); Matrix(Symmetric(S'S / k + I)))
+
+    for T in (Float64, Float32)
+        cases = Any[
+            spd(T, 6),
+            Matrix{T}(2I, 6, 6),
+            Diagonal(rand(T, 6) .+ T(0.5)),
+            PureQPBase.BlockDiagonal([spd(T, 3), spd(T, 2), spd(T, 1)]),
+            PureQPBase.KroneckerOperator(spd(T, 4), spd(T, 3)),
+        ]
+        for P in cases
+            R = PureQPBase.cholesky_factor(P, zero(T))
+            # `transpose(R)` is formed once and held, as a consumer that solves in a loop does.
+            Rt = transpose(R)
+            v = randn(T, size(P, 1))
+            @test TypeContracts.check_contract(typeof(R), PureQPBase.CholeskyFactor).passed
+            ldiv!(R, v)
+            ldiv!(Rt, v)
+            @test (@allocated ldiv!(R, v)) == 0
+            @test (@allocated ldiv!(Rt, v)) == 0
+            V = typeof(v)
+            @test test_signatures(
+                [(ldiv!, (typeof(R), V)), (ldiv!, (typeof(Rt), V))];
+                guarantees = (:typestable, :noalloc, :trim_compatible)
+            ) isa Vector
+        end
+    end
 end

@@ -20,7 +20,12 @@ module PureIPM
 using LinearAlgebra
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @assert_noalloc, @assert_trim_compatible
-using PureQPBase
+using Reexport
+# The base's own exports reach a caller through here, so `using PureIPM` gives the whole API:
+# the verbs, the `Solution`, the statuses and the options. They stay PureQPBase's — this says
+# where they come from in one line, where a list repeated per solver would make one generic
+# function look like it had four owners.
+@reexport using PureQPBase
 
 import PureQPBase:
     setup, solve, solve!, warm_start!, cold_start!, update!, update_settings!,
@@ -34,8 +39,9 @@ import PureQPBase:
     active_kkt, add!, adopt_settings!, adopt_update!, block_rung,
     check_finite, check_storage, choose_backend, dense_rung,
     empty_solution, eps_prim, eps_dual, eps_duality_gap, factorize!, factors, formed_rung,
-    gap_terms, no_certificate, unit_certificate!, unscale!,
+    gap_terms, no_certificate, unit_certificate!, unscale!, holds_structure,
     increment!, indirect_backend, indirect_rung, inner_iterations, invscaled_norm_inf,
+    ProductReduced,
     is_convex, is_dual_infeasible, is_materializable, is_primal_infeasible, is_scalar_multiple,
     is_symmetric, kkt_rung, kronecker_rung, last_solve_converged, lowrank_rung, mul_A!,
     mul_At!, mul_P!, multiply!, named_backend, norm_inf, polish_kernel!, reduced_diagonal!,
@@ -45,23 +51,10 @@ import PureQPBase:
     use_residual_stop!, validate, validate_update!, validated_problem,
     residuals_at!, status_name, polish_status_name, check_termination, polish!
 
-export setup, solve, solve!, update!, update_settings!, warm_start!, cold_start!
-export dimensions, capabilities, constraint_violation
-export Solution, Status, Options, default_options
-export QPAlgorithm, InteriorPoint
-export QPWorkspace, InteriorPointWorkspace
-export has_solution, status_name
-export recommend_linsys, LinsysAdvice
-export backend_info, backend_name, factor_fill, BackendInfo
-export PolishStatus
-export adjoint_derivative, forward_derivative
-export LinearSystem, ReducedCholesky, FullKKT
-export Preconditioner, IdentityPreconditioner, JacobiPreconditioner, update_preconditioner!
-export SOLVED, PRIMAL_INFEASIBLE, DUAL_INFEASIBLE, MAX_ITER_REACHED, NON_CONVEX, UNSOLVED
-export TIME_LIMIT_REACHED, INTERRUPTED, NUMERICAL_ERROR
-export POLISH_SUCCESS, POLISH_FAILED, POLISH_NOT_PERFORMED
-export POLISH_NO_ACTIVE_SET_FOUND, POLISH_LINSYS_ERROR
-export SOLVED_INACCURATE, PRIMAL_INFEASIBLE_INACCURATE, DUAL_INFEASIBLE_INACCURATE
+
+# What this package owns. Everything else a caller needs is PureQPBase's and arrives through the
+# `@reexport` above.
+export InteriorPoint, InteriorPointWorkspace
 
 include("settings.jl")
 include("workspace.jl")

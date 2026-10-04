@@ -1,3 +1,12 @@
+# A wrapper that names one of its parent's triangles as the matrix. `Hermitian` of a real matrix
+# states the same property as `Symmetric`, and every path here reads it the same way: through
+# `parent` over the triangle `uplo` names, never by indexing the wrapper, which costs a branch
+# per entry and reads the other half at stride `size(M, 1)`.
+const SymmetricFactorable = Union{
+    Symmetric{<:Any, <:StridedMatrix},
+    Hermitian{<:Real, <:StridedMatrix},
+}
+
 """
     BackendInfo
 
@@ -509,6 +518,45 @@ function is_convex(::Type{T}, P::AbstractMatrix, sigma) where {T}
     return issuccess(cholesky!(Symmetric(Matrix{T}(P) + sigma * I); check = false))
 end
 
+"""
+    copy_upper_triangle!(dest, A, n, upper) -> dest
+
+Copy the symmetric matrix whose `upper` triangle (or lower) is stored in `A` into `dest`'s upper
+triangle. `dest`'s lower triangle is left as it was, which the callers' `Symmetric(dest, :U)`
+never reads.
+
+`A` is an argument rather than read from a wrapper inside the loop: a matrix loaded from a
+struct field arrives without the alignment facts an argument carries, and indexing the wrapper
+would cost a branch per entry and read half of them at stride `n`.
+"""
+function copy_upper_triangle!(dest::AbstractMatrix{T}, A::AbstractMatrix, n, upper::Bool) where {T}
+    if upper
+        for j in 1:n, i in 1:j
+            dest[i, j] = T(A[i, j])
+        end
+    else
+        for j in 1:n, i in 1:j
+            dest[i, j] = T(A[j, i])
+        end
+    end
+    return dest
+end
+
+# A wrapper names the triangle that is the matrix, so the test needs neither a symmetrization
+# nor a second `n×n` matrix for the shift: `Matrix{T}(P)` reads every entry through the
+# wrapper's branching `getindex`, and `+ sigma*I` allocates another `n×n` to hold the sum.
+function is_convex(::Type{T}, P::SymmetricFactorable, sigma) where {T}
+    isempty(P) && return true
+    n = size(P, 1)
+    Hs = Matrix{T}(undef, n, n)
+    copy_upper_triangle!(Hs, parent(P), n, P.uplo == 'U')
+    s = convert(T, sigma)
+    for i in 1:n
+        Hs[i, i] += s
+    end
+    return issuccess(cholesky!(Symmetric(Hs, :U); check = false))
+end
+
 # A diagonal matrix is positive definite exactly when its diagonal is, so the test is a
 # pass over `n` entries rather than a factorization of an `n×n` densification of them.
 is_convex(::Type{T}, P::Diagonal, sigma) where {T} = all(d -> d + sigma > zero(T), P.diag)
@@ -548,6 +596,23 @@ The method body is a literal, so a call against a type with no override folds aw
 rungs that consult it stay concretely typed.
 """
 is_materializable(M) = true
+
+"""
+    holds_structure(M) -> Bool
+
+Whether `M` carries a representation that forming its dense matrix would discard. False
+unless the representation says otherwise.
+
+This is a different question from [`is_materializable`](@ref), which asks whether entries can
+be read at all: a `KroneckerOperator` answers `true` there, because polishing and the
+derivatives do read its entries, and `true` here, because a backend that forms `n²` from two
+`n₁²` and `n₂²` factors has thrown away the reason the caller built it. The rungs that form a
+matrix consult this one and decline, so such a pair reaches a backend that works through
+products instead.
+
+The method body is a literal, so a call against a type with no override folds away.
+"""
+holds_structure(M) = false
 
 """
     require_entries(P, A, what, remedy)
@@ -780,6 +845,7 @@ Ladder rung 6, the ADMM terminal: [`ReducedCholesky`](@ref).
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob, sel::ADMMSelection)
     (is_materializable(P) && is_materializable(A)) || return nothing
+    (holds_structure(P) || holds_structure(A)) && return nothing
     return (ReducedCholesky(prob.q0, prob.n, prob.m), false)
 end
 
@@ -1079,17 +1145,50 @@ only the lower triangle of `Symmetric(ls.K, :L)`.
 function assemble_kkt0!(ls::FullKKT{T}, prob) where {T}
     P, A, D, E, c, n, m = prob.P, prob.A, prob.D, prob.E, prob.c, prob.n, prob.m
     K0 = ls.K0
+    kkt_cost_block!(K0, T, P, D, c, n)
     for j in 1:n
         dj = D[j]
-        for i in j:n
-            K0[i, j] = c * D[i] * T(P[i, j]) * dj
-        end
         for i in 1:m
             K0[n + i, j] = E[i] * T(A[i, j]) * dj
         end
     end
     ls.k0_current = true
     return nothing
+end
+
+"`K0[i, j] = c·D[i]·P[i, j]·D[j]` over the lower triangle, which is the block `bunchkaufman!` reads."
+function kkt_cost_block!(K0::AbstractMatrix, ::Type{T}, P, D, c, n) where {T}
+    for j in 1:n
+        dj = D[j]
+        for i in j:n
+            K0[i, j] = c * D[i] * T(P[i, j]) * dj
+        end
+    end
+    return K0
+end
+
+# Read from the triangle `P` names instead of through the wrapper, with the parent as an
+# argument so the loop keeps the alignment facts a field read loses. A lower parent is walked
+# contiguously; an upper one is transposed on the way in, which is a strided read either way.
+kkt_cost_block!(K0::AbstractMatrix, ::Type{T}, P::SymmetricFactorable, D, c, n) where {T} =
+    kkt_cost_block_triangle!(K0, T, parent(P), D, c, n, P.uplo == 'U')
+
+function kkt_cost_block_triangle!(
+        K0::AbstractMatrix, ::Type{T}, A::AbstractMatrix, D, c, n, upper::Bool
+    ) where {T}
+    for j in 1:n
+        dj = D[j]
+        if upper
+            for i in j:n
+                K0[i, j] = c * D[i] * T(A[j, i]) * dj
+            end
+        else
+            for i in j:n
+                K0[i, j] = c * D[i] * T(A[i, j]) * dj
+            end
+        end
+    end
+    return K0
 end
 
 function factorize!(ls::FullKKT{T}, prob, wt)::Bool where {T}
@@ -1311,8 +1410,10 @@ function indirect_backend(proto::AbstractVector, n::Integer, m::Integer, precond
     throw(
         ArgumentError(
             "linsys = :indirect needs Krylov.jl, which is a weak dependency: run " *
-                "`using Krylov` before `setup`. It is not a core dependency because the " *
-                "backend is only worth reaching for when the reduced matrix cannot be formed."
+                "`using Krylov` before `setup`. The ladder reaches this backend for a pair " *
+                "whose reduced matrix cannot be formed, and for one that declares " *
+                "`PureQPBase.holds_structure` true, whose reduced matrix must not be: a " *
+                "structured or unmaterialized pair needs Krylov loaded."
         )
     )
 end
@@ -1379,4 +1480,140 @@ function require_host(v::AbstractVector, what::String)
         )
     )
     return nothing
+end
+
+"""
+    ProductReduced{T, M, V} <: ReducedInverse
+
+Forms the reduced matrix `c·D P D + σI + D Aᵀ E diag(ρ) E A D` from products with `P` and `A`
+and inverts it, so a pair that supplies only products gets an exact factorization rather than
+an iteration.
+
+Column `j` of the reduced matrix is
+
+    D[j]·( c·D ⊙ (P eⱼ) + D ⊙ (Aᵀ(E² ⊙ ρ ⊙ (A eⱼ))) ) + σ eⱼ
+
+so the whole matrix costs one product with `P` and two with `A` per column: `3n` applications,
+and no operand of size `m·n` or `(n+m)²` anywhere. Storage is the `n×n` inverse, which is `n²`
+whatever `P` and `A` are held as — against `(n+m)²` for [`FullKKT`](@ref) and the `m×n` buffer
+[`ReducedCholesky`](@ref) needs for its product. Measured on a Kronecker pair at `n = 625`,
+`m = 2208`: 3.0 MiB here, 10.5 MiB for a dense `A`, 61.2 MiB for the KKT; 3.3 ms to assemble
+and 2.2 ms to invert, against 162.8 ms per `bunchkaufman!` of the full system.
+
+The adjoint product is taken through `adjoint`, never `transpose`: a structured operator
+defines `mul!` for an `Adjoint` and a `Transpose` of one falls back to reading entries, which on
+a `KroneckerOperator` measured 7.555 ms against 2.721 µs for the same product.
+
+What this cannot do is avoid `n²`. The reduced matrix of an interior-point system has no
+factored form smaller than that: its Kronecker rank is bounded by `m₁` but its Cholesky
+factor's is full, with no spectral decay, and the system is a linear matrix equation in three
+or more Kronecker terms, for which no direct method is known. A caller who cannot hold `n²`
+wants the matrix-free backend and [`KroneckerPreconditioner`](@ref).
+"""
+struct ProductReduced{T <: Real, M <: AbstractMatrix{T}, V <: AbstractVector{T}, S} <: ReducedInverse
+    Rinv::M
+    # The basis vector, `A eⱼ` and the accumulated column. Owned so a factorization allocates
+    # nothing, and private to one backend, so one must not be factored from two tasks at once.
+    ej::V
+    av::V
+    col::V
+    # What a representation that contracts its factors needs, or `nothing` for the products.
+    scratch::S
+    # The weights with `E²` folded in, which is what the reduced term is weighted by.
+    wscaled::V
+end
+
+"""
+    add_reduced_term!(R, T, A, weights, D, n, m, scratch) -> R
+
+Add `D Aᵀ diag(weights) A D` into `R`.
+
+The generic method reaches each column as `Aᵀ(weights ⊙ (A eⱼ))`, two products with `A`, so a
+representation that answers products at all is served. A representation that can contract its
+own factors overrides this — [`KroneckerOperator`](@ref) does, at a third of the cost.
+
+The adjoint is taken through `adjoint`, never `transpose`: a structured operator defines `mul!`
+for an `Adjoint`, and a `Transpose` of one falls back to reading entries, measured at 7.555 ms
+against 2.721 µs for the same product on a `KroneckerOperator`.
+"""
+function add_reduced_term!(
+        R::AbstractMatrix{T}, ::Type{T}, A, weights::AbstractVector,
+        D::AbstractVector, n::Integer, m::Integer, scratch, ej, av, col
+    ) where {T}
+    At = scratch[1]
+    for j in 1:n
+        fill!(ej, zero(T))
+        ej[j] = one(T)
+        mul!(av, A, ej)
+        for i in 1:m
+            av[i] *= weights[i]
+        end
+        mul!(col, At, av)
+        dj = D[j]
+        for i in 1:n
+            R[i, j] += D[i] * col[i] * dj
+        end
+    end
+    return R
+end
+
+"""
+    reduced_term_scratch(T, A) -> what `add_reduced_term!` holds between calls
+
+The generic path holds the adjoint: `adjoint` allocates its wrapper, and a factorization that
+built one per call would not be allocation-free. The vectors it also needs are the backend's
+own, handed over at the call.
+"""
+reduced_term_scratch(::Type{T}, A) where {T} = (adjoint(A),)
+
+"""
+    ProductReduced(proto::AbstractVector, n, m)
+
+Build the storage as `similar(proto, ...)`, so it follows the array type of the data rather
+than always being a `Matrix`.
+"""
+function ProductReduced(proto::AbstractVector{T}, n::Integer, m::Integer, A) where {T <: Real}
+    scratch = reduced_term_scratch(T, A)
+    R = similar(proto, T, n, n)
+    return ProductReduced{T, typeof(R), typeof(similar(proto, T, n)), typeof(scratch)}(
+        R, similar(proto, T, n), similar(proto, T, m), similar(proto, T, n),
+        scratch, similar(proto, T, m)
+    )
+end
+
+backend_name(::ProductReduced) = :product_reduced
+
+function backend_info(ls::ProductReduced)
+    dim = size(ls.Rinv, 1)
+    return BackendInfo(backend_name(ls), true, :reduced, dim, dense_triangle(dim))
+end
+
+function factorize!(ls::ProductReduced{T}, prob, wt)::Bool where {T}
+    P, A, D, E, c, n, m = prob.P, prob.A, prob.D, prob.E, prob.c, prob.n, prob.m
+    R, ej, col = ls.Rinv, ls.ej, ls.col
+    # `c·D P D + σI`, one product with `P` per column.
+    for j in 1:n
+        fill!(ej, zero(T))
+        ej[j] = one(T)
+        mul!(col, P, ej)
+        dj = D[j]
+        for i in 1:n
+            R[i, j] = c * D[i] * col[i] * dj
+        end
+        R[j, j] += wt.sigma
+    end
+    if m > 0
+        # The reduced term is weighted by `E²ρ`, the scaled rows' weights.
+        ws = ls.wscaled
+        rho = wt.w
+        for i in 1:m
+            ei = E[i]
+            ws[i] = rho[i] * ei * ei
+        end
+        add_reduced_term!(R, T, A, ws, D, n, m, ls.scratch, ls.ej, ls.av, ls.col)
+    end
+    F = cholesky!(Symmetric(R); check = false)
+    issuccess(F) || return false
+    invert_spd!(R, F)
+    return true
 end

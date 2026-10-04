@@ -5,10 +5,11 @@ The state a dual active-set solve runs on: the [`QPData`](@ref), the resolved
 [`ActiveSet`](@ref), the [`Options`](@ref), the reduction to a least-distance problem, and
 the iterates in problem space.
 
-The reduction holds the Cholesky factor of `P` (or `P + εI`) and the transformed constraint
-matrix, both built once at [`setup`](@ref). A re-solve through [`update!`](@ref) keeps them
-whenever `P` and `A` are unchanged, and keeps the working set too, which is what makes a
-warm start cheap here.
+The reduction holds the Cholesky factor of `P` (or `P + εI`), in `P`'s own form, and the
+transformed constraint matrix `A R⁻¹`, both built once at [`setup`](@ref). When `A` and the
+factor are not both dense it holds `A` and the factor instead, and derives rows of `A R⁻¹` from
+them. A re-solve through [`update!`](@ref) keeps them whenever `P` and `A` are unchanged, and
+keeps the working set too, which is what makes a warm start cheap here.
 """
 mutable struct ActiveSetWorkspace{
         T <: Real, MP <: AbstractMatrix, MA <: AbstractMatrix, V <: AbstractVector{T},
@@ -54,13 +55,26 @@ binds its type variables to the method rather than the module, so a parametric d
 has no concrete signature to check and needs the instantiations named.
 """
 const DenseWorkspace{T} = ActiveSetWorkspace{
-    T, Matrix{T}, Matrix{T}, Vector{T}, DAQPReduction{T, Cholesky{T, Matrix{T}}},
+    T, Matrix{T}, Matrix{T}, Vector{T}, DAQPReduction{T, UpperTriangular{T, Matrix{T}}},
+}
+
+"""
+The workspace `solve(P, q, A, l, u, ActiveSet())` builds for a `KroneckerOperator` `P` and a
+`KroneckerOperator` `A`, which reduces to [`ImplicitRows`](@ref) over a
+[`PureQPBase.KroneckerCholesky`](@ref).
+
+The guarantees are stated against this instantiation alongside [`DenseWorkspace`](@ref),
+because holding the operands rather than `A R⁻¹` puts different code in the iteration.
+"""
+const KroneckerWorkspace{T} = ActiveSetWorkspace{
+    T, KroneckerOperator{T, Matrix{T}}, KroneckerOperator{T, Matrix{T}}, Vector{T},
+    DAQPReduction{T, KroneckerCholesky{T}},
 }
 
 function Base.show(io::IO, ws::ActiveSetWorkspace{T}) where {T}
     n, m = dimensions(ws)
     print(io, "ActiveSetWorkspace{", T, "}: ", n, " variables, ", m, " rows, ")
-    print(io, ws.red.ws.F.k, " rows in the working set")
+    print(io, nactive(ws.red.ws.W), " rows in the working set")
     return nothing
 end
 
@@ -102,6 +116,61 @@ function refuse_activeset(LS::Symbol, options::Options)
     return nothing
 end
 
+"""
+The representations the reduction reads as they are: a dense matrix, a `Symmetric` of one, and
+the structured and unmaterialized forms the base owns.
+
+A composition belongs here for the same reason a `ProductOperator` does: a working-set change
+needs one row, and each of these answers that from its parts — a stack from the block holding the
+row, a composition by carrying the outer part's row through the inner one — without entries.
+"""
+const ReadDirectly{T} = Union{
+    StridedMatrix{T}, Symmetric{T, <:StridedMatrix{T}}, Diagonal{T}, BlockDiagonal{T},
+    KroneckerOperator{T}, ProductOperator{T},
+    StackedOperator{T}, ComposedOperator{T}, SumOperator{T},
+}
+
+"""
+    factored_operand(T, P) -> P or Matrix{T}
+
+What the reduction hands to `cholesky_factor`.
+
+A representation the reduction reads directly is passed through whether or not it has a factor,
+so a `P` with no factor is refused by `reduce_qp` naming the forms that have one rather than
+here. Everything else is handed to [`PureQPBase.factorable_operand`](@ref), which keeps what the
+base factors in its own form — a sparse `P` among them — and densifies the rest. A sparse `A` is
+not kept; see [`row_operand`](@ref).
+"""
+factored_operand(::Type{T}, P::ReadDirectly{T}) where {T} = P
+
+function factored_operand(::Type{T}, P::AbstractMatrix) where {T}
+    is_materializable(P) || refuse_unreadable_operand(T)
+    return factorable_operand(T, P)
+end
+
+"""
+    row_operand(T, A) -> A or Matrix{T}
+
+`A` itself when the reduction reads its rows and products directly, and a dense copy otherwise.
+
+The base decides what a row-reading consumer should hold, so a sparse `A` is kept as a sparse
+pair with its transpose rather than densified; this adds only the refusal.
+"""
+row_operand(::Type{T}, A::ReadDirectly{T}) where {T} = A
+
+function row_operand(::Type{T}, A::AbstractMatrix) where {T}
+    is_materializable(A) || refuse_unreadable_operand(T)
+    return rows_operand(T, A)
+end
+
+@noinline refuse_unreadable_operand(::Type{T}) where {T} = throw(
+    ArgumentError(
+        "an operator that supplies products only must have the solve's own element type, " *
+            "and this one does not, so it can be neither read nor converted. Build it as a " *
+            "ProductOperator{$T}, or pass P, q, A, l and u in one element type."
+    )
+)
+
 function setup_backend(
         alg::ActiveSet, ::Val{LS}, ::Type{T}, P::AbstractMatrix, q::AbstractVector,
         A::AbstractMatrix, l::AbstractVector, u::AbstractVector, options::Options,
@@ -118,25 +187,19 @@ function setup_backend(
 
     n, m = validate(P, q, A, l, u)
     resolved = element_typed(alg, T, options)
-    is_materializable(P) && is_materializable(A) || throw(
-        ArgumentError(
-            "ActiveSet() needs P and A it can read entry by entry: the reduction forms " *
-                "A / R for the Cholesky factor R of P, which an operator cannot supply."
-        )
-    )
     # Convexity is not checked here: `reduce_qp` factors `P + eps_prox*I` and reports a
     # failure, which is the same question asked once instead of twice.
     # The caller's data and nothing else: this method never forms the scaled products and has
     # no linear-system backend, so it asks for neither the equilibrated copy nor their scratch.
     # `refuse_activeset` has already required `options.scaling` to be zero.
     prob = validated_data(T, n, m, P, q, A, l, u)
-    # `convert` rather than `Matrix{T}`/`Vector{T}`: those copy even when the argument
-    # already has the type asked for, and the reduction only reads this data.
+    # `convert` rather than `Vector{T}`: that copies even when the argument already has the
+    # type asked for, and the reduction only reads this data.
     iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
     red = reduce_qp(
-        convert(Matrix{T}, P), convert(Matrix{T}, A),
+        factored_operand(T, P), row_operand(T, A),
         convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
-        iseq; eps_prox = resolved.eps_prox
+        iseq; eps_prox = resolved.eps_prox, working_set = resolved.working_set
     )
 
     # The reported point is these arrays, not copies of them, so the solution the workspace
@@ -163,6 +226,22 @@ Run the dual active-set method from the workspace's state.
 The working set carries over from the previous solve when one has run and nothing has
 invalidated it, so a re-solve after [`update!`](@ref) starts from the previous answer's
 active rows. [`cold_start!`](@ref) drops it.
+
+How much that saves depends on how far the data moved, because the carried set is a good guess
+exactly to the extent the active set did not change. Measured on an ill-conditioned problem,
+a re-solve after a 1% change in `q` costs a fiftieth of a cold one; after a tenth it can cost
+more than one, and on the hardest draws it reaches no answer at all and reports
+`NUMERICAL_ERROR` or `MAX_ITER_REACHED`.
+
+Such a run is recoverable and never a wrong answer: [`cold_start!`](@ref) and a second
+`solve!` solve the same data. This is left to the caller rather than done here, because a
+solve that sometimes silently runs twice is worse than one that fails predictably for a caller
+working to a deadline. A control loop that has the time to spare can retry; one that does not
+can take the failure and keep the previous input.
+
+The result is the workspace's own `Solution`, refilled by each solve rather than rebuilt. To
+keep one across a later solve, copy it -- [`copyto!`](@ref) into a `Solution` you already hold
+allocates nothing.
 """
 function solve!(ws::ActiveSetWorkspace{T}) where {T}
     t0 = time_ns()
@@ -199,7 +278,9 @@ that reaches an answer pays for it.
 function certifiable(ws::ActiveSetWorkspace{T}) where {T}
     lw = ws.red.ws
     prob = ws.prob
-    k = lw.F.k
+    # The ray spans the working set, except where `full_set_step!` proved infeasibility with a
+    # row it could not hold; there it reaches one further, and `certrow` says so.
+    k = iszero(lw.certrow[1]) ? nactive(lw.W) : lw.certrow[1]
     k > 0 || return false
     y = ws.ycert
     fill!(y, zero(T))
@@ -224,7 +305,10 @@ function separates(ws::ActiveSetWorkspace{T}, y) where {T}
     project_polar_reccone!(y, prob.l0, prob.u0)
     norm_inf(y) > DIVISION_TOL(T) || return false
     support_plain(y, prob.l0, prob.u0) < zero(T) || return false
-    mul!(ws.px, transpose(prob.A), y)
+    # `adjoint` rather than `transpose`: the element type is real, so the two products are the
+    # same one, and it is the adjoint that an operator supplying products only answers. Asked
+    # for the transpose it falls back to reading entries, which such an operator refuses.
+    mul!(ws.px, adjoint(prob.A), y)
     # Relative to the direction's own size, at the tolerance this algorithm already prices
     # rows against. A residual below it is a certificate of the problem the caller posed to
     # the accuracy the caller asked for.
@@ -270,7 +354,7 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
     return build_solution(ws)
 end
 
-@strict_function signatures = [(DenseWorkspace{Float64},)] function warm_start!(ws::ActiveSetWorkspace{T}; x = nothing, y = nothing) where {T}
+@strict_function signatures = [(DenseWorkspace{Float64},), (KroneckerWorkspace{Float64},)] function warm_start!(ws::ActiveSetWorkspace{T}; x = nothing, y = nothing) where {T}
     prob = ws.prob
     if !isnothing(x)
         length(x) == prob.n || throw(ArgumentError("length(x) must be $(prob.n)"))
@@ -288,7 +372,7 @@ end
     return ws
 end
 
-@strict_function signatures = [(DenseWorkspace{Float64},)] function cold_start!(ws::ActiveSetWorkspace{T}) where {T}
+@strict_function signatures = [(DenseWorkspace{Float64},), (KroneckerWorkspace{Float64},)] function cold_start!(ws::ActiveSetWorkspace{T}) where {T}
     fill!(ws.x, zero(T))
     fill!(ws.y, zero(T))
     fill!(ws.z, zero(T))
@@ -316,14 +400,22 @@ function update!(
     data = ws.prob
     if !isnothing(P) || !isnothing(A)
         iseq = [data.l0[i] == data.u0[i] for i in 1:data.m]
-        ws.red = reduce_qp(
-            convert(Matrix{T}, data.P), convert(Matrix{T}, data.A),
+        red = reduce_qp(
+            factored_operand(T, data.P), row_operand(T, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
-            iseq; eps_prox = ws.algorithm.eps_prox
+            iseq; eps_prox = ws.algorithm.eps_prox,
+            working_set = ws.algorithm.working_set
         )
+        # `validate_update!` has already required `P` and `A` to keep their types, which fixes
+        # the reduction's type, so this assignment cannot change what the workspace holds.
+        ws.red = red
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)
-        rebuild_bounds!(ws.red, data.u0, data.l0)
+        # A row that has just become an equality, or stopped being one, is held on different
+        # terms: an equality's multiplier is free in sign and never blocks a step. The
+        # working set carried from the previous solve holds it on the old terms, so it is no
+        # longer a starting point and the next solve builds its own.
+        rebuild_bounds!(ws.red, data.u0, data.l0) && (ws.warm = false)
     end
     ws.update_time += (time_ns() - t0) / 1.0e9
     return ws

@@ -70,6 +70,26 @@ Two notes:
 
 An operator you supply is only as fast as its own `mul!` method.
 
+## The active-set method
+
+`PureDAQP/test/strictmode_tests.jl` proves the iteration allocation-free and trim-compatible:
+`run_daqp!`, the functions it calls, `multipliers!`, `primal!`, `build_solution` and
+`reset_working_set!`. It proves them on a dense pair, on a singular `P` under `eps_prox > 0`,
+and on a pair of [`PureQPBase.KroneckerOperator`](@ref)s, where reading a row of `A R⁻¹` is a
+product and a solve and pricing is a solve and a product, so the loop runs different code. A
+warm `solve!` and an `update!` of `q`, `l` or `u` are measured at 0 bytes. `solve!` reads the
+clock, which the static check counts as an allocation, so it is proved trim-compatible and its
+allocation claim is the measurement.
+
+**For an `A` you supply, the allocation guarantee is only as good as your `mul!`.** An `A` that
+supplies products only is multiplied for every pricing pass and for the final residual, and it
+is read one row at a time through its adjoint product,
+[`PureQPBase.dense_row!`](@ref), each time a row enters the working set. A product that
+allocates therefore allocates on every iteration. In the test that checks this, a warm `solve!`
+over a `LinearMap` whose functions allocate nothing allocates 0 bytes, and over one whose
+functions allocate it does not. A LinearMaps product `B * C` allocates scratch per application
+([Two packages supply operators](@ref)), so it breaks the guarantee in the same way.
+
 ## `--trim` compatibility
 
 `juliac --trim` needs every function call resolved statically.

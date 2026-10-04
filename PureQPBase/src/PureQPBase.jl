@@ -23,12 +23,16 @@ using StrictMode: @strict_contract, @assert_noalloc, @assert_trim_compatible
 include("blockdiagonal.jl")
 include("kronecker.jl")
 include("rowcoupled.jl")
+include("stacked.jl")
+include("composition.jl")
 include("problem.jl")
 include("options.jl")
 include("weights.jl")
 include("linsys.jl")
 include("preconditioner.jl")
 include("operator.jl")
+include("rows.jl")
+include("cholesky.jl")
 include("lowrank.jl")
 include("block.jl")
 include("kronsolve.jl")
@@ -43,7 +47,7 @@ include("api.jl")
 include("conformance.jl")
 
 export setup, solve, solve!, update!, update_settings!, update_rho!, warm_start!, cold_start!
-export dimensions, capabilities, constraint_violation
+export dimensions, capabilities, constraint_violation, constraint_violation!
 export Solution, Status, Options, default_options
 export QPAlgorithm
 export QPWorkspace
@@ -53,7 +57,8 @@ export backend_info, backend_name, factor_fill, BackendInfo
 export PolishStatus
 export adjoint_derivative, forward_derivative
 export LinearSystem, ReducedCholesky, FullKKT
-export Preconditioner, IdentityPreconditioner, JacobiPreconditioner, update_preconditioner!
+export Preconditioner, IdentityPreconditioner, JacobiPreconditioner, KroneckerPreconditioner
+export update_preconditioner!
 export SOLVED, PRIMAL_INFEASIBLE, DUAL_INFEASIBLE, MAX_ITER_REACHED, NON_CONVEX, UNSOLVED
 export TIME_LIMIT_REACHED, INTERRUPTED, NUMERICAL_ERROR
 export PolishStatus, POLISH_SUCCESS, POLISH_FAILED, POLISH_NOT_PERFORMED
@@ -126,6 +131,48 @@ let
     end
 end
 
+# A consumer reads rows through `dense_row!` every time a row enters its working set, so each
+# method is checked on a small instance. `ProductOperator` is covered by
+# `test/strictmode_tests.jl`, which proves it over a wrapped type defined there.
+let
+    for A in (
+            [1.0 2.0 3.0 4.0 5.0 6.0; 6.0 5.0 4.0 3.0 2.0 1.0],
+            KroneckerOperator([1.0 2.0; 3.0 4.0], [1.0 0.5 2.0; 0.0 1.0 3.0]),
+            BlockDiagonal([[1.0 2.0; 3.0 4.0], [1.0 0.5; 0.0 1.0; 2.0 3.0]]),
+        )
+        row = zeros(size(A, 2))
+        @assert_noalloc dense_row!(row, A, 1)
+        @assert_trim_compatible dense_row!(row, A, 1)
+    end
+end
+
+# A consumer solves against `R` and `transpose(R)` in a loop, so both solves are checked for
+# every representation `cholesky_factor` returns, on a small instance. The transposed solve has
+# no slot in the `CholeskyFactor` contract, whose `Self` stands for the factor alone.
+#
+# The triangular solve of a dense `R`, which a block-diagonal `R` runs per block, is asserted
+# for `--trim` and not for allocation: the value-free scan reads the standard library's
+# `ldiv!` for a triangular matrix as allocating, while AllocCheck proves it does not.
+# `test/strictmode_tests.jl` proves both solves of every `R` with StrictModeTest.
+let
+    spd = [4.0 1.0 0.0; 1.0 3.0 0.5; 0.0 0.5 2.0]
+    for P in (
+            spd,
+            Diagonal([4.0, 3.0, 2.0]),
+            BlockDiagonal([spd, [2.0 0.5; 0.5 3.0]]),
+            KroneckerOperator(spd, [2.0 0.5; 0.5 3.0]),
+        )
+        R = cholesky_factor(P, 0.0)
+        Rt = transpose(R)
+        v = ones(size(P, 1))
+        scanned = !(P isa Union{Matrix, BlockDiagonal})
+        scanned && @assert_noalloc ldiv!(R, v)
+        @assert_trim_compatible ldiv!(R, v)
+        scanned && @assert_noalloc ldiv!(Rt, v)
+        @assert_trim_compatible ldiv!(Rt, v)
+    end
+end
+
 # Every `LinearSystem` and built-in preconditioner defined by the time this module finishes
 # must satisfy its contract and be `--trim` compatible, asserted here rather than type by
 # type: a per-type `@verify` is opt-in, so a new type acquires the guarantee only if whoever
@@ -135,5 +182,12 @@ end
 # by the packages that implement them, since this one defines no concrete subtype of either.
 @verify LinearSystem subtypes = true trim_compat = true
 @verify Preconditioner subtypes = true trim_compat = true
+
+# The factor types are not subtypes of `CholeskyFactor`, so each is checked against it by name.
+@verify UpperTriangular{Float64, Matrix{Float64}} for_contract = CholeskyFactor trim_compat = true
+@verify Diagonal{Float64, Vector{Float64}} for_contract = CholeskyFactor trim_compat = true
+@verify BlockDiagonal{Float64, UpperTriangular{Float64, Matrix{Float64}}} for_contract = CholeskyFactor trim_compat = true
+@verify KroneckerCholesky{Float64} for_contract = CholeskyFactor trim_compat = true
+@verify KroneckerSquareRoot{Float64} for_contract = CholeskyFactor trim_compat = true
 
 end # module PureQPBase

@@ -223,17 +223,6 @@ function ipm_workspace(
     return ws
 end
 
-function refuse_ipm_operators()
-    throw(
-        ArgumentError(
-            "InteriorPoint() factors a matrix built from the entries of P and A, and one of " *
-                "them declares `PureQPBase.is_materializable` false: it supplies products only. " *
-                "Pass matrices, pass linsys = :indirect with a caller-supplied preconditioner " *
-                "and scaling = 0, or use OperatorSplitting()."
-        )
-    )
-end
-
 "Whether `M` is a preconditioner the caller built, rather than `nothing` or a built-in one."
 caller_preconditioner(M) = !(M isa Union{Nothing, IdentityPreconditioner, JacobiPreconditioner})
 
@@ -266,7 +255,8 @@ function setup_backend(
                 "OperatorSplitting()."
         )
     )
-    LS === :indirect || (is_materializable(P) && is_materializable(A)) || refuse_ipm_operators()
+    # An operand that cannot be read is served by `ProductReduced`, which assembles the reduced
+    # matrix from products, so there is nothing to refuse here on that ground any more.
     if LS === :indirect
         iszero(options.scaling) || throw(
             ArgumentError(
@@ -313,7 +303,10 @@ function setup_backend(
     named = named_backend(Val(LS), P, A, prob, wt, sel, preconditioner)
     ls = isnothing(named) ? first(choose_backend(P, A, prob, wt, sel)) : first(named)
     ws = ipm_workspace(ls, prob, wt, algorithm, options)
-    if LS === :indirect
+    # Keyed on the backend that was chosen, not on the kind that was asked for: the matrix-free
+    # backend reads its conjugate-gradient settings here and throws without them, so a backend
+    # `:auto` selects must be given them too.
+    if backend_name(ws.linsys) === :indirect
         adopt_settings!(ws.linsys, algorithm, options)
         use_residual_stop!(ws.linsys, true)
     end
@@ -356,11 +349,13 @@ its weights reach `1/δ_d`. Other element types get [`ReducedCholesky`](@ref), s
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob::Problem{T}, sel::IPMSelection) where {T}
     (is_materializable(P) && is_materializable(A)) || return nothing
+    (holds_structure(P) || holds_structure(A)) && return nothing
     T <: LinearAlgebra.BlasFloat && return (FullKKT(prob.q0, prob.n, prob.m), false)
     return (ReducedCholesky(prob.q0, prob.n, prob.m), false)
 end
 
 dense_rung(P, A, prob, sel::IPMSelection) = nothing
+
 
 """
     lowrank_rung(P::Diagonal, A::RowCoupled, prob, wt, sel::IPMSelection) -> nothing
@@ -387,10 +382,35 @@ lowrank_rung(P::Diagonal, A::RowCoupled, prob, wt, sel::IPMSelection; require_cr
 """
     indirect_rung(P, A, prob, sel::IPMSelection)
 
-Refuses: the interior-point method runs the matrix-free backend only when it is named, with
-a caller-supplied preconditioner.
+Serves the pair with [`PureQPBase.ProductReduced`](@ref): the reduced matrix assembled from
+products with `P` and `A` and then inverted. Nothing of size `m·n` or `(n+m)²` is formed, which
+is what the rungs above this one declined to do, and the solve stays a factorization rather than
+becoming an iteration.
+
+What it does hold is the reduced matrix itself, `n²`, which no factored form of an
+interior-point system goes below: its Cholesky factor has full Kronecker rank with no spectral
+decay, and the system is a linear matrix equation in three or more Kronecker terms, for which no
+direct method is known. A caller who cannot hold `n²` names `linsys = :indirect` with a
+preconditioner of their own — [`PureQPBase.KroneckerPreconditioner`](@ref) for a Kronecker pair.
+
+Refuses only what has no entries at all to read through products: an operand must at least
+supply them.
 """
-indirect_rung(P, A, prob, sel::IPMSelection) = refuse_ipm_operators()
+function indirect_rung(P, A, prob, sel::IPMSelection)
+    products_only(P) && products_only(A) && refuse_ipm_no_products()
+    return (ProductReduced(prob.q0, prob.n, prob.m, A), false)
+end
+
+"Whether `M` answers neither entries nor products, which leaves nothing to assemble from."
+products_only(M) = false
+
+@noinline refuse_ipm_no_products() = throw(
+    ArgumentError(
+        "InteriorPoint() assembles its reduced matrix from products with P and A, and neither " *
+            "operand supplies one. Give the operators a `LinearAlgebra.mul!` method, pass " *
+            "matrices, or solve with OperatorSplitting()."
+    )
+)
 
 """
     warm_start!(ws::InteriorPointWorkspace; x = nothing, y = nothing)

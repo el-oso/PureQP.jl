@@ -86,6 +86,9 @@ end
 "The number of dense coupling rows, which is the rank of the correction they contribute."
 coupling_rank(A::RowCoupled) = size(A.coupling, 1)
 
+# The weighted rows are one entry each, so forming the matrix would hold a full row apiece.
+holds_structure(::RowCoupled) = true
+
 Base.size(A::RowCoupled) = (coupling_rank(A) + length(A.weights), A.n)
 
 Base.@propagate_inbounds function Base.getindex(A::RowCoupled{T}, i::Integer, j::Integer) where {T}

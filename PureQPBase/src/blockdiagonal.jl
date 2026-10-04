@@ -55,6 +55,9 @@ BlockDiagonal(blocks::AbstractVector{<:AbstractMatrix}) = BlockDiagonal(collect(
 "The number of blocks on the diagonal."
 nblocks(A::BlockDiagonal) = length(A.blocks)
 
+# The off-diagonal blocks are zero and are not stored, so forming the matrix would hold them.
+holds_structure(::BlockDiagonal) = true
+
 "The rows block `i` occupies."
 rowrange(A::BlockDiagonal, i::Integer) = A.rowstart[i]:(A.rowstart[i + 1] - 1)
 
@@ -143,4 +146,40 @@ function is_convex(::Type{T}, P::BlockDiagonal, sigma) where {T}
     return all(P.blocks) do B
         isempty(B) || issuccess(cholesky(Symmetric(Matrix{T}(B)) + sigma * I; check = false))
     end
+end
+
+"""
+    add_reduced_term!(R, T, A::BlockDiagonal, weights, D, n, m, scratch, ej, av, col) -> R
+
+Add `D Aᵀ diag(weights) A D` into `R`, block by block.
+
+A block-diagonal `A` has no row shared between two blocks, so `Aᵀ diag(w) A` is block diagonal
+too: block `i` is `Aᵢᵀ diag(w[rowrange(A, i)]) Aᵢ`, written into `R`'s `colrange(A, i)` square and
+nowhere else. The generic path would reach the same matrix through `2n` products with the whole
+operator, every one of which walks every block; this touches each block's own rows and columns
+once, so the work falls from `O(n² Σᵢ nnzᵢ)` to the sum of the blocks' own `O(nᵢ² mᵢ)`.
+
+The zeros off the diagonal are not written, which is why `factorize!` fills `R` from `P` first:
+this adds to what is there.
+"""
+function add_reduced_term!(
+        R::AbstractMatrix{T}, ::Type{T}, A::BlockDiagonal, weights::AbstractVector,
+        D::AbstractVector, n::Integer, m::Integer, scratch, ej, av, col
+    ) where {T}
+    for b in 1:nblocks(A)
+        Ab = A.blocks[b]
+        rows = rowrange(A, b)
+        cols = colrange(A, b)
+        for (jj, j) in enumerate(cols)
+            dj = D[j]
+            for (ii, i) in enumerate(cols)
+                acc = zero(T)
+                for (kk, kr) in enumerate(rows)
+                    acc += weights[kr] * T(Ab[kk, ii]) * T(Ab[kk, jj])
+                end
+                R[i, j] += D[i] * acc * dj
+            end
+        end
+    end
+    return R
 end

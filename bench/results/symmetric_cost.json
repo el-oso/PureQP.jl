@@ -1,0 +1,35 @@
+{
+  "tool": "Chairmarks, minimum reported",
+  "blas_threads": 1,
+  "note": "clock unpinned on this host; indicative, not a gate",
+  "product": [
+    {"n": 100, "gemv_us": 0.5915, "symv_us": 0.5243, "ratio": 1.1283, "maxdiff": 2.665e-15},
+    {"n": 200, "gemv_us": 1.9909, "symv_us": 1.5462, "ratio": 1.2876, "maxdiff": 7.994e-15},
+    {"n": 500, "gemv_us": 15.0090, "symv_us": 9.3910, "ratio": 1.5982, "maxdiff": 9.770e-15},
+    {"n": 900, "gemv_us": 50.2350, "symv_us": 30.6880, "ratio": 1.6370, "maxdiff": 1.732e-14}
+  ],
+  "solve": [
+    {"n": 100, "backend": "direct", "matrix_ms": 0.041508, "symmetric_ms": 0.040316, "ratio": 1.0296, "iter": 25, "iter_symmetric": 25, "objdiff": 1.244e-15},
+    {"n": 100, "backend": "indirect", "matrix_ms": 0.115899, "symmetric_ms": 0.111491, "ratio": 1.0395, "iter": 25, "iter_symmetric": 25, "objdiff": 2.764e-16},
+    {"n": 200, "backend": "direct", "matrix_ms": 0.106571, "symmetric_ms": 0.111520, "ratio": 0.9556, "iter": 25, "iter_symmetric": 25, "objdiff": 6.997e-15},
+    {"n": 200, "backend": "indirect", "matrix_ms": 0.329982, "symmetric_ms": 0.305556, "ratio": 1.0799, "iter": 25, "iter_symmetric": 25, "objdiff": 1.333e-15},
+    {"n": 500, "backend": "direct", "matrix_ms": 0.756526, "symmetric_ms": 0.720318, "ratio": 1.0503, "iter": 25, "iter_symmetric": 25, "objdiff": 1.450e-14},
+    {"n": 500, "backend": "indirect", "matrix_ms": 2.240503, "symmetric_ms": 1.858243, "ratio": 1.2057, "iter": 25, "iter_symmetric": 25, "objdiff": 7.629e-16},
+    {"n": 900, "backend": "direct", "matrix_ms": 2.581926, "symmetric_ms": 2.476558, "ratio": 1.0425, "iter": 25, "iter_symmetric": 25, "objdiff": 1.107e-14},
+    {"n": 900, "backend": "indirect", "matrix_ms": 7.284180, "symmetric_ms": 6.257905, "ratio": 1.1640, "iter": 25, "iter_symmetric": 25, "objdiff": 1.460e-15}
+  ],
+  "setup": [
+    {"n": 100, "algorithm": "ActiveSet", "matrix_ms": 0.053932, "symmetric_ms": 0.056186, "ratio": 0.9599},
+    {"n": 100, "algorithm": "OperatorSplitting", "matrix_ms": 0.212531, "symmetric_ms": 0.250252, "ratio": 0.8493},
+    {"n": 100, "algorithm": "InteriorPoint", "matrix_ms": 0.134994, "symmetric_ms": 0.170762, "ratio": 0.7905},
+    {"n": 200, "algorithm": "ActiveSet", "matrix_ms": 0.283123, "symmetric_ms": 0.288704, "ratio": 0.9807},
+    {"n": 200, "algorithm": "OperatorSplitting", "matrix_ms": 0.810677, "symmetric_ms": 0.859851, "ratio": 0.9428},
+    {"n": 200, "algorithm": "InteriorPoint", "matrix_ms": 0.398581, "symmetric_ms": 0.447203, "ratio": 0.8913},
+    {"n": 500, "algorithm": "ActiveSet", "matrix_ms": 2.891350, "symmetric_ms": 2.934571, "ratio": 0.9853},
+    {"n": 500, "algorithm": "OperatorSplitting", "matrix_ms": 7.586319, "symmetric_ms": 7.478155, "ratio": 1.0145},
+    {"n": 500, "algorithm": "InteriorPoint", "matrix_ms": 3.168993, "symmetric_ms": 3.036242, "ratio": 1.0437},
+    {"n": 900, "algorithm": "ActiveSet", "matrix_ms": 14.193452, "symmetric_ms": 14.118280, "ratio": 1.0053},
+    {"n": 900, "algorithm": "OperatorSplitting", "matrix_ms": 31.509890, "symmetric_ms": 31.871701, "ratio": 0.9886},
+    {"n": 900, "algorithm": "InteriorPoint", "matrix_ms": 9.917082, "symmetric_ms": 9.790613, "ratio": 1.0129}
+  ]
+}
