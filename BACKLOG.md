@@ -43,3 +43,26 @@ Not yet done: running the 14-item selection to confirm it passes and covers what
 says, then deciding what to cut. Coverage equality is not sufficient grounds on its own — two
 items can cover identical lines and still assert different things about them. PureOSQP has 166
 items and has not been measured.
+
+## `Optimizer` is exported by one solver and not the other
+
+PureOSQP exports `Optimizer`; PureIPM defines it and does not. Two modules exporting one name
+make it unusable unqualified — `using PureOSQP, PureIPM` then `Optimizer` is an
+`UndefVarError` naming both — so the pair works only because PureIPM abstains.
+
+One `Optimizer` generic per solver package is right and is what MathOptInterface expects:
+a caller writes `PureOSQP.Optimizer`, as it writes `HiGHS.Optimizer`. The base does not own it
+and should not, which is the opposite of the `solve!` case. What is left to settle is the
+export: qualified access is the convention, so neither package needs to export it, and
+exporting from exactly one is a property of which name happened to be claimed first.
+
+## PureDAQP has no MathOptInterface wrapper
+
+PureQPBase, PureOSQP and PureIPM each ship a MathOptInterface extension. PureDAQP ships none
+and has no `Optimizer`, so a JuMP model cannot select the dual active-set method.
+
+It is the method suited to the case JuMP users meet in control work: a small dense QP re-solved
+many times from a warm start. A wrapper has to carry the refusals across, since `ActiveSet`
+rejects rather than ignores what does not apply to it — `scaling` other than zero, `polishing`,
+any `linsys`, and the operator-splitting parameters each throw an `ArgumentError`. MOI
+attributes that map onto those need the same answer rather than a silent default.
