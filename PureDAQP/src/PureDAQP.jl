@@ -50,7 +50,7 @@ import PureQPBase:
     has_cholesky_factor, cholesky_factor, factorable_operand, rows_operand,
     scalar_diagonal, dense_row!,
     BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator,
-    StackedOperator, ComposedOperator, SumOperator
+    StackedOperator, JoinedOperator, ComposedOperator, SumOperator
 
 
 # What this package owns. Everything else a caller needs is PureQPBase's and arrives through the

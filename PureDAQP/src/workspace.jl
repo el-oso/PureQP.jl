@@ -160,6 +160,12 @@ pair with its transpose rather than densified; this adds only the refusal.
 """
 row_operand(::Type{T}, A::ReadDirectly{T}) where {T} = A
 
+# A join answers a row from its blocks and a product through them, so it is read directly as an
+# `A`. It is not in `ReadDirectly`, because as a `P` it has no Cholesky factor of its own and is
+# densified by [`factored_operand`](@ref) instead — a join holds no structure a dense `n×n`
+# factor would lose.
+row_operand(::Type{T}, A::JoinedOperator{T}) where {T} = A
+
 function row_operand(::Type{T}, A::AbstractMatrix) where {T}
     is_materializable(A) || refuse_unreadable_operand(T)
     return rows_operand(T, A)

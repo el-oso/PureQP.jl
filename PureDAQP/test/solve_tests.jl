@@ -917,3 +917,70 @@ end
         Pfun, q, A, bk .- 1, bk .+ 1, ActiveSet()
     )
 end
+
+@testitem "a joined A is read directly and updated in its own representation" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, Random
+
+    Random.seed!(23)
+    # `A = [K C]`: a Kronecker block beside a dense one, over the same 12 rows.
+    K1, K2 = randn(3, 2), randn(4, 3)
+    C = randn(12, 4)
+    joined(k1, k2, c) = PureQPBase.JoinedOperator(PureQPBase.KroneckerOperator(k1, k2), c)
+    A = joined(K1, K2, C)
+    m, n = size(A)
+    P = Matrix(Symmetric(randn(n, n) * 0.1)) + 3I
+    q = randn(n)
+    # Bounds a fixed point satisfies, so the problem stays feasible whatever `A` becomes.
+    x0 = randn(n)
+    bounds(A) = (Matrix(A) * x0 .- 1, Matrix(A) * x0 .+ 1)
+    l, u = bounds(A)
+
+    ws = PureDAQP.setup(P, q, A, l, u, ActiveSet())
+    # The join is held as it is: rows come from its blocks, not from a dense copy.
+    @test ws.red.ws.M isa PureDAQP.ImplicitRows
+    sol = PureQPBase.solve!(ws)
+    @test sol.status == SOLVED
+    ref = PureDAQP.solve(P, q, Matrix(A), l, u, ActiveSet())
+    @test sol.x ≈ ref.x atol = 1.0e-8
+
+    # Replacing `A` keeps its representation: another join of the same block types is taken,
+    # a matrix of the same numbers is refused.
+    C2 = randn(12, 4)
+    A2 = joined(K1, K2, C2)
+    l2, u2 = bounds(A2)
+    PureQPBase.update!(ws; A = A2, l = l2, u = u2)
+    sol2 = PureQPBase.solve!(ws)
+    @test sol2.status == SOLVED
+    @test sol2.x ≈ PureDAQP.solve(P, q, Matrix(A2), l2, u2, ActiveSet()).x atol = 1.0e-8
+    @test_throws "must keep the representation" PureQPBase.update!(ws; A = Matrix(A))
+
+    # A stack of joins, which is what an `hvcat` of maps becomes, carries a two-level type and
+    # is updated the same way.
+    grid(k1, k2, c, d) = PureQPBase.StackedOperator(joined(k1, k2, c), PureQPBase.JoinedOperator(d, c))
+    D = randn(12, 6)
+    G = grid(K1, K2, C, D)
+    lg, ug = bounds(G)
+    wsg = PureDAQP.setup(P, q, G, lg, ug, ActiveSet())
+    @test PureQPBase.solve!(wsg).status == SOLVED
+    G2 = grid(K1, K2, C2, D)
+    lg2, ug2 = bounds(G2)
+    PureQPBase.update!(wsg; A = G2, l = lg2, u = ug2)
+    solg = PureQPBase.solve!(wsg)
+    @test solg.status == SOLVED
+    @test solg.x ≈ PureDAQP.solve(P, q, Matrix(G2), lg2, ug2, ActiveSet()).x atol = 1.0e-8
+    @test_throws "must keep the representation" PureQPBase.update!(wsg; A = Matrix(G))
+
+    # A joined `P` has no factor of its own and is densified for the reduction; it is still
+    # held in its representation, so an update must be a join too.
+    Pj = PureQPBase.JoinedOperator(
+        PureQPBase.StackedOperator(Diagonal(fill(2.0, 6)), zeros(4, 6)),
+        PureQPBase.StackedOperator(zeros(6, 4), Matrix(Symmetric(randn(4, 4) * 0.1)) + 2I),
+    )
+    @test PureQPBase.is_symmetric(Pj)
+    wsp = PureDAQP.setup(Pj, q, A, l, u, ActiveSet())
+    @test wsp.red.R isa UpperTriangular
+    solp = PureQPBase.solve!(wsp)
+    @test solp.status == SOLVED
+    @test solp.x ≈ PureDAQP.solve(Matrix(Pj), q, Matrix(A), l, u, ActiveSet()).x atol = 1.0e-8
+    @test_throws "must keep the representation" PureQPBase.update!(wsp; P = Matrix(Pj))
+end

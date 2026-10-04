@@ -195,6 +195,7 @@ PureQPBase.coupling_rank
 PureQPBase.BlockDiagonal
 PureQPBase.KroneckerOperator
 PureQPBase.StackedOperator
+PureQPBase.JoinedOperator
 PureQPBase.ComposedOperator
 PureQPBase.SumOperator
 PureQPBase.parts
