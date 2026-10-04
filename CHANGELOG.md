@@ -49,6 +49,12 @@ what is true now; this file is where the history lives.
 
 ### Added
 
+- **`setup` and `solve` take `ActiveSet()`**, a dual active-set method in `PureDAQP` whose
+  working set is a QR of its rows and whose reduction derives each row and each product from
+  `A` and the Cholesky factor of `P` rather than forming `A R⁻¹`, so a Kronecker,
+  block-diagonal, sparse or `Symmetric` `P` is factored in its own form and the storage does
+  not grow with `m·n`.
+
 - **`setup` and `solve` take `InteriorPoint()`**, a Mehrotra predictor–corrector
   interior-point method, alongside the default `OperatorSplitting()`. `setup` returns an
   `InteriorPointWorkspace`; its default tolerances are `1e-8`, not ADMM's `1e-3`. It handles equality, one-sided, two-sided and free rows, uses
