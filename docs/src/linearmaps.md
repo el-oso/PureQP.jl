@@ -385,18 +385,23 @@ reduction. Every form below solves on all three algorithms.
 | `kron(M₁, M₂)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
 | `cat(M₁, M₂; dims = (1, 2))` | [`PureQPBase.BlockDiagonal`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `hcat(M₁, M₂)` | [`PureQPBase.JoinedOperator`](@ref) | `cholesky` | `bunchkaufman` | `rows` |
+| `hvcat((2, 2), M₁, …, M₄)` | a `StackedOperator` of `JoinedOperator`s | `indirect` | `product_reduced` | `rows` |
+| `FillMap(c, (m, n))` | a `FillArrays.Fill` | `cholesky` | `bunchkaufman` | `rows` |
 | `M₁ + M₂` | [`PureQPBase.SumOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `M₁ * M₂` | [`PureQPBase.ComposedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
-| `hcat(M₁, M₂)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | a `FunctionMap` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `kron(fn, M)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `vcat(kron(…), fn)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 
-Two things the table is worth reading carefully for. A composition whose parts are not all
+Three things the table is worth reading carefully for. A composition whose parts are not all
 recognized keeps the composition: the last row is a stack of a Kronecker block and an opaque one,
-and the Kronecker block still contracts its factors inside it. And an operator with no entries
-still answers a *row*, as `Aᵀ eᵢ`, which is why the dual active-set method takes every row here —
-entries and rows are different questions, and only equilibration needs the first.
+and the Kronecker block still contracts its factors inside it. An `hcat` reaches the dense
+backends where a `vcat` does not: a join's blocks each own a slice of the columns and the join
+holds no structure a dense factor would lose, so it declares none, while a stack keeps its
+blocks' rows apart and is served by the rungs that work through products. And an operator with no
+entries still answers a *row*, as `Aᵀ eᵢ`, which is why the dual active-set method takes every row
+here — entries and rows are different questions, and only equilibration needs the first.
 
 The backends are what these problems reach with a `Diagonal` `P` and `scaling = 0`. A different
 `P` moves some of them: a block-diagonal pair partitioned alike reaches `block` rather than

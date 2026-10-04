@@ -17,6 +17,7 @@ module PureQPBaseLinearMapsExt
 using PureQPBase
 using LinearMaps
 using LinearAlgebra
+using FillArrays: Fill
 
 """
     PureQPBase.ProductOperator{T}(map::LinearMap; symmetric, posdef)
@@ -116,9 +117,12 @@ Only the factors are handed over; the product they stand for is never formed.
 | `M` | becomes |
 |---|---|
 | `LinearMap(B)` for a matrix `B` | `B` itself; `λ * B`, a copy, when `λ ≠ 1` |
+| `FillMap(c, (m, n))` | `Fill(λ * c, (m, n))` |
 | `kron(LinearMap(B₁), LinearMap(B₂))` | `KroneckerOperator(λ * B₁, B₂)` |
 | `blockdiag(LinearMap(B₁), …)` | `BlockDiagonal([λ * B₁, …])` |
 | `vcat(M₁, …)` | `StackedOperator` of what each `λ * Mᵢ` becomes |
+| `hcat(M₁, …)` | `JoinedOperator` of what each `λ * Mᵢ` becomes |
+| `hvcat(rows, M₁, …)` | `StackedOperator` of one `JoinedOperator` per row of blocks |
 | `M₁ + M₂ + …` | `SumOperator` of what each `λ * Mᵢ` becomes |
 | `M₁ * M₂` | `ComposedOperator(λ * M₁, M₂)` |
 | `c * M′` | what `M′` becomes, with `λ * c` in place of `λ` |
@@ -127,14 +131,19 @@ Every other map, such as a `FunctionMap`, a Kronecker product of more than two m
 more than two composed maps, or a factor that is not itself a wrapped matrix, is `nothing`, and
 stays a [`PureQPBase.ProductOperator`](@ref).
 
-The three compositions never decline: their parts go through [`as_operator`](@ref), so a part the
-table does not cover becomes a `ProductOperator` inside the composition while the others keep their
-own representation.
+The concatenations, the sum and the product never decline: their parts go through
+[`as_operator`](@ref), so a part the table does not cover becomes a `ProductOperator` inside the
+composition while the others keep their own representation.
 """
 unwrap(::Type{T}, ::LinearMap, λ) where {T} = nothing
 unwrap(::Type{T}, M::LinearMaps.WrappedMap, λ) where {T} = matrix_factor(T, M, λ)
 unwrap(::Type{T}, M::LinearMaps.ScaledMap, λ) where {T} =
     isreal(M.λ) ? unwrap(T, M.lmap, λ * T(real(M.λ))) : nothing
+
+# A constant block is an `AbstractMatrix` with `O(1)` entries and `O(m + n)` products, so it is
+# materializable and costs no storage; the stack or join it sits in stays readable.
+unwrap(::Type{T}, M::LinearMaps.FillMap, λ) where {T} =
+    isreal(M.λ) ? Fill(T(λ * real(M.λ)), size(M)) : nothing
 
 function unwrap(::Type{T}, M::LinearMaps.KroneckerMap, λ) where {T}
     length(M.maps) == 2 || return nothing
@@ -155,17 +164,24 @@ function unwrap(::Type{T}, M::LinearMaps.BlockDiagonalMap, λ) where {T}
     return PureQPBase.BlockDiagonal(uniform(T, blocks))
 end
 
-# `vcat` of maps is a `BlockMap` laying one block per row of blocks, so `rows` is all ones; any
-# other `rows` describes an `hvcat` whose blocks share rows, where the weighted product does not
-# split and a `StackedOperator` would be wrong.
+# A `BlockMap` lays its blocks out by `rows`, the number of blocks in each row of blocks: all ones
+# is a `vcat`, a single count is an `hcat`, and anything else is an `hvcat`, which is a stack of
+# joins. Every block takes `λ`, since scaling a concatenation scales each of its blocks.
+# `as_operator` rather than `unwrap`: a block it does not recognize becomes a `ProductOperator`
+# instead of declining the whole composition, so the blocks it does recognize keep their own
+# reduction — one opaque block does not cost the others their structure.
 function unwrap(::Type{T}, M::LinearMaps.BlockMap, λ) where {T}
-    all(isone, M.rows) || return nothing
-    # Every block takes `λ`, since scaling a stack scales each of its blocks. `as_operator`
-    # rather than `unwrap`: a block it does not recognize becomes a `ProductOperator` instead of
-    # declining the whole stack, so the blocks it does recognize keep their own reduction. This
-    # is what the stack is for — one opaque block does not cost the others their structure.
+    rows = M.rows
     blocks = map(m -> as_operator(T, isone(λ) ? m : λ * m), M.maps)
-    return PureQPBase.StackedOperator(blocks...)
+    all(isone, rows) && return PureQPBase.StackedOperator(blocks...)
+    length(rows) == 1 && return PureQPBase.JoinedOperator(blocks...)
+    groups = Vector{AbstractMatrix{T}}(undef, length(rows))
+    off = 0
+    for (k, r) in pairs(rows)
+        groups[k] = PureQPBase.JoinedOperator(blocks[(off + 1):(off + r)]...)
+        off += r
+    end
+    return PureQPBase.StackedOperator(groups...)
 end
 
 # `λ(B + C) = λB + λC`, so every term takes `λ`.

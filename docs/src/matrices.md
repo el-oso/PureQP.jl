@@ -733,10 +733,13 @@ reached only by products. These are the maps that arrive unwrapped:
 | `blockdiag(LinearMap(B₁), …)` | a [`PureQPBase.BlockDiagonal`](@ref) of the `Bᵢ` |
 | `c * M`, `c` real, for any `M` above | what `M` becomes, with `c` multiplied into the matrix (a scaled copy), into the first Kronecker factor, or into each block |
 
-Everything else stays a `ProductOperator`: a map built from functions, a sum, a general
-product, a `kron` of three maps, a `vcat` or `hcat`. A `KroneckerOperator` can only be built from
-dense `Matrix` factors: a `Diagonal` or `Symmetric` factor throws when the map is converted, so
-wrap `Matrix` factors.
+A `vcat` becomes a [`PureQPBase.StackedOperator`](@ref) of what its blocks become, an `hcat` a
+[`PureQPBase.JoinedOperator`](@ref), an `hvcat` a stack of joins, and a `FillMap` a
+`FillArrays.Fill`; a block the table does not cover becomes a `ProductOperator` inside the
+composition while the others keep their representation. Everything else stays a
+`ProductOperator`: a map built from functions, a general product, a `kron` of three maps. A
+`KroneckerOperator` can only be built from dense `Matrix` factors: a `Diagonal` or `Symmetric`
+factor throws when the map is converted, so wrap `Matrix` factors.
 
 **`A` composes freely.** Every `LinearMap` composition works as `A`, because `ActiveSet` only
 multiplies by `A` and reads it one row at a time, and the other two algorithms multiply by it.
@@ -757,7 +760,8 @@ that enters the working set.
 | `P₁ + P₂` | `ProductOperator` | refused: a factor of the sum is not a function of the two summands' factors. For `P + εI`, pass `ε` as `eps_prox` |
 | `B * C` in general | `ProductOperator` | refused |
 | a map built from functions | `ProductOperator` | refused by name |
-| `vcat`, `hcat` | `ProductOperator` | not a square matrix, so not a `P` |
+| `vcat` | `StackedOperator` | not a square matrix, so not a `P` |
+| `hcat` of `vcat`s, square | `JoinedOperator` | read into a dense matrix and factored, when every block has entries |
 
 A refused `P` is refused by `setup`, and the message names the types that would work. None of
 this limits [`OperatorSplitting`](@ref), which takes any `P` that supplies products.
