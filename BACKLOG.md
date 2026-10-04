@@ -119,3 +119,58 @@ honest — the method did not converge — but it is not `DUAL_INFEASIBLE`, whic
 testing for unboundedness looks for, and MOI's `test_linear_DUAL_INFEASIBLE` is excluded for
 this reason. The dual active-set iteration has a direction of unbounded descent available to it
 when this happens; recognizing it would turn a timeout into an answer.
+
+## Operator splitting has no direct backend for a structured operand
+
+`select_backend` for an `ADMMSelection` ends at `dense_rung`, which declines an operand
+reporting `holds_structure`, and then at `indirect_rung`. So a `StackedOperator` `A` reaches
+conjugate gradients under `OperatorSplitting` even when every one of its blocks is readable,
+while the same problem as a dense matrix reaches `cholesky`. A forced `linsys = :dense` or
+`:kkt` does reach a factorization, since a stack is materializable; only the ladder's own choice
+differs. The interior-point method has no such gap: its `indirect_rung` returns
+`ProductReduced`, a factorization.
+
+A direct backend is the better one for this operand. `bench/admm_structured_operand.jl` measures
+a stack of joins at `n = 400`: named `linsys = :dense` takes 50 iterations, lands `1.5e-15` from
+the dense answer and spends 2 ms solving against 22.8 ms of setup, where the ladder's conjugate
+gradients take 100 iterations, land `8.5e-5` away and spend 16 ms solving against 17.6 ms of
+setup. The factorization wins on accuracy, iterations and total time at every size measured.
+
+A rung returning `ProductReduced` would make the ladder choose one. Two things block it, and
+both must be answered first:
+
+  - it costs the `--trim` guarantee. Eight of the 43 signatures in
+    `PureOSQP/test/trim_tests.jl` stop being trim-compatible, because one more backend reachable
+    from `:auto` widens the inferred workspace union past `Base.Compiler.MAX_TYPEUNION_LENGTH`
+    (`PureQPBase/src/types.jl` states this constraint);
+  - `PureQPBase/test/selection_tests.jl` asserts, by name, that no ladder forms a matrix for a
+    pair that holds structure. `ProductReduced` holds the `n²` reduced matrix, so the rung
+    contradicts that guarantee rather than extending it.
+
+This is also where a block-pair `add_reduced_term!` for a join would begin to pay
+(`docs/design/horizontal-operators.md`).
+
+## A square vcat is refused as a P while an hcat is accepted
+
+`PureDAQP` reads a `JoinedOperator` `P` into a dense matrix and factors it, and refuses a
+`StackedOperator` `P` by name even when it is square and every block has entries. Nothing about
+the reduction needs the distinction: both are materializable and `factorable_operand` densifies
+either.
+
+## Operator splitting does not reach the tolerance at cond(P) = 1e12
+
+On 72 serialized problems from an external solver, `OperatorSplitting` reaches
+`MAX_ITER_REACHED`, or `SOLVED` tens of units from the stored answer, in every representation —
+dense, sparse, structured and unmaterialized alike. Their `cond(P)` is 1e12 and the default
+tolerances and iteration limit do not reach it. The interior-point method and the dual
+active-set method with the `:rows` working set solve the same problems in every representation,
+so this is the method's conditioning behaviour and not a representation or backend gap.
+
+## The Gram working set fails where the QR one solves
+
+On one of the four families above (`n = 505` and `629`, `m = 1420` and `2396`, `cond(P)` of
+7e8), `ActiveSet(working_set = :gram)` ends in `NUMERICAL_ERROR` after 111 or 323 iterations in
+every representation — dense, sparse, structured and unmaterialized alike — while
+`working_set = :rows` solves the same problems to a lower objective than the stored answer, with
+constraint violations below 1e-6. The failure is in the Gram working set's own arithmetic, not
+in the operand's representation.

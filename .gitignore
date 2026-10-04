@@ -18,3 +18,11 @@ LocalPreferences.toml
 # juliac build output of bench/juliac_trim_build.jl
 bench/results/*.so
 bench/results/juliac_entry.jl
+
+# Not for distribution: the serialized problem data, the harness that reads it, and the
+# measurements over it. Kept on disk, never committed.
+*.lmp
+*.lmpr
+bench/lmp_matrix.jl
+bench/results/lmp_*.json
+bench/results/lmp_*.tsv
