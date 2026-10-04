@@ -44,28 +44,20 @@ the same shape.
 `coverage_per_item.jl` prints `greedy cover: N items` without naming them; the names are only
 recoverable from `in_cover` in the JSON. Worth fixing before the harness is used again.
 
-## `Optimizer` is exported by one solver and not the other
+## PureOSQP exports `Optimizer` and the others do not
 
-PureOSQP exports `Optimizer`; PureIPM defines it and does not. Two modules exporting one name
-make it unusable unqualified — `using PureOSQP, PureIPM` then `Optimizer` is an
-`UndefVarError` naming both — so the pair works only because PureIPM abstains.
+Each solver defines its own `Optimizer`, one line that builds the base's wrapper type with its
+algorithm. PureOSQP also exports the name; PureIPM and PureDAQP do not.
 
-One `Optimizer` generic per solver package is right and is what MathOptInterface expects:
-a caller writes `PureOSQP.Optimizer`, as it writes `HiGHS.Optimizer`. The base does not own it
-and should not, which is the opposite of the `solve!` case. What is left to settle is the
-export: qualified access is the convention, so neither package needs to export it, and
-exporting from exactly one is a property of which name happened to be claimed first.
+Two modules exporting one name make the unqualified one unusable: `using PureOSQP, PureIPM`
+then bare `Optimizer` is an `UndefVarError` naming both. So the set works only because two of
+the three abstain, and exporting from exactly one is a property of which name was claimed
+first rather than a decision.
 
-## PureDAQP has no MathOptInterface wrapper
-
-PureQPBase, PureOSQP and PureIPM each ship a MathOptInterface extension. PureDAQP ships none
-and has no `Optimizer`, so a JuMP model cannot select the dual active-set method.
-
-It is the method suited to the case JuMP users meet in control work: a small dense QP re-solved
-many times from a warm start. A wrapper has to carry the refusals across, since `ActiveSet`
-rejects rather than ignores what does not apply to it — `scaling` other than zero, `polishing`,
-any `linsys`, and the operator-splitting parameters each throw an `ArgumentError`. MOI
-attributes that map onto those need the same answer rather than a silent default.
+MathOptInterface expects the qualified form — a caller writes `PureOSQP.Optimizer` as it writes
+`HiGHS.Optimizer` — and nothing in MOI reads exports. Dropping PureOSQP's export makes the
+three agree and removes the latent clash. It is a one-line change plus the `names` assertion in
+`PureOSQP/test/contract_tests.jl`, which lists `:Optimizer` among the package's own names.
 
 ## PureQPBase re-tests StrictMode's own checkers
 
@@ -85,3 +77,45 @@ on `LocalPreferences.toml`, and a disabled tier prints exactly like a clean one.
 proof item already calls it, so removing the broken-function item keeps that guard.
 
 The three solver packages no longer carry this item. PureQPBase still does.
+
+## PureOSQP's suite tests PureIPM
+
+`PureIPM` appears in eight of `PureOSQP/test`'s files — `contract_tests.jl`, `linsys_tests.jl`,
+`chainrules_tests.jl`, `derivative_tests.jl`, `setup_tests.jl`, `update_tests.jl`,
+`polish_tests.jl` and `moi_tests.jl` — and `PureOSQP/test/Project.toml` depends on it.
+
+Two consequences. PureIPM's behaviour is partly asserted in another package's suite, so a
+reader of PureIPM's tests does not see everything that holds it to account; and PureOSQP cannot
+be tested without PureIPM installed, which is a test-only dependency between two packages that
+have none between their sources.
+
+Some of it is deliberate: a shared contract is more convincingly checked against two
+implementations at once, which is why `contract_tests.jl` exercises both workspaces. The rest
+reads as PureOSQP having been the original package, with the interior-point comparisons added
+where the fixtures already were. Separating those would mean moving the interior-point halves
+into `PureIPM/test` and keeping only the genuinely two-implementation assertions behind.
+
+## `ActiveSet` needs `eps_prox` chosen against the problem's scale
+
+The reduction factors `P`, so `P` must be positive definite unless the proximal-point iterations
+are on. A linear program presents `P = 0`, which means every LP reaches this method through
+`eps_prox > 0`.
+
+How large it has to be is bounded from below by conditioning, not accuracy. With `P = 0` the
+factor is `√eps_prox * I` and the reduced rows carry `1 / √eps_prox`, so too small a value makes
+`A R⁻¹` ill-conditioned and the outer loop stalls short of the optimum at any iteration count.
+Measured against MOI's `test_linear_add_constraints`, whose data reaches `7e4`: `1e-6` never
+converges, `1e-4` solves it. `PureDAQP/test/moi_tests.jl` therefore sets `1e-4`.
+
+A caller has no guidance for this, and the failure is silent in the sense that the status is
+`ITERATION_LIMIT` rather than a refusal naming the cause. Either `eps_prox`'s default should
+scale with the data when `P` is semidefinite, or the refusal that currently names `eps_prox`
+should also say what magnitude the problem needs.
+
+## `ActiveSet` reports no dual-infeasibility certificate
+
+An unbounded problem reaches `max_iter` and is reported as `ITERATION_LIMIT`. The status is
+honest — the method did not converge — but it is not `DUAL_INFEASIBLE`, which is what a caller
+testing for unboundedness looks for, and MOI's `test_linear_DUAL_INFEASIBLE` is excluded for
+this reason. The dual active-set iteration has a direction of unbounded descent available to it
+when this happens; recognizing it would turn a timeout into an answer.

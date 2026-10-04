@@ -724,7 +724,11 @@ function build_reduction(
         # is what the sum of squares cannot represent; it covers exactly those two cases.
         nrm = (isfinite(sq) && sq > 0) ? sqrt(sq) : norm(view(Mr, j, :))
         # A row of `A` in the kernel of `R⁻ᵀ` normalizes to nothing; it is taken unscaled,
-        # which is what a scale of one means.
+        # which is what a scale of one means. It is also no longer an equality the working set
+        # can hold: the set is a factorization of its rows, and a zero row raises its column
+        # count without its rank. Priced as an inequality it is satisfied wherever its bounds
+        # admit zero and violated nowhere else, which is what it constrains.
+        iszero(nrm) && (iseq[j] = false)
         sj = nrm > 0 ? nrm : one(T)
         scale[j] = sj
         @simd ivdep for i in 1:n
@@ -750,7 +754,9 @@ function build_reduction(
     for j in 1:m
         nrm = norm(row(M, j))
         # A row of `A` in the kernel of `R⁻ᵀ` normalizes to nothing; it is taken unscaled,
-        # which is what a scale of one means.
+        # which is what a scale of one means. It is also no longer an equality the working set
+        # can hold, for the reason the strided method above states.
+        iszero(nrm) && (iseq[j] = false)
         s = nrm > 0 ? nrm : one(T)
         scale[j] = s
         bu[j] = bupper[j] / s
@@ -764,6 +770,17 @@ function pack_reduction(
         R, M, bu::Vector{T}, bl::Vector{T}, iseq::AbstractVector{Bool}, scale::Vector{T},
         eps_prox::T, n::Int, m::Int, ::Type{WS}
     ) where {T, WS}
+    # The working set is a factorization of its rows and holds at most `n` of them, so at most
+    # `n` rows can be equalities the reset puts in it unconditionally. A problem may state more:
+    # `n` of them span everything the others can say, so each further one is either implied by
+    # those or contradicts them. Priced as an inequality it is satisfied in the first case and
+    # proves the problem infeasible in the second, which is the answer either way, and is the
+    # only form the set can carry it in.
+    held = 0
+    for j in 1:m
+        iseq[j] || continue
+        held < n ? (held += 1) : (iseq[j] = false)
+    end
     ws = LDPWorkspace(M, iseq, scale, build_working_set(WS, T, n, min(m, n) + 1))
     Rt = transpose(R)
     return DAQPReduction{T, typeof(R), typeof(Rt), typeof(ws.W), typeof(M)}(

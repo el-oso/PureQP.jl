@@ -32,10 +32,12 @@
     # four packages each held their own copy of this surface.
     @test issubset(names(PureQPBase), names(PureOSQP))
     @test setdiff(names(PureOSQP), names(PureQPBase)) ==
-        [:OperatorSplitting, :OperatorSplittingWorkspace, :Optimizer, :PureOSQP]
-    @test issubset(names(PureQPBase), names(PureIPM))
-    @test setdiff(names(PureIPM), names(PureQPBase)) ==
-        [:InteriorPoint, :InteriorPointWorkspace, :PureIPM]
+        [:OperatorSplitting, :OperatorSplittingWorkspace, :PureOSQP]
+    # `Optimizer` is defined and not exported. A caller names it with its package, which is what
+    # MathOptInterface expects, and two packages exporting one name would make the unqualified
+    # one an `UndefVarError` to anyone who loaded both.
+    @test isdefined(PureOSQP, :Optimizer)
+    @test !(:Optimizer in names(PureOSQP))
 
     for T in (OperatorSplittingWorkspace, InteriorPointWorkspace)
         @test TypeContracts.satisfies(T, W).satisfied

@@ -263,8 +263,14 @@ function MOI.get(o::Optimizer, attr::MOI.DualStatus)
     s = o.sol.status
     s == PureQPBase.SOLVED && return MOI.FEASIBLE_POINT
     s == PureQPBase.SOLVED_INACCURATE && return MOI.NEARLY_FEASIBLE_POINT
-    s == PureQPBase.PRIMAL_INFEASIBLE && return MOI.INFEASIBILITY_CERTIFICATE
-    s == PureQPBase.PRIMAL_INFEASIBLE_INACCURATE && return MOI.NEARLY_INFEASIBILITY_CERTIFICATE
+    # A certificate is promised only when there is one to read. An algorithm that proves
+    # infeasibility without producing a separating vector leaves `prim_inf_cert` empty, and
+    # claiming a certificate here is what sends `ConstraintDual` past the end of it.
+    if s == PureQPBase.PRIMAL_INFEASIBLE || s == PureQPBase.PRIMAL_INFEASIBLE_INACCURATE
+        isempty(o.sol.prim_inf_cert) && return MOI.NO_SOLUTION
+        return s == PureQPBase.PRIMAL_INFEASIBLE ? MOI.INFEASIBILITY_CERTIFICATE :
+            MOI.NEARLY_INFEASIBILITY_CERTIFICATE
+    end
     _stopped_early(s) && return MOI.UNKNOWN_RESULT_STATUS
     return MOI.NO_SOLUTION
 end

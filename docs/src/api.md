@@ -14,6 +14,8 @@ PureQPBase.capabilities
 PureQPBase.constraint_violation
 PureQPBase.constraint_violation!
 PureOSQP.Optimizer
+PureIPM.Optimizer
+PureDAQP.Optimizer
 PureQPBase.adjoint_derivative
 PureQPBase.forward_derivative
 PureQPBase.Solution

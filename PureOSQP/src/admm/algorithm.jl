@@ -56,12 +56,12 @@ function OperatorSplitting(;
         )
     )
     0 < adaptive_rho_fraction <= 1 || throw(
-        ArgumentError("adaptive_rho_fraction must lie in (0, 1], got $adaptive_rho_fraction")
+        ArgumentError(lazy"adaptive_rho_fraction must lie in (0, 1], got $adaptive_rho_fraction")
     )
     cg_tol_reduction > 0 || throw(ArgumentError("cg_tol_reduction must be positive"))
-    sigma > 0 || throw(ArgumentError("sigma must be positive, got $sigma"))
-    rho > 0 || throw(ArgumentError("rho must be positive, got $rho"))
-    0 < alpha < 2 || throw(ArgumentError("alpha must lie in (0, 2), got $alpha"))
+    sigma > 0 || throw(ArgumentError(lazy"sigma must be positive, got $sigma"))
+    rho > 0 || throw(ArgumentError(lazy"rho must be positive, got $rho"))
+    0 < alpha < 2 || throw(ArgumentError(lazy"alpha must lie in (0, 2), got $alpha"))
     adaptive_rho_interval >= 0 || throw(ArgumentError("adaptive_rho_interval must be non-negative"))
     adaptive_rho_tolerance >= 1 || throw(ArgumentError("adaptive_rho_tolerance must be at least 1"))
     F = float(
@@ -323,12 +323,12 @@ Seed the iterates in problem space. `z` is set to the scaled `Ax`.
 function warm_start!(ws::OperatorSplittingWorkspace{T}; x = nothing, y = nothing) where {T}
     prob = ws.prob
     if !isnothing(x)
-        length(x) == prob.n || throw(ArgumentError("length(x) must be $(prob.n)"))
+        length(x) == prob.n || throw(ArgumentError(lazy"length(x) must be $(prob.n)"))
         all(isfinite, x) || throw(ArgumentError("x must be finite, found NaN or Inf"))
         ws.x .= T.(x) ./ prob.D
     end
     if !isnothing(y)
-        length(y) == prob.m || throw(ArgumentError("length(y) must be $(prob.m)"))
+        length(y) == prob.m || throw(ArgumentError(lazy"length(y) must be $(prob.m)"))
         all(isfinite, y) || throw(ArgumentError("y must be finite, found NaN or Inf"))
         ws.y .= prob.c .* T.(y) ./ prob.E
     end

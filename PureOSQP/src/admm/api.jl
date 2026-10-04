@@ -28,7 +28,7 @@ the solver performs on itself, made available to the caller.
 `ws.algorithm.rho` keeps the value [`setup`](@ref) was given; the live value is `ws.rho`.
 """
 function update_rho!(ws::OperatorSplittingWorkspace{T}, rho::Real) where {T}
-    rho > 0 || throw(ArgumentError("rho must be positive, got $rho"))
+    rho > 0 || throw(ArgumentError(lazy"rho must be positive, got $rho"))
     set_rho_vec!(ws, T(rho))
     refactor!(ws)
     return ws
