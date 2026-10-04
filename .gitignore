@@ -14,3 +14,7 @@ PureIPM/bench/results/ipm_matrixfree_spike.json
 
 # Per-machine StrictMode tier settings; bench/ keeps a tracked one it needs.
 LocalPreferences.toml
+
+# juliac build output of bench/juliac_trim_build.jl
+bench/results/*.so
+bench/results/juliac_entry.jl
