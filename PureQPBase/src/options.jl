@@ -105,18 +105,18 @@ function Options{T}(;
     linsys in LINSYS_OPTIONS || throw(
         ArgumentError(lazy"linsys must be one of $LINSYS_LIST, got :$linsys")
     )
-    max_iter > 0 || throw(ArgumentError("max_iter must be positive, got $max_iter"))
-    time_limit > 0 || throw(ArgumentError("time_limit must be positive (Inf disables it), got $time_limit"))
+    max_iter > 0 || throw(ArgumentError(lazy"max_iter must be positive, got $max_iter"))
+    time_limit > 0 || throw(ArgumentError(lazy"time_limit must be positive (Inf disables it), got $time_limit"))
     eps_abs >= 0 && eps_rel >= 0 || throw(ArgumentError("eps_abs and eps_rel must be non-negative"))
     eps_abs > 0 || eps_rel > 0 || throw(ArgumentError("at least one of eps_abs, eps_rel must be positive"))
     eps_prim_inf > 0 && eps_dual_inf > 0 || throw(ArgumentError("eps_prim_inf and eps_dual_inf must be positive"))
-    scaling >= 0 || throw(ArgumentError("scaling must be non-negative, got $scaling"))
-    check_termination >= 0 || throw(ArgumentError("check_termination must be non-negative, got $check_termination"))
+    scaling >= 0 || throw(ArgumentError(lazy"scaling must be non-negative, got $scaling"))
+    check_termination >= 0 || throw(ArgumentError(lazy"check_termination must be non-negative, got $check_termination"))
     polish_refine_iter >= 0 || throw(ArgumentError("polish_refine_iter must be non-negative"))
-    delta > 0 || throw(ArgumentError("delta must be positive, got $delta"))
-    cg_max_iter > 0 || throw(ArgumentError("cg_max_iter must be positive, got $cg_max_iter"))
+    delta > 0 || throw(ArgumentError(lazy"delta must be positive, got $delta"))
+    cg_max_iter > 0 || throw(ArgumentError(lazy"cg_max_iter must be positive, got $cg_max_iter"))
     0 < cg_tol_fraction <= 1 || throw(
-        ArgumentError("cg_tol_fraction must lie in (0, 1], got $cg_tol_fraction")
+        ArgumentError(lazy"cg_tol_fraction must lie in (0, 1], got $cg_tol_fraction")
     )
     return Options{T}(
         Int(max_iter), T(time_limit), T(eps_abs), T(eps_rel), T(eps_prim_inf), T(eps_dual_inf),

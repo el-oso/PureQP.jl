@@ -382,21 +382,27 @@ reduction. Every form below solves on all three algorithms.
 |---|---|---|---|---|
 | `LinearMap(B)` | the matrix itself | `cholesky` | `bunchkaufman` | `rows` |
 | `c * M` | the matrix, scaled | `cholesky` | `bunchkaufman` | `rows` |
-| `kron(M₁, M₂)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
+| `kron(M₁, …, M_k)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
+| `LinearMaps.UniformScalingMap(c, n)` | a `Diagonal` of a `FillArrays.Fill` | `cholesky` | `bunchkaufman` | `rows` |
 | `cat(M₁, M₂; dims = (1, 2))` | [`PureQPBase.BlockDiagonal`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `hcat(M₁, M₂)` | [`PureQPBase.JoinedOperator`](@ref) | `cholesky` | `bunchkaufman` | `rows` |
+| `hvcat((2, 2), M₁, …, M₄)` | a `StackedOperator` of `JoinedOperator`s | `indirect` | `product_reduced` | `rows` |
+| `FillMap(c, (m, n))` | a `FillArrays.Fill` | `cholesky` | `bunchkaufman` | `rows` |
 | `M₁ + M₂` | [`PureQPBase.SumOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `M₁ * M₂` | [`PureQPBase.ComposedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
-| `hcat(M₁, M₂)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | a `FunctionMap` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `kron(fn, M)` | [`PureQPBase.ProductOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `vcat(kron(…), fn)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 
-Two things the table is worth reading carefully for. A composition whose parts are not all
+Three things the table is worth reading carefully for. A composition whose parts are not all
 recognized keeps the composition: the last row is a stack of a Kronecker block and an opaque one,
-and the Kronecker block still contracts its factors inside it. And an operator with no entries
-still answers a *row*, as `Aᵀ eᵢ`, which is why the dual active-set method takes every row here —
-entries and rows are different questions, and only equilibration needs the first.
+and the Kronecker block still contracts its factors inside it. An `hcat` reaches the dense
+backends where a `vcat` does not: a join's blocks each own a slice of the columns and the join
+holds no structure a dense factor would lose, so it declares none, while a stack keeps its
+blocks' rows apart and is served by the rungs that work through products. And an operator with no
+entries still answers a *row*, as `Aᵀ eᵢ`, which is why the dual active-set method takes every row
+here — entries and rows are different questions, and only equilibration needs the first.
 
 The backends are what these problems reach with a `Diagonal` `P` and `scaling = 0`. A different
 `P` moves some of them: a block-diagonal pair partitioned alike reaches `block` rather than
@@ -405,6 +411,27 @@ The backends are what these problems reach with a `Diagonal` `P` and `scaling = 
 Equilibration is the one real restriction, and it is orthogonal to the three columns: column and
 row norms are entries, so an operator that supplies only products needs `scaling = 0`, `probe =
 true`, or a [`PureQPBase.structural_rows`](@ref) method.
+
+## What a map supplying only products reaches
+
+A map the table above does not cover arrives as a [`PureQPBase.ProductOperator`](@ref): it
+answers products and rows, and has no entries. One backend serves it, and the rest say why not.
+
+| asked for | answer |
+|---|---|
+| `OperatorSplitting`, `linsys = :indirect` or `:auto` | served — conjugate gradients need no entries |
+| `OperatorSplitting` or `InteriorPoint`, `linsys = :dense` or `:kkt` | refused: both assemble their matrix from the entries of `P` and `A` |
+| `InteriorPoint`, `linsys = :indirect` | refused: it uses conjugate gradients only with a `preconditioner` of your own |
+| `ActiveSet` | refused: the reduction forms `A R⁻¹` for the Cholesky factor of `P`, which products do not give |
+
+Where it is served, leaving the operator alone is also the cheaper setup: nothing is copied and
+no entry is read. On a pair with `n = 629` and `m = 2396`, `setup` for the matrix-free backend
+takes 10.6 ms from the map against 21 ms from a dense copy of it.
+
+A `P` you can materialize is better passed as `Symmetric`, which is the form `setup` wants
+anyway: [`PureQPBase.is_symmetric`](@ref) then answers from the type instead of scanning all `n²`
+entries, and the reduction skips a transposing copy. It is worth a few percent of `setup` and
+nothing of the solve.
 
 ## Two packages supply operators
 

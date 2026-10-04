@@ -1,9 +1,14 @@
 name: CI
+# `BACKLOG.md` and `CHANGELOG.md` are not pages of the docs build and no job reads them, so a
+# change to either builds and tests nothing new. Every other path runs the full matrix,
+# `docs/` included.
 on:
   push:
     branches: [main]
     tags: ['*']
+    paths-ignore: ['BACKLOG.md', 'CHANGELOG.md']
   pull_request:
+    paths-ignore: ['BACKLOG.md', 'CHANGELOG.md']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

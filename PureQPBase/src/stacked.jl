@@ -60,7 +60,7 @@ The blocks stacked in order, as `vcat` would stack them. Every block spans the s
 """
 function StackedOperator(blocks::AbstractMatrix...)
     T = promote_type(map(eltype, blocks)...)
-    T <: Real || throw(ArgumentError("a StackedOperator needs a real element type, got $T"))
+    T <: Real || throw(ArgumentError(lazy"a StackedOperator needs a real element type, got $T"))
     return StackedOperator{T, typeof(blocks)}(blocks)
 end
 
@@ -86,10 +86,12 @@ holds_structure(::StackedOperator) = true
     return (nblocks(A), i - A.rowstart[nblocks(A)] + 1)
 end
 
-function Base.getindex(A::StackedOperator, i::Integer, j::Integer)
+# Converted rather than returned as the block holds it: the blocks' eltypes need only promote
+# to `T`, so a block of its own type would otherwise reach a caller who was promised `T`.
+function Base.getindex(A::StackedOperator{T}, i::Integer, j::Integer) where {T}
     @boundscheck checkbounds(A, i, j)
     b, ib = block_of_row(A, i)
-    return stacked_block_entry(A.blocks, b, ib, j)
+    return convert(T, stacked_block_entry(A.blocks, b, ib, j))
 end
 
 # The blocks are a tuple, so the index is not a compile-time constant and `A.blocks[b]` would
@@ -102,8 +104,11 @@ end
 # for a runtime `i` infers as the union of the block types, which boxes and costs a dynamic
 # dispatch, where this recursion is unrolled at compile time and each arm sees one concrete block.
 # Measured on a stack whose blocks differ: 304 bytes per product through the index, 0 through this.
-LinearAlgebra.mul!(y::AbstractVector, A::StackedOperator, x::AbstractVector) =
-    stack_mul!(y, A.blocks, x, 1)
+function LinearAlgebra.mul!(y::AbstractVector, A::StackedOperator, x::AbstractVector)
+    Base.require_one_based_indexing(y, x)
+    check_product_sizes(y, A, x)
+    return stack_mul!(y, A.blocks, x, 1)
+end
 
 @inline stack_mul!(y, ::Tuple{}, x, off) = y
 @inline function stack_mul!(y, blocks::Tuple, x, off)
@@ -121,6 +126,8 @@ function LinearAlgebra.mul!(
         x::AbstractVector
     )
     A = parent(At)
+    Base.require_one_based_indexing(y, x)
+    check_product_sizes(x, A, y)
     A1 = first(A.blocks)
     rows = size(A1, 1)
     mul!(y, adjoint(A1), view(x, 1:rows))

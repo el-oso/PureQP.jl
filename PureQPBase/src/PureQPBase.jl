@@ -17,13 +17,16 @@ using LinearAlgebra
 # node, so every LAPACK call through it costs two dynamic dispatches and a symbol lookup.
 # LinearAlgebra's own LAPACK wrappers import the name for the same reason.
 using LinearAlgebra.BLAS: libblastrampoline
+using FillArrays: Fill
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_contract, @assert_noalloc, @assert_trim_compatible
 
+include("arrays.jl")
 include("blockdiagonal.jl")
 include("kronecker.jl")
 include("rowcoupled.jl")
 include("stacked.jl")
+include("joined.jl")
 include("composition.jl")
 include("problem.jl")
 include("options.jl")
@@ -139,6 +142,9 @@ let
             [1.0 2.0 3.0 4.0 5.0 6.0; 6.0 5.0 4.0 3.0 2.0 1.0],
             KroneckerOperator([1.0 2.0; 3.0 4.0], [1.0 0.5 2.0; 0.0 1.0 3.0]),
             BlockDiagonal([[1.0 2.0; 3.0 4.0], [1.0 0.5; 0.0 1.0; 2.0 3.0]]),
+            JoinedOperator(
+                KroneckerOperator([1.0 2.0; 3.0 4.0], [1.0 0.5 2.0; 0.0 1.0 3.0]), Fill(0.5, 4, 3)
+            ),
         )
         row = zeros(size(A, 2))
         @assert_noalloc dense_row!(row, A, 1)

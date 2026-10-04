@@ -1,5 +1,5 @@
 @testitem "every in-package LinearSystem meets its strict contract, proved" begin
-    using PureQPBase, StrictMode, StrictModeTest, TypeContracts, LinearAlgebra, Random
+    using PureQPBase, StrictMode, StrictModeTest, TypeContracts, LinearAlgebra, FillArrays, Random
     using InteractiveUtils: subtypes
     include(joinpath(@__DIR__, "helpers.jl"))
 
@@ -79,6 +79,10 @@
     for (label, Pin, Ain) in (
             ("contraction", kronecker[1], Ak),
             ("stacked", kronecker[1], PureQPBase.StackedOperator(Matrix(Ak), Diagonal(fill(1.5, 20)))),
+            (
+                "joined", kronecker[1],
+                PureQPBase.JoinedOperator(PureQPBase.KroneckerOperator(randn(4, 3), randn(5, 4)), Fill(0.5, 20, 8)),
+            ),
             ("products", Diagonal(fill(2.0, 20)), PureQPBase.ProductOperator{Float64}(Matrix(Ak))),
         )
         prob = raw_problem(Pin, Ain, 20, size(Ain, 1))

@@ -110,13 +110,16 @@ What each one asks of you:
 |---|---|---|
 | `:dense` | `P` and `A` you can materialize | the pattern rule misjudged your problem and you want the dense reduced path anyway |
 | `:kkt` | `P` and `A` you can materialize | the reduced form's conditioning is in doubt; it never squares `cond(A)` |
-| `:sparse` | `SparseMatrixCSC` `P` and `A`, and `using SparseArrays` | you want a sparse factorization on a pair `:auto` sends elsewhere |
+| `:sparse` | `using SparseArrays`, and entries it can read: a `P` and `A` that are not already `SparseMatrixCSC` are converted | you want a sparse factorization on a pair `:auto` sends elsewhere |
 | `:indirect` | `using Krylov`. Under [`InteriorPoint`](@ref), also a `preconditioner` of your own and `scaling = 0` | the matrix cannot be formed at all, must not be because `P` or `A` holds a structure forming would discard, or forming an `n×n` inverse is the dominant cost |
 
 `:kkt` and `:dense` always build. They test nothing about the pair beyond being able to
-materialize it, which is what makes them the reliable escape hatches. `:sparse` tries the
-augmented form first, then the reduced one, then the formed-and-inverted one, and refuses only
-if none of the three factors.
+materialize it, which is what makes them the reliable escape hatches. `:sparse` is the same
+instruction: it converts a readable pair to `SparseMatrixCSC` first, then tries the augmented
+form, the reduced one and the formed-and-inverted one, and refuses only if none of the three
+factors. Converting reads every entry, and a factorization of a mostly-dense matrix stores an
+index for nearly every one of them — the cost of naming the kind, not a reason it is refused.
+An operand supplying only products has nothing to convert and is refused by representation.
 
 **Five name a matrix structure**, not a solver: `:diagonal`, `:tridiagonal`, `:block`,
 `:kronecker` and `:lowrank`. Each one asserts that your `P` and `A` have a particular shape, and

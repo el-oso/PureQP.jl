@@ -2,6 +2,7 @@
 DAQP = "c47d62df-3981-49c8-9651-128b1cd08617"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LinearMaps = "7a12625a-238d-50fd-b39a-03d52299707e"
+MathOptInterface = "b8f27783-ece8-5eb3-8dc8-9495eed66fee"
 PureDAQP = "3d6c1e44-5a86-4c7a-815f-9c4190067cf0"
 PureQPBase = "2fc88845-7e3c-4d5a-ae99-1d63540d249b"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"

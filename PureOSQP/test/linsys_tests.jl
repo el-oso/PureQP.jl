@@ -63,12 +63,24 @@ end
         @test solve!(ws).status == SOLVED
     end
 
-    # A dense A has no sparse representation to serve through, named or not, and the refusal
-    # states only that -- not that the pair is unsuitable on cost grounds.
+    # A dense A is converted rather than refused: the named kind is the instruction, and the
+    # caller pays for meeting it with a factorization that stores an index per entry. The answer
+    # is the one the dense backend gives for the same pair.
     P, q, A, l, u = random_qp(50)
     for alg in (OperatorSplitting(), InteriorPoint())
-        @test_throws "SparseMatrixCSC" setup(P, q, Matrix(A), l, u, alg; linsys = :sparse)
+        ws = setup(P, q, Matrix(A), l, u, alg; linsys = :sparse)
+        @test PureOSQP.backend_name(ws.linsys) in sparse_names
+        sol = solve!(ws)
+        @test sol.status == SOLVED
+        @test sol.x ≈ solve(P, q, Matrix(A), l, u, alg; linsys = :dense).x atol = 1.0e-6
     end
+
+    # An operand with no entries to read has nothing to convert, and the refusal names the
+    # representation the sparse rungs need.
+    @test_throws "SparseMatrixCSC" setup(
+        P, q, PureOSQP.ProductOperator{Float64}(Matrix(A)), l, u, OperatorSplitting();
+        linsys = :sparse, scaling = 0
+    )
 end
 
 @testitem "a sparse A solves what the dense one solves, step for step" begin

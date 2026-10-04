@@ -228,9 +228,12 @@ reduced_diagonal!(
     dest, ::Type{T}, P::ProductOperator, A::ProductOperator, rho, E, D, sigma, c
 ) where {T} = unpreconditioned!(dest)
 
-# A `StackedOperator` supplies the diagonal from its blocks, so it has a method of its own; this
-# resolves against it for a `P` that has no entries, which leaves the diagonal unavailable
-# whatever `A` can do.
+# A `StackedOperator` and a `JoinedOperator` each supply the diagonal from their blocks, so each
+# has a method of its own; these resolve against them for a `P` that has no entries, which leaves
+# the diagonal unavailable whatever `A` can do.
 reduced_diagonal!(
     dest, ::Type{T}, P::ProductOperator, A::StackedOperator, rho, E, D, sigma, c
+) where {T} = unpreconditioned!(dest)
+reduced_diagonal!(
+    dest, ::Type{T}, P::ProductOperator, A::JoinedOperator, rho, E, D, sigma, c
 ) where {T} = unpreconditioned!(dest)

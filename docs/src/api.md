@@ -14,6 +14,8 @@ PureQPBase.capabilities
 PureQPBase.constraint_violation
 PureQPBase.constraint_violation!
 PureOSQP.Optimizer
+PureIPM.Optimizer
+PureDAQP.Optimizer
 PureQPBase.adjoint_derivative
 PureQPBase.forward_derivative
 PureQPBase.Solution
@@ -193,6 +195,7 @@ PureQPBase.coupling_rank
 PureQPBase.BlockDiagonal
 PureQPBase.KroneckerOperator
 PureQPBase.StackedOperator
+PureQPBase.JoinedOperator
 PureQPBase.ComposedOperator
 PureQPBase.SumOperator
 PureQPBase.parts
@@ -236,6 +239,7 @@ PureQPBase.ADMMSelection
 PureQPBase.IPMSelection
 PureQPBase.refuse_selection
 PureQPBase.named_backend
+PureQPBase.check_formable
 PureQPBase.sparse_refusal
 PureQPBase.select_backend
 PureQPBase.kkt_rung

@@ -68,12 +68,12 @@ function InteriorPoint(;
         reg_primal = nothing, reg_dual = nothing, max_reg_bumps = 5, refine_iter = nothing,
         step_fraction = 0.99, cg_fail_limit = 3,
     )
-    max_reg_bumps >= 0 || throw(ArgumentError("max_reg_bumps must be non-negative, got $max_reg_bumps"))
-    isnothing(reg_primal) || reg_primal > 0 || throw(ArgumentError("reg_primal must be positive, got $reg_primal"))
-    isnothing(reg_dual) || reg_dual > 0 || throw(ArgumentError("reg_dual must be positive, got $reg_dual"))
-    isnothing(refine_iter) || refine_iter >= 0 || throw(ArgumentError("refine_iter must be non-negative, got $refine_iter"))
-    0 < step_fraction < 1 || throw(ArgumentError("step_fraction must lie in (0, 1), got $step_fraction"))
-    cg_fail_limit > 0 || throw(ArgumentError("cg_fail_limit must be positive, got $cg_fail_limit"))
+    max_reg_bumps >= 0 || throw(ArgumentError(lazy"max_reg_bumps must be non-negative, got $max_reg_bumps"))
+    isnothing(reg_primal) || reg_primal > 0 || throw(ArgumentError(lazy"reg_primal must be positive, got $reg_primal"))
+    isnothing(reg_dual) || reg_dual > 0 || throw(ArgumentError(lazy"reg_dual must be positive, got $reg_dual"))
+    isnothing(refine_iter) || refine_iter >= 0 || throw(ArgumentError(lazy"refine_iter must be non-negative, got $refine_iter"))
+    0 < step_fraction < 1 || throw(ArgumentError(lazy"step_fraction must lie in (0, 1), got $step_fraction"))
+    cg_fail_limit > 0 || throw(ArgumentError(lazy"cg_fail_limit must be positive, got $cg_fail_limit"))
     F = float(promote_type(stored_real(reg_primal), stored_real(reg_dual), typeof(step_fraction)))
     rp = isnothing(reg_primal) ? nothing : F(reg_primal)
     rd = isnothing(reg_dual) ? nothing : F(reg_dual)

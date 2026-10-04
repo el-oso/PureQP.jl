@@ -1,6 +1,6 @@
 name = "PureOSQP"
 uuid = "cf5699a0-4369-4b2d-98bd-300948c5dc67"
-version = "0.1.3"
+version = "0.1.5"
 authors = ["el-oso <15278831+el-oso@users.noreply.github.com>"]
 
 [workspace]
@@ -25,7 +25,7 @@ PureOSQPMathOptInterfaceExt = "MathOptInterface"
 COSMOAccelerators = "0.1"
 LinearAlgebra = "1"
 MathOptInterface = "1"
-PureQPBase = "0.1.4"
+PureQPBase = "0.1.5"
 Reexport = "1"
 StrictMode = "0.4.10"
 TypeContracts = "0.14.0"

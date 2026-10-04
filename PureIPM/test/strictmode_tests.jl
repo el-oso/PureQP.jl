@@ -98,16 +98,3 @@ end
     @test wt.sigma == ws.reg_primal
     @test ws.sigma_changed
 end
-
-@testitem "the interior-point proofs fail on code that allocates or cannot be trimmed" begin
-    using StrictMode, StrictModeTest
-
-    # A gate that passes everything proves nothing; each of these must be refused.
-    StrictMode.assert_enabled()
-    grow(n) = zeros(n)
-    @test_throws StrictMode.StrictViolation test_signatures([(grow, (Int,))]; guarantees = (:noalloc,))
-    dynamic(r) = r[] + 1
-    @test_throws StrictMode.StrictViolation test_signatures(
-        [(dynamic, (Base.RefValue{Any},))]; guarantees = (:trim_compatible,)
-    )
-end

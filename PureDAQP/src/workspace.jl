@@ -13,12 +13,14 @@ keeps the working set too, which is what makes a warm start cheap here.
 """
 mutable struct ActiveSetWorkspace{
         T <: Real, MP <: AbstractMatrix, MA <: AbstractMatrix, V <: AbstractVector{T},
-        RD <: DAQPReduction{T},
+        RD <: DAQPReduction{T}, ALG <: ActiveSet{T, T, T, T},
     } <: QPWorkspace{T}
     # Not `const`: `update!` replaces `P` or `A` by handing back another `QPData` around the
     # same vectors, which is what an immutable problem costs and all it costs.
     prob::QPData{T, MP, MA, V}
-    algorithm::ActiveSet{T, T, T, T}
+    # Concretely typed for the same reason `red` is: `ActiveSet{T, T, T, T}` leaves the
+    # working-set parameter free, and a field of that type is abstract.
+    algorithm::ALG
     options::Options{T}
     # Concretely typed: `DAQPReduction{T}` alone leaves the factorization parameter abstract,
     # which costs a dynamic dispatch on every solve. Rebound by `update!` when `P` or `A`
@@ -143,6 +145,15 @@ not kept; see [`row_operand`](@ref).
 """
 factored_operand(::Type{T}, P::ReadDirectly{T}) where {T} = P
 
+# A stack is read directly as an `A`, where the reduction wants its rows. As a `P` it has no
+# Cholesky factor of its own, and its blocks are slices of the rows, which a dense `n×n` factor
+# does not lose — the same reason a join is densified. So a square stack is factored rather than
+# refused for want of a factor.
+function factored_operand(::Type{T}, P::StackedOperator{T}) where {T}
+    is_materializable(P) || refuse_unreadable_operand(T)
+    return factorable_operand(T, P)
+end
+
 function factored_operand(::Type{T}, P::AbstractMatrix) where {T}
     is_materializable(P) || refuse_unreadable_operand(T)
     return factorable_operand(T, P)
@@ -158,16 +169,26 @@ pair with its transpose rather than densified; this adds only the refusal.
 """
 row_operand(::Type{T}, A::ReadDirectly{T}) where {T} = A
 
+# A join answers a row from its blocks and a product through them, so it is read directly as an
+# `A`. It is not in `ReadDirectly`, because as a `P` it has no Cholesky factor of its own and is
+# densified by [`factored_operand`](@ref) instead — a join holds no structure a dense `n×n`
+# factor would lose.
+row_operand(::Type{T}, A::JoinedOperator{T}) where {T} = A
+
 function row_operand(::Type{T}, A::AbstractMatrix) where {T}
     is_materializable(A) || refuse_unreadable_operand(T)
     return rows_operand(T, A)
 end
 
+# Two conditions reach this, and the message names the one state both leave the operand in
+# rather than guessing which: an operand with no readable entries, where the reduction needs
+# either entries or a products-only operator of its own element type.
 @noinline refuse_unreadable_operand(::Type{T}) where {T} = throw(
     ArgumentError(
-        "an operator that supplies products only must have the solve's own element type, " *
-            "and this one does not, so it can be neither read nor converted. Build it as a " *
-            "ProductOperator{$T}, or pass P, q, A, l and u in one element type."
+        "the reduction cannot read this operand. It takes entries, or an operator that " *
+            "supplies products only when that operator carries the solve's own element type: " *
+            "build it as a ProductOperator{$T}, pass P, q, A, l and u in one element type, or " *
+            "make every block of a composition readable."
     )
 )
 
@@ -196,16 +217,21 @@ function setup_backend(
     # `convert` rather than `Vector{T}`: that copies even when the argument already has the
     # type asked for, and the reduction only reads this data.
     iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
+    # The working set comes from the algorithm's type, not its `working_set` field: that leaves
+    # one type for the reduction to settle rather than two, which is what keeps this
+    # construction statically resolvable for a `P` whose factor has two forms.
     red = reduce_qp(
         factored_operand(T, P), row_operand(T, A),
         convert(Vector{T}, prob.u0), convert(Vector{T}, prob.l0),
-        iseq; eps_prox = resolved.eps_prox, working_set = resolved.working_set
+        iseq, working_set_param(resolved); eps_prox = resolved.eps_prox
     )
 
     # The reported point is these arrays, not copies of them, so the solution the workspace
     # hands back is built here and refilled rather than rebuilt.
     x, y, z = zeros(T, n), zeros(T, m), zeros(T, m)
-    ws = ActiveSetWorkspace{T, typeof(prob.P), typeof(prob.A), typeof(prob.q0), typeof(red)}(
+    ws = ActiveSetWorkspace{
+        T, typeof(prob.P), typeof(prob.A), typeof(prob.q0), typeof(red), typeof(resolved),
+    }(
         prob, resolved, options, red,
         x, y, z,
         UNSOLVED, false, POLISH_NOT_PERFORMED, 0, false,
@@ -357,12 +383,12 @@ end
 @strict_function signatures = [(DenseWorkspace{Float64},), (KroneckerWorkspace{Float64},)] function warm_start!(ws::ActiveSetWorkspace{T}; x = nothing, y = nothing) where {T}
     prob = ws.prob
     if !isnothing(x)
-        length(x) == prob.n || throw(ArgumentError("length(x) must be $(prob.n)"))
+        length(x) == prob.n || throw(ArgumentError(lazy"length(x) must be $(prob.n)"))
         all(isfinite, x) || throw(ArgumentError("x must be finite, found NaN or Inf"))
         ws.x .= T.(x)
     end
     if !isnothing(y)
-        length(y) == prob.m || throw(ArgumentError("length(y) must be $(prob.m)"))
+        length(y) == prob.m || throw(ArgumentError(lazy"length(y) must be $(prob.m)"))
         all(isfinite, y) || throw(ArgumentError("y must be finite, found NaN or Inf"))
         ws.y .= T.(y)
     end
@@ -403,8 +429,7 @@ function update!(
         red = reduce_qp(
             factored_operand(T, data.P), row_operand(T, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
-            iseq; eps_prox = ws.algorithm.eps_prox,
-            working_set = ws.algorithm.working_set
+            iseq, working_set_param(ws.algorithm); eps_prox = ws.algorithm.eps_prox
         )
         # `validate_update!` has already required `P` and `A` to keep their types, which fixes
         # the reduction's type, so this assignment cannot change what the workspace holds.

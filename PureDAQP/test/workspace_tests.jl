@@ -253,3 +253,39 @@ end
     update_settings!(ws, ActiveSet())
     @test solve!(ws).status == SOLVED
 end
+
+@testitem "a structurally zero constraint row is priced, not activated" begin
+    using PureDAQP, LinearAlgebra
+
+    # The working set is a factorization of its rows, so a zero row raises its column count
+    # without its rank and cannot be held. Such a row is therefore an inequality whatever its
+    # bounds say: satisfied wherever they admit zero, and violated nowhere else.
+    #
+    # One variable and two equality rows, the second structurally zero. Before this was
+    # distinguished, every case here threw a `DimensionMismatch` out of the factorization, since
+    # `l == u` made the zero row an equality that the reset activated unconditionally.
+    P = reshape([2.0], 1, 1)
+    q = [0.0]
+    A = reshape([1.0, 0.0], 2, 1)
+
+    # `0 == 0`: the row holds everywhere, and the problem is the one-row problem.
+    s = solve(P, q, A, [1.0, 0.0], [1.0, 0.0], ActiveSet())
+    @test s.status == SOLVED
+    @test s.x ≈ [1.0] atol = 1.0e-10
+
+    # `0 == 5`: the row holds nowhere, which is infeasibility and is reported as such rather
+    # than thrown.
+    @test solve(P, q, A, [1.0, 5.0], [1.0, 5.0], ActiveSet()).status == PRIMAL_INFEASIBLE
+
+    # A zero row with slack is the same statement with room in it.
+    s = solve(P, q, A, [1.0, -1.0], [1.0, 1.0], ActiveSet())
+    @test s.status == SOLVED
+    @test s.x ≈ [1.0] atol = 1.0e-10
+
+    # More equality rows than variables, none of them zero: the rank is what bounds the working
+    # set, and two consistent rows in one variable are one constraint twice over.
+    A2 = reshape([1.0, 2.0], 2, 1)
+    s = solve(P, q, A2, [1.0, 2.0], [1.0, 2.0], ActiveSet())
+    @test s.status == SOLVED
+    @test s.x ≈ [1.0] atol = 1.0e-8
+end

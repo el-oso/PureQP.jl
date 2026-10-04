@@ -90,8 +90,8 @@ function recommend_linsys(
         u::AbstractVector, alg::QPAlgorithm;
         max_iter::Integer = 25, repeats::Integer = 3, kwargs...
     )
-    max_iter >= 1 || throw(ArgumentError("max_iter must be at least 1, got $max_iter"))
-    repeats >= 1 || throw(ArgumentError("repeats must be at least 1, got $repeats"))
+    max_iter >= 1 || throw(ArgumentError(lazy"max_iter must be at least 1, got $max_iter"))
+    repeats >= 1 || throw(ArgumentError(lazy"repeats must be at least 1, got $repeats"))
     iters = solve_iterations(P, q, A, l, u, alg; kwargs...)
     rows = LinsysMeasurement[]
     for name in LINSYS_OPTIONS

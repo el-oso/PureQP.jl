@@ -115,7 +115,7 @@ the matrix instead.
 function PureQPBase.check_finite(
         M::AbstractGPUMatrix, rows::Integer, cols::Integer, name::String
     )
-    all(isfinite, M) || throw(ArgumentError("$name is not finite"))
+    all(isfinite, M) || throw(ArgumentError(lazy"$name is not finite"))
     return nothing
 end
 

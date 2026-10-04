@@ -44,21 +44,21 @@ assumed.
 """
 function PureQPBase.check_storage(M::SparseMatrixCSC, rows::Integer, cols::Integer)
     size(M) == (rows, cols) || throw(
-        ArgumentError("expected a $(rows)×$(cols) matrix, got $(size(M))")
+        ArgumentError(lazy"expected a $(rows)×$(cols) matrix, got $(size(M))")
     )
     colptr, rv = M.colptr, rowvals(M)
     nz = length(rv)
     (length(colptr) == cols + 1 && colptr[1] == 1 && colptr[cols + 1] == nz + 1) || throw(
-        ArgumentError("malformed column pointer for a $(rows)×$(cols) matrix")
+        ArgumentError(lazy"malformed column pointer for a $(rows)×$(cols) matrix")
     )
     for j in 1:cols
         colptr[j] <= colptr[j + 1] || throw(
-            ArgumentError("column pointer decreases at column $j")
+            ArgumentError(lazy"column pointer decreases at column $j")
         )
     end
     for k in 1:nz
         1 <= rv[k] <= rows || throw(
-            ArgumentError("row index $(rv[k]) at position $k is outside 1:$rows")
+            ArgumentError(lazy"row index $(rv[k]) at position $k is outside 1:$rows")
         )
     end
     return nothing
@@ -1217,12 +1217,12 @@ function check_factor(L::SparseMatrixCSC, N::Integer)
     )
     for j in 1:N
         colptr[j] <= colptr[j + 1] || throw(
-            ArgumentError("factor's column pointer decreases at column $j")
+            ArgumentError(lazy"factor's column pointer decreases at column $j")
         )
     end
     for p in 1:nz
         1 <= rows[p] <= N || throw(
-            ArgumentError("factor stores row index $(rows[p]) at position $p, outside 1:$N")
+            ArgumentError(lazy"factor stores row index $(rows[p]) at position $p, outside 1:$N")
         )
     end
     return nothing
@@ -1271,7 +1271,7 @@ function factor_csc!(L::SparseMatrixCSC{T, Int}, F, N::Integer, ll::Bool) where 
         return G
     end
     n = Int(s.n)
-    n == N || throw(ArgumentError("factor is order $n for an order-$N system"))
+    n == N || throw(ArgumentError(lazy"factor is order $n for an order-$N system"))
     colstart = unsafe_wrap(Array, s.p, (n + 1,); own = false)
     colcount = unsafe_wrap(Array, s.nz, (n,); own = false)
     rows = unsafe_wrap(Array, s.i, (Int(s.nzmax),); own = false)
@@ -1292,7 +1292,7 @@ function factor_csc!(L::SparseMatrixCSC{T, Int}, F, N::Integer, ll::Bool) where 
         for k in 1:Int(colcount[j])
             i = Int(rows[base + k]) + 1
             1 <= i <= N || throw(
-                ArgumentError("factor stores row index $i in column $j, outside 1:$N")
+                ArgumentError(lazy"factor stores row index $i in column $j, outside 1:$N")
             )
             rowval[t] = i
             nzval[t] = vals[base + k]
@@ -1459,7 +1459,7 @@ read is a search through the column: `m × n` searches for a matrix with `nnz` e
 function PureQPBase.check_finite(M::SparseMatrixCSC, rows::Integer, cols::Integer, name::String)
     rv, nz = rowvals(M), nonzeros(M)
     for j in 1:cols, k in nzrange(M, j)
-        isfinite(nz[k]) || throw(ArgumentError("$name is not finite at entry ($(rv[k]), $j)"))
+        isfinite(nz[k]) || throw(ArgumentError(lazy"$name is not finite at entry ($(rv[k]), $j)"))
     end
     return nothing
 end
@@ -1656,5 +1656,29 @@ LinearAlgebra.mul!(
 
 PureQPBase.is_materializable(::SparseRows) = true
 PureQPBase.structural_rows(A::SparseRows, j::Integer) = PureQPBase.structural_rows(A.A, j)
+
+# `linsys = :sparse` factors a `SparseMatrixCSC`, so an operand it can read becomes one. The
+# conversion reads every entry, and for a mostly-dense operand the factorization that follows
+# stores an index per entry and gives up the level-3 kernels — the cost a caller who named the
+# kind has accepted. An operand with no readable entries is left alone, and the sparse rungs
+# refuse it naming the representation they need.
+#
+# One method per argument type rather than a branch returning either: the operand this returns
+# is what the problem holds, so a method answering with a union of the two would leave `P` and
+# `A` inferred as that union and every call reading them type-unstable, which `--trim` rejects.
+PureQPBase.named_operand(::Val{:sparse}, ::Type{T}, M::SparseMatrixCSC{T}) where {T} = M
+
+function PureQPBase.named_operand(::Val{:sparse}, ::Type{T}, M::AbstractMatrix) where {T}
+    PureQPBase.is_materializable(M) || refuse_sparse_operand()
+    return sparse(PureQPBase.dense_copy(T, M))::SparseMatrixCSC{T, Int}
+end
+
+@noinline refuse_sparse_operand() = throw(
+    ArgumentError(
+        "linsys = :sparse factors a SparseMatrixCSC, and this operand supplies products only, " *
+            "so there are no entries to build one from. Choose linsys = :indirect, which needs " *
+            "no entries, or pass a representation whose entries can be read."
+    )
+)
 
 end # module PureQPBaseSparseArraysExt

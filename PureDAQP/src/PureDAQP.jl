@@ -50,7 +50,7 @@ import PureQPBase:
     has_cholesky_factor, cholesky_factor, factorable_operand, rows_operand,
     scalar_diagonal, dense_row!,
     BlockDiagonal, KroneckerOperator, KroneckerCholesky, ProductOperator,
-    StackedOperator, ComposedOperator, SumOperator
+    StackedOperator, JoinedOperator, ComposedOperator, SumOperator
 
 
 # What this package owns. Everything else a caller needs is PureQPBase's and arrives through the
@@ -65,6 +65,22 @@ include("ldl.jl")
 include("ldp.jl")
 include("workspace.jl")
 include("solution.jl")
+
+"""
+    Optimizer(; kwargs...)
+
+MathOptInterface optimizer, available once MathOptInterface is loaded. Keyword arguments are
+the fields of [`Options`](@ref) and the parameters of [`ActiveSet`](@ref), each checked by name
+when it is set.
+
+`ActiveSet` refuses what does not apply to it rather than ignoring it, so a `scaling` other
+than zero, a `polishing`, a `linsys` or an operator-splitting parameter set through this
+wrapper throws as it would through [`setup`](@ref).
+
+The wrapper lives in a package extension, so it costs nothing to a caller who does not use
+it; this name is the only part of it this package owns.
+"""
+function Optimizer end
 
 # The entry points that reach forward, held to the same guarantee as the ones declared at
 # their definitions. `solve!` calls `build_solution`, which `solution.jl` defines after it,

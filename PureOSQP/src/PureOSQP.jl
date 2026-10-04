@@ -56,7 +56,7 @@ import PureQPBase:
 # What this package owns: its algorithm, its workspace, and the MathOptInterface optimizer the
 # extension defines for it. Everything else a caller needs is PureQPBase's and arrives through
 # the `@reexport` above.
-export OperatorSplitting, OperatorSplittingWorkspace, Optimizer
+export OperatorSplitting, OperatorSplittingWorkspace
 
 include("admm/algorithm.jl")
 include("admm/accelerate.jl")

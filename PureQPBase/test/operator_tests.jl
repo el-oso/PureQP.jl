@@ -243,8 +243,15 @@ end
     @test opaque(kron(fn, LinearMap(C)))
     @test opaque(kron(LinearMap(B), fn))
     @test opaque(blockdiag(LinearMap(B), fn))
-    # The base's Kronecker operator has two factors.
-    @test opaque(kron(LinearMap(B), LinearMap(C), LinearMap(B)))
+    # The base's Kronecker operator has two factors, so a longer product is split in two and
+    # whichever side is not already a strided factor is formed. A side built from a function is
+    # not formed: recovering its entries means applying the function the map was given to avoid.
+    @test wrap(kron(LinearMap(B), LinearMap(C), LinearMap(B))) isa PureQPBase.KroneckerOperator
+    @test wrap(kron(LinearMap(B), LinearMaps.FillMap(2.0, (3, 4)))) isa PureQPBase.KroneckerOperator
+    @test wrap(LinearMaps.UniformScalingMap(2.0, n)) isa Diagonal
+    @test opaque(kron(fn, LinearMap(C), LinearMap(B)))
+    # Every split of this one would form more entries than `KRON_FORM_ENTRIES` allows.
+    @test opaque(kron(ntuple(_ -> LinearMaps.FillMap(1.0, (100, 100)), 3)...))
     # A sum and a two-map product each have a representation that keeps their parts.
     @test wrap(LinearMap(B) + LinearMap(C)) isa PureQPBase.SumOperator
     @test wrap(LinearMap(B)' * LinearMap(B)) isa PureQPBase.ComposedOperator
@@ -255,12 +262,32 @@ end
         @test mul!(zeros(n), wrap(2 * (LinearMap(B) + LinearMap(C))), x) ≈ 2 * (B + C) * x
         @test mul!(zeros(n), wrap(3 * (LinearMap(B)' * LinearMap(B))), x) ≈ 3 * (B'B) * x
     end
-    # `vcat` has a representation: the stack keeps its blocks, so each one's own structure
-    # survives. `hcat` shares rows between blocks, where a row-weighted product does not split,
-    # and has none.
+    # The concatenations each have a representation that keeps the blocks, so each one's own
+    # structure survives: a stack for `vcat`, a join for `hcat`, a stack of joins for `hvcat`.
     @test !opaque(vcat(LinearMap(B), LinearMap(C)))
     @test wrap(vcat(LinearMap(B), LinearMap(C))) isa PureQPBase.StackedOperator
-    @test opaque(hcat(LinearMap(B), LinearMap(C)))
+    @test wrap(hcat(LinearMap(B), LinearMap(C))) isa PureQPBase.JoinedOperator
+    let joined = wrap(hcat(LinearMap(B), 2 * LinearMap(C)))
+        @test joined.blocks[1] === B
+        @test joined.blocks[2] == 2C
+        @test Matrix(joined) ≈ [B 2C]
+    end
+    let grid = wrap(hvcat((2, 2), LinearMap(B), LinearMap(C), LinearMap(C), LinearMap(B)))
+        @test grid isa PureQPBase.StackedOperator
+        @test map(b -> b isa PureQPBase.JoinedOperator, grid.blocks) == (true, true)
+        @test Matrix(grid) ≈ [B C; C B]
+        # A scalar reaches every block of the grid.
+        @test Matrix(wrap(3 * hvcat((2, 2), LinearMap(B), LinearMap(C), LinearMap(C), LinearMap(B)))) ≈ 3 * [B C; C B]
+    end
+    # A constant block is a `Fill`, which is readable and costs no storage.
+    @test wrap(LinearMaps.FillMap(2.0, (3, n))) == fill(2.0, 3, n)
+    @test wrap(LinearMaps.FillMap(2.0, (3, n))) isa PureQPBase.Fill
+    @test wrap(2 * LinearMaps.FillMap(1.5, (3, n))) == fill(3.0, 3, n)
+    let joined = wrap(hcat(LinearMap(B), LinearMaps.FillMap(0.0, (n, 2))))
+        @test joined isa PureQPBase.JoinedOperator
+        @test PureQPBase.is_materializable(joined)
+        @test Matrix(joined) == [B zeros(n, 2)]
+    end
     # A stack whose block is opaque keeps the stack: the opaque block becomes a `ProductOperator`
     # inside it rather than costing its sibling its structure.
     let stacked = wrap(vcat(LinearMap(B), fn))
@@ -273,7 +300,8 @@ end
         @test mul!(zeros(n), adjoint(stacked), ys) ≈ [B; B]' * ys
         @test_throws "no entries to read" stacked[n + 1, 1]
     end
-    @test opaque(LinearMap(I, n))
+    # A uniform scaling is a `Diagonal` of a `Fill`, whatever the eltype it carries.
+    @test wrap(LinearMap(I, n)) == Diagonal(ones(n))
     # Only real entries have a place in the base.
     @test opaque(LinearMap(complex.(B)))
     @test opaque(LinearMap(B) * im)

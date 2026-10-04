@@ -421,12 +421,12 @@ from `x` and `y` when the solve starts.
 function warm_start!(ws::InteriorPointWorkspace{T}; x = nothing, y = nothing) where {T}
     prob = ws.prob
     if !isnothing(x)
-        length(x) == prob.n || throw(ArgumentError("length(x) must be $(prob.n)"))
+        length(x) == prob.n || throw(ArgumentError(lazy"length(x) must be $(prob.n)"))
         all(isfinite, x) || throw(ArgumentError("x must be finite, found NaN or Inf"))
         ws.x .= T.(x) ./ prob.D
     end
     if !isnothing(y)
-        length(y) == prob.m || throw(ArgumentError("length(y) must be $(prob.m)"))
+        length(y) == prob.m || throw(ArgumentError(lazy"length(y) must be $(prob.m)"))
         all(isfinite, y) || throw(ArgumentError("y must be finite, found NaN or Inf"))
         ws.y .= prob.c .* T.(y) ./ prob.E
     end
