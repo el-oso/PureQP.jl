@@ -10,7 +10,7 @@
         "meta_tests.jl" => 1,
         "moi_tests.jl" => 2,
         "standalone_tests.jl" => 3,
-        "strictmode_tests.jl" => 3,
+        "strictmode_tests.jl" => 2,
         "unmaterialized_tests.jl" => 2,
     )
     dir = @__DIR__

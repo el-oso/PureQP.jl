@@ -19,18 +19,30 @@ trim-compatible in the test suites rather than only by `bench/juliac_trim_build.
 Worth doing as a deliberate sweep over one package, not as collateral while chasing a verdict:
 the one measurement that settles whether `setup` trims is the real build, which passes.
 
-## Minimize the test suite against per-item coverage
+## Line coverage does not identify a redundant test here
 
 `bench/coverage_per_item.jl` measures what each `@testitem` covers and solves the set cover.
-For PureDAQP, 14 of 46 items reach all 733 covered lines; 36 items contribute no line that no
-other item reaches, and 4 of the 14 contribute none individually yet are collectively
-required. The selection is recorded in `bench/results/coverage_sets_PureDAQP.tsv` and
-`bench/results/coverage_per_item_PureDAQP.json`.
+Measured on PureDAQP: 14 of 46 items reach all 736 covered lines in 354 s of 886 s, and 36
+items cover no line no other item covers. Taken as a cut list that would be a 60% saving.
 
-Not yet done: running the 14-item selection to confirm it passes and covers what the analysis
-says, then deciding what to cut. Coverage equality is not sufficient grounds on its own — two
-items can cover identical lines and still assert different things about them. PureOSQP has 166
-items and has not been measured.
+Read item by item, it is not one. The items the cover leaves out include the proof that a solve
+allocates nothing (44 s), the proof that a warm re-solve allocates nothing (17 s), agreement
+with libdaqp on random problems (15 s), and the control that a feasible Kronecker problem is
+never reported infeasible (15 s). Nearly every item runs a solve, so the line sets overlap;
+what differs is the property each asserts, which line coverage does not see.
+
+The clearest case covers **zero** lines and would be dropped first: the item asserting the
+gates refuse code that allocates or cannot be trimmed. Every other proof in that file passes
+when nothing throws, so without it a disabled checker reports a fully proved solver.
+
+So the measurement answers the question, in the negative. Where the time goes is not
+redundancy: 160 s is the strictmode item's own six gates over three problem configurations, and
+the three configurations share most of their assertions — reducing those is the lever, not
+dropping items. PureOSQP's 166 items have not been measured and this result is reason to expect
+the same shape.
+
+`coverage_per_item.jl` prints `greedy cover: N items` without naming them; the names are only
+recoverable from `in_cover` in the JSON. Worth fixing before the harness is used again.
 
 ## `Optimizer` is exported by one solver and not the other
 
@@ -54,3 +66,22 @@ many times from a warm start. A wrapper has to carry the refusals across, since 
 rejects rather than ignores what does not apply to it — `scaling` other than zero, `polishing`,
 any `linsys`, and the operator-splitting parameters each throw an `ArgumentError`. MOI
 attributes that map onto those need the same answer rather than a silent default.
+
+## PureQPBase re-tests StrictMode's own checkers
+
+`PureQPBase/test/strictmode_tests.jl` ends with an item that defines two deliberately broken
+functions — `grow(n) = zeros(n)` and `dynamic(r) = r[] + 1` over a `Ref{Any}` — and asserts the
+`:noalloc` and `:trim_compatible` gates refuse them. It covers no line of `PureQPBase/src`,
+because what it exercises is the checker.
+
+StrictModeTest tests this itself, in seven places: `@test_throws StrictViolation @test_noalloc
+Fixtures.allocs(4)`, the same for `@test_noboxing`, `@test_strict`, `test_compiled` and
+`test_registered`. So the item duplicates a dependency's own suite, and costs about 37 s of
+package loads and one child process to do it.
+
+What is not duplicated is `StrictMode.assert_enabled()`, which asserts a property of this test
+environment rather than of StrictMode: the tier depends on whether StrictModeTest is loaded and
+on `LocalPreferences.toml`, and a disabled tier prints exactly like a clean one. Every real
+proof item already calls it, so removing the broken-function item keeps that guard.
+
+The three solver packages no longer carry this item. PureQPBase still does.
