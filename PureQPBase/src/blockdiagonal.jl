@@ -144,7 +144,7 @@ end
 function is_convex(::Type{T}, P::BlockDiagonal, sigma) where {T}
     P.rowstart == P.colstart || return false
     return all(P.blocks) do B
-        isempty(B) || issuccess(cholesky(Symmetric(Matrix{T}(B)) + sigma * I; check = false))
+        isempty(B) || issuccess(cholesky(Symmetric(dense_copy(T, B)) + sigma * I; check = false))
     end
 end
 

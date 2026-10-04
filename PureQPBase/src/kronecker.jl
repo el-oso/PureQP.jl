@@ -133,8 +133,8 @@ is_symmetric(K::KroneckerOperator) = issymmetric(K.A1) && issymmetric(K.A2)
 # Two eigenvalue problems of the factors' sizes replace a factorization of the `n×n` product.
 function is_convex(::Type{T}, K::KroneckerOperator, sigma) where {T}
     isempty(K) && return true
-    lo1, hi1 = extrema(eigvals(Symmetric(Matrix{T}(K.A1))))
-    lo2, hi2 = extrema(eigvals(Symmetric(Matrix{T}(K.A2))))
+    lo1, hi1 = extrema(eigvals(Symmetric(dense_copy(T, K.A1))))
+    lo2, hi2 = extrema(eigvals(Symmetric(dense_copy(T, K.A2))))
     return min(lo1 * lo2, lo1 * hi2, hi1 * lo2, hi1 * hi2) + sigma > zero(T)
 end
 

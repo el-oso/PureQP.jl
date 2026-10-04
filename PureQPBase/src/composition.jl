@@ -250,7 +250,7 @@ The sum of `terms`, which all share both dimensions.
 """
 function SumOperator(terms::AbstractMatrix...)
     T = promote_type(map(eltype, terms)...)
-    T <: Real || throw(ArgumentError("a SumOperator needs a real element type, got $T"))
+    T <: Real || throw(ArgumentError(lazy"a SumOperator needs a real element type, got $T"))
     return SumOperator{T, typeof(terms)}(terms)
 end
 

@@ -377,8 +377,8 @@ end
 
 function KroneckerSquareRoot(P1::AbstractMatrix, P2::AbstractMatrix, shift)
     T = promote_type(eltype(P1), eltype(P2), typeof(shift))
-    E1 = eigen(Symmetric(Matrix{T}(P1)))
-    E2 = eigen(Symmetric(Matrix{T}(P2)))
+    E1 = eigen(Symmetric(dense_copy(T, P1)))
+    E2 = eigen(Symmetric(dense_copy(T, P2)))
     eps = convert(T, shift)
     n1, n2 = length(E1.values), length(E2.values)
     d = Vector{T}(undef, n1 * n2)

@@ -60,7 +60,7 @@ The blocks stacked in order, as `vcat` would stack them. Every block spans the s
 """
 function StackedOperator(blocks::AbstractMatrix...)
     T = promote_type(map(eltype, blocks)...)
-    T <: Real || throw(ArgumentError("a StackedOperator needs a real element type, got $T"))
+    T <: Real || throw(ArgumentError(lazy"a StackedOperator needs a real element type, got $T"))
     return StackedOperator{T, typeof(blocks)}(blocks)
 end
 

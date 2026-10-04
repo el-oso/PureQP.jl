@@ -183,7 +183,7 @@ function validate_update!(
     ) where {T, MP, MA}
     n, m = prob.n, prob.m
     if !isnothing(P)
-        size(P) == (n, n) || throw(ArgumentError("P must stay $(n)×$(n), got $(size(P))"))
+        size(P) == (n, n) || throw(ArgumentError(lazy"P must stay $(n)×$(n), got $(size(P))"))
         P isa MP || throw(
             ArgumentError(
                 "P must keep the representation the workspace was built with: its linear-" *
@@ -197,7 +197,7 @@ function validate_update!(
         check_storage(P, n, n)
     end
     if !isnothing(A)
-        size(A) == (m, n) || throw(ArgumentError("A must stay $(m)×$(n), got $(size(A))"))
+        size(A) == (m, n) || throw(ArgumentError(lazy"A must stay $(m)×$(n), got $(size(A))"))
         A isa MA || throw(
             ArgumentError(
                 "A must keep the representation the workspace was built with: its linear-" *
@@ -212,16 +212,16 @@ function validate_update!(
         check_update(ls, isnothing(P) ? prob.P : P, isnothing(A) ? prob.A : A)
     end
     if !isnothing(q)
-        length(q) == n || throw(ArgumentError("length(q) must be $n, got $(length(q))"))
+        length(q) == n || throw(ArgumentError(lazy"length(q) must be $n, got $(length(q))"))
         all(isfinite, q) || throw(ArgumentError("q must be finite, found NaN or Inf"))
     end
     if !isnothing(l) || !isnothing(u)
         # Lengths first: the walks below index every row of both proposals, and a short one
         # would reach the end of a vector rather than this message.
         isnothing(l) || length(l) == m ||
-            throw(ArgumentError("length(l) must be $m, got $(length(l))"))
+            throw(ArgumentError(lazy"length(l) must be $m, got $(length(l))"))
         isnothing(u) || length(u) == m ||
-            throw(ArgumentError("length(u) must be $m, got $(length(u))"))
+            throw(ArgumentError(lazy"length(u) must be $m, got $(length(u))"))
         inf = INFTY(T)
         if !isnothing(l)
             any(isnan, l) && throw(ArgumentError("l contains NaN"))
@@ -237,7 +237,7 @@ function validate_update!(
             li = isnothing(l) ? prob.l0[i] : max(T(l[i]), -inf)
             ui = isnothing(u) ? prob.u0[i] : min(T(u[i]), inf)
             li <= ui ||
-                throw(ArgumentError("l must be elementwise ≤ u, violated at index $i: $li > $ui"))
+                throw(ArgumentError(lazy"l must be elementwise ≤ u, violated at index $i: $li > $ui"))
         end
     end
     return nothing

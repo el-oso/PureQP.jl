@@ -20,6 +20,7 @@ using LinearAlgebra.BLAS: libblastrampoline
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_contract, @assert_noalloc, @assert_trim_compatible
 
+include("arrays.jl")
 include("blockdiagonal.jl")
 include("kronecker.jl")
 include("rowcoupled.jl")

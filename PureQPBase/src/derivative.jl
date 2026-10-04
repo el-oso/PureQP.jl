@@ -198,8 +198,8 @@ function adjoint_derivative(
         ws::QPWorkspace{T}, dx::AbstractVector, dy::AbstractVector
     ) where {T}
     n, m = ws.prob.n, ws.prob.m
-    length(dx) == n || throw(ArgumentError("length(dx) = $(length(dx)) must equal n = $n"))
-    length(dy) == m || throw(ArgumentError("length(dy) = $(length(dy)) must equal m = $m"))
+    length(dx) == n || throw(ArgumentError(lazy"length(dx) = $(length(dx)) must equal n = $n"))
+    length(dy) == m || throw(ArgumentError(lazy"length(dy) = $(length(dy)) must equal m = $m"))
 
     F, M, act, lower, x, y = active_kkt(ws)
     k = length(act)
