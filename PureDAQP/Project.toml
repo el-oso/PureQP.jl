@@ -1,6 +1,6 @@
 name = "PureDAQP"
 uuid = "3d6c1e44-5a86-4c7a-815f-9c4190067cf0"
-version = "0.1.5"
+version = "0.1.6"
 authors = ["el-oso <15278831+el-oso@users.noreply.github.com>"]
 
 [workspace]
@@ -24,7 +24,7 @@ PureDAQPMathOptInterfaceExt = "MathOptInterface"
 LinearAlgebra = "1"
 MathOptInterface = "1"
 ModifiableFactorizations = "0.1.1"
-PureQPBase = "0.1.5"
+PureQPBase = "0.1.6"
 Reexport = "1"
 StrictMode = "0.4.11"
 TypeContracts = "0.14.0"

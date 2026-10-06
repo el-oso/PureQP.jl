@@ -7,6 +7,13 @@ what is true now; this file is where the history lives.
 
 ### Changed
 
+- **The dense and Kronecker workspace aliases name every type parameter.** `@strict_function`
+  skips a signature that is not a dispatch tuple, so an alias leaving a parameter free withdrew
+  the allocation and type-stability guarantees from `PureDAQP`'s `warm_start!` and `cold_start!`
+  without reporting anything. StrictMode 0.4.11 is now the floor: it keeps its trim-heuristic
+  note out of build output, so precompiling these packages says nothing to the consumer who
+  builds them.
+
 - **Every per-iteration call allocates nothing, and the test suites prove it.** StrictMode
   checks the kernels at load time and StrictModeTest proves them allocation-free and `--trim`
   compatible on every backend in `PureQPBase`'s own source. Allocations removed, per call on
