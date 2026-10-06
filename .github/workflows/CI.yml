@@ -65,10 +65,15 @@ jobs:
       # neutralizes every one of them, so an index that escaped its range raises a
       # `BoundsError` here rather than reading whatever it reaches. An upstream default that
       # changed would take that net away without a line of this file changing.
+      # The MathOptInterface conformance suite is about half of PureOSQP's running time and
+      # checks the wrapper rather than the Julia it runs on, so it runs on the newest release
+      # only. `PUREQP_SKIP_MOI` is read by PureOSQP/test/runtests.jl and ignored elsewhere.
       - uses: julia-actions/julia-runtest@v1
         with:
           project: ${{ matrix.package }}
           check_bounds: 'yes'
+        env:
+          PUREQP_SKIP_MOI: ${{ matrix.version == '1.12' }}
       - uses: julia-actions/julia-processcoverage@v1
         with:
           directories: PureOSQP/src,PureOSQP/ext,PureQPBase/src,PureQPBase/ext,PureIPM/src,PureIPM/ext,PureDAQP/src

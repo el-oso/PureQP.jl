@@ -2,42 +2,42 @@
 # written here would be, and it is the same one every registered solver runs. It is split by
 # test-name prefix because compiling its several hundred test functions against this model
 # costs minutes, and six items compile their share of them in parallel.
-@testitem "the MathOptInterface wrapper passes MOI.Test: linear and quadratic" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: linear and quadratic" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[1])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: conic" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: conic" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[2])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: model, solve and modification" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: model, solve and modification" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[3])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: basic scalar constraints" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: basic scalar constraints" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[4])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: basic VectorOfVariables constraints" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: basic VectorOfVariables constraints" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[5])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: basic VectorAffineFunction constraints" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: basic VectorAffineFunction constraints" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[6])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: basic vector nonlinear constraints" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: basic vector nonlinear constraints" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); include = MOI_GROUPS[7])
 end
 
-@testitem "the MathOptInterface wrapper passes MOI.Test: the rest" begin
+@testitem "the MathOptInterface wrapper passes MOI.Test: the rest" tags = [:moi] begin
     include(joinpath(@__DIR__, "moi_helpers.jl"))
     MOI.Test.runtests(moi_model(), moi_config(); exclude = reduce(vcat, MOI_GROUPS))
 end
