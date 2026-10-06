@@ -94,9 +94,6 @@ let
     u = [1.0, 0.7, 0.7]
     # `setup` builds the workspace, so it allocates by contract and carries no such claim.
     ws = setup(P, q, A, l, u, ActiveSet())
-    # `solve!` is type-stable and allocates nothing, but the allocation claim is measured
-    # rather than scanned: it reads the clock, and the `jl_hrtime` foreign call behind
-    # `time_ns` is opaque to both the scan and AllocCheck.
     @strict solve!(ws)
     @strict update!(ws; q = q)
     @strict update!(ws; l = l, u = u)

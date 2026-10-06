@@ -258,9 +258,21 @@ replaces.
 function adopt_update!(
         data::QPData{T}; P = nothing, A = nothing, q = nothing, l = nothing, u = nothing
     ) where {T}
-    isnothing(q) || (data.q0 .= q)
-    isnothing(l) || (data.l0 .= max.(T.(l), -INFTY(T)))
-    isnothing(u) || (data.u0 .= min.(T.(u), INFTY(T)))
+    if !isnothing(q)
+        for i in eachindex(data.q0, q)
+            data.q0[i] = q[i]
+        end
+    end
+    if !isnothing(l)
+        for i in eachindex(data.l0, l)
+            data.l0[i] = max(T(l[i]), -INFTY(T))
+        end
+    end
+    if !isnothing(u)
+        for i in eachindex(data.u0, u)
+            data.u0[i] = min(T(u[i]), INFTY(T))
+        end
+    end
     # Every check reads the arguments, never the problem's own fields, so the matrices are
     # adopted only once none of them can refuse. A refusal that had already replaced `P` or
     # `A` would leave the workspace holding a matrix its factorization and its buffers were

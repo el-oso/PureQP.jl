@@ -151,3 +151,22 @@ end
     @test iszero(operator_bytes(Pd, q, A, l, u, false))
     @test operator_bytes(Pd, q, A, l, u, true) > 0
 end
+
+@testitem "the workspace aliases name the types setup builds" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+
+    # `@strict_function` checks the signatures these aliases spell. A signature that is not a
+    # dispatch tuple is skipped rather than checked, so an alias leaving a parameter free
+    # silently withdraws the guarantee from `warm_start!` and `cold_start!`.
+    @test Base.isdispatchtuple(Tuple{PureDAQP.DenseWorkspace{Float64}})
+    @test Base.isdispatchtuple(Tuple{PureDAQP.KroneckerWorkspace{Float64}})
+
+    P, q = [4.0 1.0; 1.0 2.0], [1.0, 1.0]
+    A, l, u = [1.0 1.0; 1.0 0.0; 0.0 1.0], [1.0, 0.0, 0.0], [1.0, 0.7, 0.7]
+    @test typeof(setup(P, q, A, l, u, ActiveSet())) === PureDAQP.DenseWorkspace{Float64}
+
+    Pk = PureQPBase.KroneckerOperator([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0])
+    Ak = PureQPBase.KroneckerOperator([1.0 0.5; 0.0 1.0; 1.0 1.0], [1.0 0.0; 0.5 1.0])
+    wsk = setup(Pk, [1.0, 1.0, 0.5, -0.5], Ak, fill(-1.0, 6), fill(1.0, 6), ActiveSet())
+    @test typeof(wsk) === PureDAQP.KroneckerWorkspace{Float64}
+end

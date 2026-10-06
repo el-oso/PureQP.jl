@@ -54,10 +54,17 @@ The workspace `solve(P, q, A, l, u, ActiveSet())` builds for dense data.
 
 The guarantees on the entry points are stated against this instantiation: a `where` clause
 binds its type variables to the method rather than the module, so a parametric declaration
-has no concrete signature to check and needs the instantiations named.
+has no concrete signature to check and needs the instantiations named. Every parameter is
+spelled out for that reason — `DenseWorkspace{Float64}` must be a concrete type, or the
+check that names it is skipped instead of run.
 """
 const DenseWorkspace{T} = ActiveSetWorkspace{
-    T, Matrix{T}, Matrix{T}, Vector{T}, DAQPReduction{T, UpperTriangular{T, Matrix{T}}},
+    T, Matrix{T}, Matrix{T}, Vector{T},
+    DAQPReduction{
+        T, UpperTriangular{T, Matrix{T}},
+        LowerTriangular{T, Transpose{T, Matrix{T}}}, WorkingSetQR{T}, DenseRows{T},
+    },
+    ActiveSet{T, T, T, T, WorkingSetQR},
 }
 
 """
@@ -70,7 +77,14 @@ because holding the operands rather than `A R⁻¹` puts different code in the i
 """
 const KroneckerWorkspace{T} = ActiveSetWorkspace{
     T, KroneckerOperator{T, Matrix{T}}, KroneckerOperator{T, Matrix{T}}, Vector{T},
-    DAQPReduction{T, KroneckerCholesky{T}},
+    DAQPReduction{
+        T, KroneckerCholesky{T}, Transpose{T, KroneckerCholesky{T}}, WorkingSetQR{T},
+        ImplicitRows{
+            T, KroneckerOperator{T, Matrix{T}}, KroneckerCholesky{T},
+            Transpose{T, KroneckerCholesky{T}},
+        },
+    },
+    ActiveSet{T, T, T, T, WorkingSetQR},
 }
 
 function Base.show(io::IO, ws::ActiveSetWorkspace{T}) where {T}
@@ -318,7 +332,11 @@ function certifiable(ws::ActiveSetWorkspace{T}) where {T}
     end
     # A certificate's sign is whichever orientation separates; the loop orients its direction
     # for its own stepping rule, not for this.
-    return separates(ws, y) || separates(ws, (y .= .-y))
+    separates(ws, y) && return true
+    for i in eachindex(y)
+        y[i] = -y[i]
+    end
+    return separates(ws, y)
 end
 
 "Whether `y` is a Farkas certificate of primal infeasibility for the caller's own data."
