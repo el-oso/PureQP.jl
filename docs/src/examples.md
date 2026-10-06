@@ -933,7 +933,7 @@ matrices at random instead, to keep each one readable on its own.
 
 ### Conjugate gradients
 
-A `LinearMap` reaches the matrix-free backend, which needs nothing but products:
+Named onto the matrix-free backend, a `LinearMap` needs nothing but products:
 
 ```@example unmat
 using PureOSQP, PureQPBase, LinearMaps, LinearAlgebra, Krylov, Random

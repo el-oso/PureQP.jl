@@ -143,7 +143,9 @@ choose and refuses any `linsys` but `:auto`.
 
 `linsys = :auto` takes the first backend that fits. For two dense matrices that is an `n×n`
 Cholesky of the reduced system. A structured matrix — diagonal, banded and the rest — is caught
-earlier. A matrix-free operator goes to the matrix-free backend.
+earlier. An operator that is never formed goes to the matrix-free backend under
+`OperatorSplitting`, and to `product_reduced` under `InteriorPoint`, which assembles the reduced
+matrix from products instead of iterating.
 
 If that Cholesky finds the reduced matrix is not positive definite, `setup` throws and names
 `linsys = :kkt`. It does not switch backend underneath you, because the backend is fixed at

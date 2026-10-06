@@ -169,7 +169,7 @@ is conjugate gradients, which needs Krylov.jl.
 | | dense | sparse | structured | unmaterialized |
 |---|---|---|---|---|
 | [`OperatorSplitting`](@ref) | `cholesky` | `cholmod`, `ldlfactorizations` or `sparse_formed`, by the pattern | the structured backend its conditions admit, else `indirect`: a type that holds its structure is never formed | `indirect` with `scaling = 0`; a direct backend when the type unwraps to a structured one ([What a composed map becomes](@ref)) |
-| [`InteriorPoint`](@ref) | the full KKT system, `bunchkaufman` | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; a Kronecker or low-rank pair is refused, since the only rung left would form the matrix | only with a caller-supplied preconditioner, `linsys = :indirect` and `scaling = 0` |
+| [`InteriorPoint`](@ref) | the full KKT system, `bunchkaufman` | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; `linsys = :kronecker` and `:lowrank` are refused by name, and such a pair reaches `product_reduced` on `:auto` | `product_reduced`: the `n×n` reduced matrix assembled from `3n` products, so neither `P` nor `A` is formed. Conjugate gradients is the other path and takes `linsys = :indirect`, a caller-supplied preconditioner and `scaling = 0` |
 | [`ActiveSet`](@ref) | `A R⁻¹` formed once and stored | read into a dense matrix first | `Diagonal`, `BlockDiagonal` and `KroneckerOperator` are held as they are and `A R⁻¹` is not formed: implicit `A R⁻¹`, `R` in `P`'s form. Banded, tridiagonal and `RowCoupled` are read into a dense matrix first | `A`: implicit `A R⁻¹`, each row read as one adjoint product. `P`: refused, since `P` must have a Cholesky factor |
 
 Three things in that table are conditions on your problem, not choices.
@@ -185,11 +185,13 @@ When `A` and the factor of `P` are both dense, `M` is formed once and stored. In
 case the workspace holds `A` and `R`, derives a row of `M` from them when the working set asks
 for it, and computes the product `Mu` as one solve and one product with `A`.
 
-**`InteriorPoint` on an operator needs a preconditioner of your own, and a factor of `P` is not
-one.** On the problem measured below, with `cholesky(P)` as the preconditioner the reduced
-matrix `P + δI + Aᵀ diag(w) A` has condition number `3.5e14`, against `6.6e14` without it. That
-matrix is dominated by `Aᵀ diag(w) A`, whose weights `w` span many orders of magnitude, and a
-factor of `P` does nothing about that term. A factorization of the whole reduced matrix,
+**`InteriorPoint`'s conjugate gradients need a preconditioner of your own, and a factor of `P`
+is not one.** This is a condition on `linsys = :indirect` and on nothing else: an unmaterialized
+pair left on `:auto` reaches `product_reduced`, which factors rather than iterates and takes no
+preconditioner. On the problem measured below, with `cholesky(P)` as the preconditioner the
+reduced matrix `P + δI + Aᵀ diag(w) A` has condition number `3.5e14`, against `6.6e14` without
+it. That matrix is dominated by `Aᵀ diag(w) A`, whose weights `w` span many orders of magnitude,
+and a factor of `P` does nothing about that term. A factorization of the whole reduced matrix,
 refreshed as the weights change, is a preconditioner that works
 ([Operators under the interior-point method](@ref)).
 
@@ -273,8 +275,10 @@ An operator with no structure the solver recognizes is solved with *conjugate gr
 which only multiplies by the operator and whose convergence depends on conditioning. An
 operator with its own **direct** backend is solved by factoring instead, and conditioning then
 affects it only through the structure. That is what [`OperatorSplitting`](@ref)'s
-`linsys = :auto` does. Under [`InteriorPoint`](@ref) an operator needs `linsys = :indirect`
-named explicitly, with a preconditioner you supply ([Choosing an algorithm](@ref "What each algorithm throws on")).
+`linsys = :auto` does. [`InteriorPoint`](@ref) factors too, through `product_reduced`: it
+assembles the `n×n` reduced matrix from products with `P` and `A` and never forms either of
+them. CG is the path it takes only when asked, with `linsys = :indirect` named explicitly and a
+preconditioner you supply ([Choosing an algorithm](@ref "What each algorithm throws on")).
 
 The Kronecker type is an example. `κ(A₁ ⊗ A₂) = κ(A₁)·κ(A₂)`, so an operator with `κ = 1e12` is
 built from two factors with `κ = 1e6` each, and the backend eigendecomposes the factors without
@@ -508,9 +512,11 @@ An operator that supplies **only** products — nothing to index at all — says
 PureQPBase.is_materializable(::MyOperator) = false
 ```
 
-`linsys = :auto` then skips the dense terminal and lands on the matrix-free backend, which
-needs Krylov.jl loaded. `polish!` and the two derivative entry points build a dense matrix
-out of `P` and `A` entry by entry, so they throw, naming the operator, rather than failing
+`linsys = :auto` then skips the dense terminal. Under [`OperatorSplitting`](@ref) it lands on
+the matrix-free backend, which needs Krylov.jl loaded; under [`InteriorPoint`](@ref) on
+`product_reduced`, which assembles the reduced matrix from products and needs nothing extra.
+`polish!` and the two derivative entry points build a dense matrix out of `P` and `A` entry by
+entry, so they throw, naming the operator, rather than failing
 inside a factorization: pass `polishing = false`, and differentiate a materialized form of
 the problem. Equilibration also walks columns, so an operator that overrides neither seam
 level needs `scaling = 0`.

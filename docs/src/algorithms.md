@@ -12,7 +12,7 @@ Read down the table and take the first row that describes your problem.
 | if | use | because |
 |---|---|---|
 | you re-solve a sequence, changing only `q`, `l` or `u` | `OperatorSplitting` | it keeps the factorization across [`update!`](@ref) and warm starts from the last answer |
-| `P` or `A` is matrix-free, and you have no preconditioner | `OperatorSplitting` | the only one that takes an operator with the built-in Jacobi preconditioner |
+| `P` or `A` is an operator too large to hold an `n×n` reduced matrix for, and you have no preconditioner | `OperatorSplitting` | the only one whose conjugate gradients take the built-in Jacobi preconditioner, or none. All three accept an operator `A`; the other two either assemble that matrix or want a preconditioner of your own |
 | few rows are active at the solution **and** `P` has a Cholesky factor | `ActiveSet` | it costs about one iteration per active row and returns the exact answer |
 | you want `1e-8` or better from a single solve | `InteriorPoint` | a handful of Newton steps reach it whatever the conditioning |
 | `P` or `A` is large and sparse | `InteriorPoint` | it factors the pattern; `ActiveSet` reads a sparse matrix into a dense one |
@@ -156,16 +156,16 @@ each type](@ref) has the full table.
 
 | | `OperatorSplitting` | `InteriorPoint` | `ActiveSet` |
 |---|---|---|---|
-| matrix-free operators (`linsys = :indirect`) | works with the built-in Jacobi preconditioner, or none | needs `linsys = :indirect`, a **caller-supplied** preconditioner, and `scaling = 0`; passing the built-in preconditioners or equilibration throws, naming the remedy ([Operators under the interior-point method](@ref)) | throws: no backend to select. A `P` that supplies products only is refused; an operator `A` is read by row |
+| conjugate gradients (`linsys = :indirect`) | works with the built-in Jacobi preconditioner, or none | needs `linsys = :indirect`, a **caller-supplied** preconditioner, and `scaling = 0`; passing the built-in preconditioners or equilibration throws, naming the remedy ([Operators under the interior-point method](@ref)) | throws: no backend to select. A `P` that supplies products only is refused; an operator `A` is read by row |
 | `linsys = :kronecker` | works | throws: the Kronecker backend needs one weight for every row, and the interior-point method's weights are per-row | throws: no backend to select |
 | `linsys = :lowrank` | works | throws: the Woodbury solve misses the tolerance on linear programs ([Algorithm](@ref "Backends under the interior-point method")) | throws: no backend to select |
 | `scaling` | any value | any value | throws unless `0`: the reduction normalizes its own rows |
 | `polishing = true` | works | works, and is required before a derivative | throws: the answer is already exact over the working set |
 | an indefinite `P` | throws at `setup` | throws at `setup` | throws at `setup`, from the Cholesky of `P + eps_prox*I` |
 
-We measured why `InteriorPoint` needs a preconditioner of your own on an operator. We did not
-assume it. Its row weights reach `1/reg_dual`, `1e8` by default, on equality and active rows,
-and they change every outer iteration. A fixed diagonal preconditioner cannot keep conjugate
+We measured why `InteriorPoint` needs a preconditioner of your own on its conjugate-gradient
+path. We did not assume it. Its row weights reach `1/reg_dual`, `1e8` by default, on equality
+and active rows, and they change every outer iteration. A fixed diagonal preconditioner cannot keep conjugate
 gradients inside its budget at that spread, though it can under ADMM's fixed `ρ`.
 `PureIPM/bench/ipm_matrixfree.jl` measures this on 24 dense planted instances with a lagged
 Cholesky preconditioner the caller supplies, refreshed every third outer iteration. All 24 solve
@@ -363,7 +363,7 @@ and the problems behind them.
 | default tolerance | `1e-3` | `1e-8` | exact at the working set; `primal_tol` decides which rows enter |
 | matrices | any `AbstractMatrix`, structure and sparsity exploited | the same | any `A`; `P` needs a Cholesky factor. Dense, `Diagonal`, `BlockDiagonal` and `KroneckerOperator` are used as they are, and sparse and banded types are read into dense matrices |
 | `update!` | can skip refactorization entirely (`q`-only updates always do) | refactorizes every outer iteration regardless | keeps the reduction unless `P` or `A` changes |
-| matrix-free operators | no restriction | needs a caller-supplied preconditioner and `scaling = 0` | `A` yes, read by row; `P` not supported |
+| unmaterialized operators | no restriction | `product_reduced` on `:auto`, which assembles the `n×n` reduced matrix from products; conjugate gradients instead need `linsys = :indirect`, a caller-supplied preconditioner and `scaling = 0` | `A` yes, read by row; `P` not supported |
 | `linsys` | every backend | all but `:kronecker` and `:lowrank` | none: it has no backend to choose, but `working_set` picks what its own factorization holds |
 | derivatives | ready from the iterate as it stands | require `polishing = true` first | ready: inactive multipliers are exactly zero |
 | infeasibility certificates | yes | yes, through the same test | primal only, and without a certificate |

@@ -165,8 +165,10 @@ Polishing and the solution derivatives copy `P` and `A` into a dense factorizati
 a time. An operator that cannot answer entry by entry declares
 [`PureQPBase.is_materializable`](@ref) `false`. Those paths then throw a message that names the
 remedy, instead of a `MethodError` from inside the copy. The solver also skips every candidate
-that would form a matrix, so `linsys = :auto` reaches the matrix-free backend rather than
-failing inside a factorization.
+that would read entries, so `linsys = :auto` under [`OperatorSplitting`](@ref) reaches the
+matrix-free backend rather than failing inside a factorization. Under
+[`InteriorPoint`](@ref) it reaches `product_reduced`, which assembles the reduced matrix from
+products and so still factors.
 
 Conjugate gradients is the fallback for an operator with no structure to use, and it is a real
 fallback, not a good one. On an ill-conditioned problem it can return a wrong answer, not just a
