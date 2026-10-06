@@ -201,6 +201,21 @@ function clarabel_form(P, A, l, u)
     return (sparse(triu(P)), vcat(rows...), bnd)
 end
 
+"""
+`setup!` alone, with the one-sided form it needs built inside the timed region: a caller
+hands Clarabel a two-sided QP and pays for the stacking either way.
+"""
+function clarabel_setup(P, q, A, l, u)
+    Pc, Ac, bc = clarabel_form(P, A, l, u)
+    settings = Clarabel.Settings(
+        verbose = false, tol_gap_abs = TOL, tol_gap_rel = TOL,
+        tol_feas = TOL,
+    )
+    solver = Clarabel.Solver()
+    Clarabel.setup!(solver, Pc, q, Ac, bc, [Clarabel.NonnegativeConeT(length(bc))], settings)
+    return solver
+end
+
 function run_clarabel(P, q, A, l, u)
     Pc, Ac, bc = clarabel_form(P, A, l, u)
     settings = Clarabel.Settings(
@@ -305,13 +320,26 @@ function run_case(name, gen, data_dir, idx)
     ipm_stats = summarize(vcat(ipm_a1.samples, ipm_a2.samples))
     clar_stats = summarize(vcat(clar_b1.samples, clar_b2.samples))
 
+    # Setup on its own, so a time difference can be read as the factorization and the
+    # iterations rather than as whatever the solvers pay before iterating. On a sparse class
+    # the symbolic analysis is most of the total, and both solvers analyze the same pattern.
+    # One pass per solver rather than the interleave above: this is a share of a total, not a
+    # margin between two solvers, so a drift over the run moves it far less.
+    ipm_setup = @be setup($P, $q, $A, $l, $u, PureIPM.InteriorPoint(); eps_abs = TOL, eps_rel = TOL, verbose = false) seconds = SECONDS
+    clar_setup = @be clarabel_setup($P, $q, $A, $l, $u) seconds = SECONDS
+    ipm_setup_stats = summarize(ipm_setup.samples)
+    clar_setup_stats = summarize(clar_setup.samples)
+
     Pc, Ac, bc = clarabel_form(P, A, l, u)
     slug = replace(lowercase(name), ' ' => '_')
     write_problem(joinpath(data_dir, @sprintf("%02d_%s.txt", idx, slug)), Pc, q, Ac, bc)
 
     dx_clarabel = maximum(abs, ipm.x .- clar.x; init = 0.0) / max(1.0, maximum(abs, ipm.x; init = 0.0))
 
-    return (; name, n, m, ipm, ipm_stats, clar, clar_stats, dx_clarabel)
+    return (;
+        name, n, m, ipm, ipm_stats, clar, clar_stats, dx_clarabel,
+        ipm_setup_stats, clar_setup_stats,
+    )
 end
 
 mkpath(dirname(RESULTS))
@@ -332,11 +360,11 @@ end
 rs_wall = isempty(rs_walls) ? NaN : sum(values(rs_walls))
 
 @printf(
-    "%-10s %-8s %-7s | %-22s | %-22s | %-18s | %-18s | %s\n",
-    "class", "n", "m", "IPM (min/med, µs)", "Clarabel.jl (min/med, µs)",
+    "%-10s %-8s %-7s | %-30s | %-30s | %-18s | %-18s | %s\n",
+    "class", "n", "m", "IPM (min/med µs, setup share)", "Clarabel.jl (min/med µs, setup)",
     ".rs faer (µs)", ".rs qdldl (µs)", "max |Δx| (IPM vs .jl / .rs)"
 )
-println("-"^170)
+println("-"^186)
 
 results = map(enumerate(cases)) do (i, c)
     rs_of(ldl) = haskey(rs_runs, ldl) ? rs_runs[ldl][i] : nothing
@@ -348,11 +376,16 @@ results = map(enumerate(cases)) do (i, c)
 
     gc_flag(s) = s.min_gc ? "*" : (s.any_gc ? "+" : " ")
 
+    # `s=` is setup's share of that solver's own total.
+    share(setup, all) = 100 * setup.min_s / all.min_s
+
     @printf(
-        "%-10s n=%-4d m=%-5d | %3d it %8.3f/%7.3f%s | %3d it %8.3f/%7.3f%s | %3d it %9.3f | %9.3f %-7s | %.1e / %.1e\n",
+        "%-10s n=%-4d m=%-5d | %3d it %8.3f/%7.3f%s s=%2.0f%% | %3d it %8.3f/%7.3f%s s=%2.0f%% | %3d it %9.3f | %9.3f %-7s | %.1e / %.1e\n",
         c.name, c.n, c.m,
         c.ipm.iter, 1.0e6c.ipm_stats.min_s, 1.0e6c.ipm_stats.median_s, gc_flag(c.ipm_stats),
+        share(c.ipm_setup_stats, c.ipm_stats),
         c.clar.iterations, 1.0e6c.clar_stats.min_s, 1.0e6c.clar_stats.median_s, gc_flag(c.clar_stats),
+        share(c.clar_setup_stats, c.clar_stats),
         rs_iter, rs_us,
         us_of("qdldl"), (r = rs_of("qdldl"); isnothing(r) ? "" : r["linsolver"]),
         c.dx_clarabel, dx_rs,
@@ -366,12 +399,16 @@ results = map(enumerate(cases)) do (i, c)
             "min_us" => 1.0e6c.ipm_stats.min_s, "median_us" => 1.0e6c.ipm_stats.median_s,
             "n_samples" => c.ipm_stats.n, "min_sample_gc" => c.ipm_stats.min_gc,
             "any_sample_gc" => c.ipm_stats.any_gc, "n_gc_samples" => c.ipm_stats.n_gc,
+            "setup_min_us" => 1.0e6c.ipm_setup_stats.min_s,
+            "setup_median_us" => 1.0e6c.ipm_setup_stats.median_s,
         ),
         "clarabel_jl" => Dict(
             "iter" => c.clar.iterations, "status" => String(Symbol(c.clar.status)), "obj" => c.clar.obj_val,
             "min_us" => 1.0e6c.clar_stats.min_s, "median_us" => 1.0e6c.clar_stats.median_s,
             "n_samples" => c.clar_stats.n, "min_sample_gc" => c.clar_stats.min_gc,
             "any_sample_gc" => c.clar_stats.any_gc, "n_gc_samples" => c.clar_stats.n_gc,
+            "setup_min_us" => 1.0e6c.clar_setup_stats.min_s,
+            "setup_median_us" => 1.0e6c.clar_setup_stats.median_s,
         ),
         "clarabel_rs" => isnothing(rs) ? nothing : Dict(
                 "iter" => rs["iterations"], "status" => rs["status"], "min_us" => rs_us,

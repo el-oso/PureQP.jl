@@ -9,10 +9,10 @@
   ],
   "clarabel_rs_features": "faer-sparse, serde (default-features = false)",
   "clarabel_rs_ldl_note": "faer factors simplicially below a flops/nnz(L) ratio of 40 and supernodally above it; Clarabel hardcodes that AUTO threshold, so the case decides which path runs and the per-case `linsolver` field names the method Clarabel reports",
-  "clarabel_rs_subprocess_wall_s": 4.211155703,
+  "clarabel_rs_subprocess_wall_s": 4.2087316139999995,
   "clarabel_rs_subprocess_wall_s_by_ldl": {
-    "faer": 2.106556325,
-    "qdldl": 2.104599378
+    "faer": 2.105020846,
+    "qdldl": 2.103710768
   },
   "cpu_scaling_governor": "powersave",
   "grid": "small",
@@ -22,37 +22,39 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 9,
-        "median_us": 131.71800000000002,
+        "median_us": 130.856,
         "min_sample_gc": false,
-        "min_us": 128.091,
-        "n_gc_samples": 16,
-        "n_samples": 3990,
+        "min_us": 127.79100000000001,
+        "n_gc_samples": 15,
+        "n_samples": 4017,
         "obj": -0.9935210668976094,
+        "setup_median_us": 37.912000000000006,
+        "setup_min_us": 35.978,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 9,
         "linsolver": "faer",
-        "min_us": 84.098,
+        "min_us": 84.369,
         "obj": -0.9935210668976091,
-        "reps": 3045,
+        "reps": 3044,
         "status": "Solved"
       },
       "clarabel_rs_by_ldl": {
         "faer": {
           "iter": 9,
           "linsolver": "faer",
-          "min_us": 84.098,
+          "min_us": 84.369,
           "obj": -0.9935210668976091,
-          "reps": 3045,
+          "reps": 3044,
           "status": "Solved"
         },
         "qdldl": {
           "iter": 9,
           "linsolver": "qdldl",
-          "min_us": 76.364,
+          "min_us": 76.604,
           "obj": -0.9935210668976091,
-          "reps": 3814,
+          "reps": 3812,
           "status": "Solved"
         }
       },
@@ -61,12 +63,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 9,
-        "median_us": 107.061,
+        "median_us": 106.25000000000001,
         "min_sample_gc": false,
-        "min_us": 101.04100000000001,
-        "n_gc_samples": 52,
-        "n_samples": 4286,
+        "min_us": 100.759,
+        "n_gc_samples": 50,
+        "n_samples": 4299,
         "obj": -0.9935210642864293,
+        "setup_median_us": 27.863,
+        "setup_min_us": 24.687,
         "status": "SOLVED"
       },
       "m": 60,
@@ -77,37 +81,39 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 6,
-        "median_us": 98.706,
+        "median_us": 98.00500000000001,
         "min_sample_gc": false,
-        "min_us": 95.37,
-        "n_gc_samples": 13,
-        "n_samples": 5422,
+        "min_us": 94.168,
+        "n_gc_samples": 12,
+        "n_samples": 5478,
         "obj": -1.0725096410998847,
+        "setup_median_us": 33.142,
+        "setup_min_us": 31.078000000000003,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 6,
         "linsolver": "faer",
-        "min_us": 63.67000000000001,
+        "min_us": 64.08,
         "obj": -1.072509641099882,
-        "reps": 4552,
+        "reps": 4538,
         "status": "Solved"
       },
       "clarabel_rs_by_ldl": {
         "faer": {
           "iter": 6,
           "linsolver": "faer",
-          "min_us": 63.67000000000001,
+          "min_us": 64.08,
           "obj": -1.072509641099882,
-          "reps": 4552,
+          "reps": 4538,
           "status": "Solved"
         },
         "qdldl": {
           "iter": 6,
           "linsolver": "qdldl",
-          "min_us": 59.122,
+          "min_us": 58.881,
           "obj": -1.0725096410998827,
-          "reps": 4908,
+          "reps": 4959,
           "status": "Solved"
         }
       },
@@ -116,12 +122,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 2,
-        "median_us": 48.501000000000005,
+        "median_us": 48.641000000000005,
         "min_sample_gc": false,
-        "min_us": 44.564,
-        "n_gc_samples": 33,
-        "n_samples": 9304,
+        "min_us": 45.034000000000006,
+        "n_gc_samples": 28,
+        "n_samples": 9379,
         "obj": -1.0725096422556641,
+        "setup_median_us": 32.511,
+        "setup_min_us": 29.515,
         "status": "SOLVED"
       },
       "m": 10,
@@ -132,37 +140,39 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 11,
-        "median_us": 536.901,
+        "median_us": 541.6300000000001,
         "min_sample_gc": false,
-        "min_us": 525.7300000000001,
+        "min_us": 531.331,
         "n_gc_samples": 16,
-        "n_samples": 998,
+        "n_samples": 983,
         "obj": -1.9446192692698763,
+        "setup_median_us": 148.61,
+        "setup_min_us": 143.13000000000002,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 11,
         "linsolver": "faer",
-        "min_us": 579.722,
+        "min_us": 585.4630000000001,
         "obj": -1.9446192692698758,
-        "reps": 512,
+        "reps": 508,
         "status": "Solved"
       },
       "clarabel_rs_by_ldl": {
         "faer": {
           "iter": 11,
           "linsolver": "faer",
-          "min_us": 579.722,
+          "min_us": 585.4630000000001,
           "obj": -1.9446192692698758,
-          "reps": 512,
+          "reps": 508,
           "status": "Solved"
         },
         "qdldl": {
           "iter": 11,
           "linsolver": "qdldl",
-          "min_us": 530.088,
+          "min_us": 531.801,
           "obj": -1.9446192692698758,
-          "reps": 561,
+          "reps": 559,
           "status": "Solved"
         }
       },
@@ -171,12 +181,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 10,
-        "median_us": 334.821,
+        "median_us": 340.181,
         "min_sample_gc": false,
-        "min_us": 320.945,
-        "n_gc_samples": 49,
-        "n_samples": 1565,
+        "min_us": 329.621,
+        "n_gc_samples": 33,
+        "n_samples": 1423,
         "obj": -1.9446192695168627,
+        "setup_median_us": 84.459,
+        "setup_min_us": 80.151,
         "status": "SOLVED"
       },
       "m": 102,
@@ -187,37 +199,39 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 9,
-        "median_us": 795.5035000000001,
+        "median_us": 794.7070000000001,
         "min_sample_gc": false,
-        "min_us": 776.7330000000001,
+        "min_us": 771.814,
         "n_gc_samples": 17,
         "n_samples": 672,
         "obj": 198.7386048330222,
+        "setup_median_us": 264.75399999999996,
+        "setup_min_us": 245.623,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 9,
         "linsolver": "faer",
-        "min_us": 789.097,
+        "min_us": 795.899,
         "obj": 198.73860483302232,
-        "reps": 378,
+        "reps": 374,
         "status": "Solved"
       },
       "clarabel_rs_by_ldl": {
         "faer": {
           "iter": 9,
           "linsolver": "faer",
-          "min_us": 789.097,
+          "min_us": 795.899,
           "obj": 198.73860483302232,
-          "reps": 378,
+          "reps": 374,
           "status": "Solved"
         },
         "qdldl": {
           "iter": 9,
           "linsolver": "qdldl",
-          "min_us": 718.473,
+          "min_us": 721.98,
           "obj": 198.73860483302215,
-          "reps": 414,
+          "reps": 412,
           "status": "Solved"
         }
       },
@@ -226,12 +240,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 6,
-        "median_us": 286.61500000000007,
+        "median_us": 282.482,
         "min_sample_gc": false,
-        "min_us": 271.852,
-        "n_gc_samples": 29,
-        "n_samples": 1728,
+        "min_us": 272.754,
+        "n_gc_samples": 35,
+        "n_samples": 1852,
         "obj": 198.73860498130338,
+        "setup_median_us": 88.8225,
+        "setup_min_us": 79.38,
         "status": "SOLVED"
       },
       "m": 204,
@@ -242,37 +258,39 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 8,
-        "median_us": 678.779,
+        "median_us": 690.6510000000001,
         "min_sample_gc": false,
-        "min_us": 660.8850000000001,
-        "n_gc_samples": 24,
-        "n_samples": 778,
+        "min_us": 664.051,
+        "n_gc_samples": 20,
+        "n_samples": 764,
         "obj": 92.62079366569414,
+        "setup_median_us": 255.18099999999998,
+        "setup_min_us": 249.65000000000003,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 8,
         "linsolver": "faer",
-        "min_us": 615.8710000000001,
+        "min_us": 620.2990000000001,
         "obj": 92.62079366569445,
-        "reps": 483,
+        "reps": 480,
         "status": "Solved"
       },
       "clarabel_rs_by_ldl": {
         "faer": {
           "iter": 8,
           "linsolver": "faer",
-          "min_us": 615.8710000000001,
+          "min_us": 620.2990000000001,
           "obj": 92.62079366569445,
-          "reps": 483,
+          "reps": 480,
           "status": "Solved"
         },
         "qdldl": {
           "iter": 8,
           "linsolver": "qdldl",
-          "min_us": 561.518,
+          "min_us": 563.822,
           "obj": 92.62079366569405,
-          "reps": 528,
+          "reps": 526,
           "status": "Solved"
         }
       },
@@ -281,12 +299,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 9,
-        "median_us": 478.97300000000007,
+        "median_us": 485.51450000000006,
         "min_sample_gc": false,
-        "min_us": 463.072,
-        "n_gc_samples": 37,
-        "n_samples": 1087,
+        "min_us": 473.15100000000007,
+        "n_gc_samples": 30,
+        "n_samples": 1066,
         "obj": 92.62079388562297,
+        "setup_median_us": 113.62400000000001,
+        "setup_min_us": 108.22400000000002,
         "status": "SOLVED"
       },
       "m": 400,
@@ -297,37 +317,39 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 10,
-        "median_us": 1952.788,
+        "median_us": 1945.094,
         "min_sample_gc": false,
-        "min_us": 1910.73,
-        "n_gc_samples": 19,
-        "n_samples": 280,
+        "min_us": 1918.9940000000001,
+        "n_gc_samples": 20,
+        "n_samples": 289,
         "obj": 55.920237478104546,
+        "setup_median_us": 543.4435000000001,
+        "setup_min_us": 529.9580000000001,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 10,
         "linsolver": "faer",
-        "min_us": 2129.781,
+        "min_us": 2145.7619999999997,
         "obj": 55.92023747589131,
-        "reps": 140,
+        "reps": 139,
         "status": "Solved"
       },
       "clarabel_rs_by_ldl": {
         "faer": {
           "iter": 10,
           "linsolver": "faer",
-          "min_us": 2129.781,
+          "min_us": 2145.7619999999997,
           "obj": 55.92023747589131,
-          "reps": 140,
+          "reps": 139,
           "status": "Solved"
         },
         "qdldl": {
           "iter": 10,
           "linsolver": "qdldl",
-          "min_us": 1948.48,
+          "min_us": 1949.5020000000002,
           "obj": 55.92023747811647,
-          "reps": 151,
+          "reps": 153,
           "status": "Solved"
         }
       },
@@ -336,12 +358,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 9,
-        "median_us": 1185.5635,
+        "median_us": 1182.758,
         "min_sample_gc": false,
-        "min_us": 1149.746,
-        "n_gc_samples": 36,
-        "n_samples": 430,
+        "min_us": 1152.6910000000003,
+        "n_gc_samples": 35,
+        "n_samples": 449,
         "obj": 55.92023767730773,
+        "setup_median_us": 273.80600000000004,
+        "setup_min_us": 260.781,
         "status": "SOLVED"
       },
       "m": 600,
@@ -352,18 +376,20 @@
       "clarabel_jl": {
         "any_sample_gc": true,
         "iter": 8,
-        "median_us": 579.001,
+        "median_us": 578.5045,
         "min_sample_gc": false,
-        "min_us": 568.9520000000001,
+        "min_us": 570.4250000000001,
         "n_gc_samples": 17,
-        "n_samples": 873,
+        "n_samples": 862,
         "obj": 0.7650953263208389,
+        "setup_median_us": 152.7325,
+        "setup_min_us": 146.877,
         "status": "SOLVED"
       },
       "clarabel_rs": {
         "iter": 8,
         "linsolver": "faer",
-        "min_us": 501.324,
+        "min_us": 503.658,
         "obj": 0.7650953263208398,
         "reps": 589,
         "status": "Solved"
@@ -372,7 +398,7 @@
         "faer": {
           "iter": 8,
           "linsolver": "faer",
-          "min_us": 501.324,
+          "min_us": 503.658,
           "obj": 0.7650953263208398,
           "reps": 589,
           "status": "Solved"
@@ -380,9 +406,9 @@
         "qdldl": {
           "iter": 8,
           "linsolver": "qdldl",
-          "min_us": 518.787,
+          "min_us": 523.576,
           "obj": 0.7650953263208395,
-          "reps": 573,
+          "reps": 567,
           "status": "Solved"
         }
       },
@@ -391,12 +417,14 @@
       "ipm": {
         "any_sample_gc": true,
         "iter": 7,
-        "median_us": 327.146,
+        "median_us": 321.62600000000003,
         "min_sample_gc": false,
-        "min_us": 310.81500000000005,
-        "n_gc_samples": 29,
-        "n_samples": 1305,
+        "min_us": 308.251,
+        "n_gc_samples": 36,
+        "n_samples": 1433,
         "obj": 0.765095326319561,
+        "setup_median_us": 88.226,
+        "setup_min_us": 83.59800000000001,
         "status": "SOLVED"
       },
       "m": 108,

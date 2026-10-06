@@ -538,16 +538,20 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 7283,
-      "julia_version": "1.13.0",
+      "bytes": 11897,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "clarabel_jl_version",
         "clarabel_rs_available",
         "clarabel_rs_direct_solve_method",
+        "clarabel_rs_direct_solve_methods",
         "clarabel_rs_features",
+        "clarabel_rs_ldl_note",
         "clarabel_rs_subprocess_wall_s",
+        "clarabel_rs_subprocess_wall_s_by_ldl",
         "cpu_scaling_governor",
+        "grid",
         "julia_version",
         "results",
         "seconds_per_benchmark",
@@ -560,6 +564,35 @@
       "package": "PureIPM",
       "results": "PureIPM/bench/results/clarabel_rs_compare.json",
       "script": "clarabel_rs_compare.jl"
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 21212,
+      "julia_version": "1.13.1",
+      "keys": [
+        "blas_threads",
+        "clarabel_jl_version",
+        "clarabel_rs_available",
+        "clarabel_rs_direct_solve_method",
+        "clarabel_rs_direct_solve_methods",
+        "clarabel_rs_features",
+        "clarabel_rs_ldl_note",
+        "clarabel_rs_subprocess_wall_s",
+        "clarabel_rs_subprocess_wall_s_by_ldl",
+        "cpu_scaling_governor",
+        "grid",
+        "julia_version",
+        "results",
+        "seconds_per_benchmark",
+        "smt_sibling_core",
+        "taskset_core",
+        "taskset_pinned",
+        "tol"
+      ],
+      "name": "clarabel_rs_compare_large",
+      "package": "PureIPM",
+      "results": "PureIPM/bench/results/clarabel_rs_compare_large.json",
+      "script": null
     },
     {
       "blas_threads": 1.0,
@@ -944,6 +977,43 @@
       "script": "ipm_vs_others.jl"
     },
     {
+      "blas_threads": null,
+      "bytes": 1321,
+      "julia_version": null,
+      "keys": [],
+      "name": "admm_structured_operand",
+      "package": "shared",
+      "results": "bench/results/admm_structured_operand.json",
+      "script": "admm_structured_operand.jl"
+    },
+    {
+      "blas_threads": null,
+      "bytes": 1321,
+      "julia_version": null,
+      "keys": [
+        "composed"
+      ],
+      "name": "composition_reduction",
+      "package": "shared",
+      "results": "bench/results/composition_reduction.json",
+      "script": "composition_reduction.jl"
+    },
+    {
+      "blas_threads": null,
+      "bytes": 6399,
+      "julia_version": null,
+      "keys": [
+        "items",
+        "package",
+        "per_item",
+        "union_lines"
+      ],
+      "name": "coverage_per_item_PureDAQP",
+      "package": "shared",
+      "results": "bench/results/coverage_per_item_PureDAQP.json",
+      "script": null
+    },
+    {
       "blas_threads": 1.0,
       "bytes": 5380,
       "julia_version": "1.13.1",
@@ -960,6 +1030,71 @@
       "package": "shared",
       "results": "bench/results/illconditioned_shootout.json",
       "script": "illconditioned_shootout.jl"
+    },
+    {
+      "blas_threads": null,
+      "bytes": 1505731,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_baseline",
+      "package": "shared",
+      "results": "bench/results/lmp_baseline.json",
+      "script": null
+    },
+    {
+      "blas_threads": null,
+      "bytes": 2368179,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_matrix",
+      "package": "shared",
+      "results": "bench/results/lmp_matrix.json",
+      "script": "lmp_matrix.jl"
+    },
+    {
+      "blas_threads": null,
+      "bytes": 2306118,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_matrix_fixed",
+      "package": "shared",
+      "results": "bench/results/lmp_matrix_fixed.json",
+      "script": null
+    },
+    {
+      "blas_threads": null,
+      "bytes": 1505748,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_step1_fill",
+      "package": "shared",
+      "results": "bench/results/lmp_step1_fill.json",
+      "script": null
+    },
+    {
+      "blas_threads": null,
+      "bytes": 1079,
+      "julia_version": null,
+      "keys": [
+        "julia",
+        "shapes"
+      ],
+      "name": "norm_inf_shapes",
+      "package": "shared",
+      "results": "bench/results/norm_inf_shapes.json",
+      "script": "norm_inf_shapes.jl"
     },
     {
       "blas_threads": 1.0,
@@ -1032,6 +1167,18 @@
       "script": "symmetric_cost.jl"
     },
     {
+      "blas_threads": null,
+      "bytes": 3101,
+      "julia_version": null,
+      "keys": [
+        "paths"
+      ],
+      "name": "unmaterialized_paths",
+      "package": "shared",
+      "results": "bench/results/unmaterialized_paths.json",
+      "script": "unmaterialized_paths.jl"
+    },
+    {
       "blas_threads": 1.0,
       "bytes": 1715,
       "julia_version": null,
@@ -1058,6 +1205,14 @@
     {
       "package": "shared",
       "script": "daqp_headtohead.jl"
+    },
+    {
+      "package": "shared",
+      "script": "juliac_trim_build.jl"
+    },
+    {
+      "package": "shared",
+      "script": "unmaterialized_problems.jl"
     },
     {
       "package": "shared",

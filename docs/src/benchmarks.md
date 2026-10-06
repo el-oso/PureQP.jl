@@ -701,6 +701,80 @@ Clarabel's count on the same problem. ADMM's iteration counts are not comparable
 it stops at a looser tolerance and by a different test — so its column states what ADMM costs
 on the same instance, not a claim about which method is faster.
 
+## Clarabel's two factorizations, at sizes where one can win
+
+Clarabel ships twice from one algorithm: as the Julia package compared above, and as a Rust
+crate. The crate carries a sparse `LDLᵀ` factorization through
+[faer](https://github.com/sarah-quinones/faer-rs) that the Julia package has no equivalent of,
+so the crate is run here under both of its factorizations — `faer` and its own bundled
+`qdldl` — over the same problem files. The pair isolates the factorization: everything else
+about the solver is held fixed between those two columns.
+
+Reproduce with
+`PUREQP_CLARABEL_GRID=large julia --project=bench PureIPM/bench/clarabel_rs_compare.jl`;
+samples are in `PureIPM/bench/results/clarabel_rs_compare_large.json`, and the smallest-size
+grid of the section above writes `clarabel_rs_compare.json`. Clarabel.jl 0.11.1 against crate
+0.11.1 (`default-features = false`, `faer-sparse`), all at `1e-8`, single-threaded BLAS and
+`max_threads = 1`, pinned to one core on Julia 1.13.1. The host's clock is not pinned, so read
+the ratios rather than the absolute times. The two Julia solvers are measured in one process
+and interleaved A-B-B-A; the crate is a separate process timing `DefaultSolver::new` plus
+`solve()` on its own clock, so a Julia-against-Rust difference carries that much more
+uncertainty than a difference within either language. `setup` is the share of that solver's own
+total spent before it starts iterating.
+
+| class | n | m | IPM it | IPM | setup | .jl it | Clarabel.jl | setup | .rs faer | .rs qdldl | faer/qdldl |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Random QP | 60 | 600 | 12 | 3.55 ms | 29% | 11 | 4.75 ms | 46% | 5.70 ms | 5.59 ms | 1.02× |
+| Random QP | 200 | 2000 | 15 | 81.0 ms | 33% | 14 | 90.59 ms | 43% | 123.63 ms | 118.67 ms | 1.04× |
+| Eq QP | 200 | 100 | 1 | 2.79 ms | 44% | 6 | 11.35 ms | 24% | 12.43 ms | 15.67 ms | **0.79×** |
+| Eq QP | 800 | 400 | 1 | 71.87 ms | 33% | 5 | 384.44 ms | 7% | 225.52 ms | 444.65 ms | **0.51×** |
+| Portfolio | 1010 | 1011 | 13 | 6.65 ms | 17% | 11 | 10.20 ms | 31% | 13.23 ms | 13.02 ms | 1.02× |
+| Portfolio | 4040 | 4041 | 15 | 117.4 ms | 12% | 13 | 134.75 ms | 8% | 178.24 ms | 171.69 ms | 1.04× |
+| Lasso | 1020 | 1020 | 7 | 2.22 ms | 36% | 7 | 4.06 ms | 36% | 4.62 ms | 4.23 ms | 1.09× |
+| Lasso | 3060 | 3060 | 8 | 25.02 ms | 62% | 9 | 31.75 ms | 50% | 38.08 ms | 35.82 ms | 1.06× |
+| SVM | 1010 | 2000 | 11 | 3.36 ms | 20% | 10 | 4.20 ms | 30% | 4.78 ms | 4.35 ms | 1.10× |
+| SVM | 3030 | 6000 | 11 | 28.69 ms | 51% | 10 | **27.81 ms** | 54% | 32.41 ms | 30.65 ms | 1.06× |
+| Huber | 3010 | 3000 | 8 | 7.42 ms | 28% | 9 | 9.74 ms | 27% | 11.42 ms | 10.60 ms | 1.08× |
+| Control | 320 | 540 | 8 | 4.61 ms | 25% | 10 | 8.64 ms | 16% | 10.55 ms | 10.37 ms | 1.02× |
+| Control | 800 | 1350 | 9 | 40.08 ms | 20% | 9 | 65.71 ms | 13% | 100.07 ms | 77.74 ms | 1.29× |
+
+All four solvers reach the same answer: the largest component of `x` where `InteriorPoint` and
+any of the others differ is `1.3e-5` on the loosest class and below `1e-7` on nine of the
+thirteen.
+
+**faer needs fill before its factorization is worth anything.** faer is simplicial below a
+flops/nnz(L) ratio of 40 and supernodal above it, and a supernodal factorization blocks its
+work into dense kernels. Clarabel hardcodes that threshold, so the problem decides which path
+runs rather than a setting. Only `Eq QP` crosses it here, and that is the class whose `P` is
+dense — 640000 nonzeros at `n = 800`. There faer takes half of QDLDL's time and 59% of
+Clarabel.jl's, which has no faer backend at all to reach. On the other eleven cases faer runs
+between equal to QDLDL and 29% slower than it, and the three genuinely sparse classes
+(`Portfolio`, `Lasso`, `SVM`) never cross the threshold at any size here. A factorization that
+exploits dense blocks is worth exactly as much as the dense blocks a problem has.
+
+**On a sparse class, setup is most of the solve, and both solvers pay about the same for it.**
+The `setup` columns are over half the total on `Lasso` at `n = 3060` and on `SVM` at
+`n = 3030`. That time is the symbolic analysis of a sparse `KKT` pattern the two solvers share:
+on `SVM` at `n = 3030` it is 14.50 ms for `InteriorPoint` against 15.00 ms for Clarabel.jl, a
+3% difference on a term that is half the answer. Neither solver can win a class where that
+term dominates.
+
+**`SVM` at `n = 3030` is the one case Clarabel.jl takes**, 27.81 ms against 28.69 ms, and
+subtracting setup says why. The iteration phase is 14.19 ms over 11 iterations against
+12.81 ms over 10, which is 1.290 ms and 1.281 ms per iteration — the same cost per iteration to
+within a percent. `InteriorPoint` is 0.5 ms ahead on setup and then spends 1.29 ms on an
+eleventh iteration, and that is the whole of the 0.88 ms it loses by. The step is a real one
+rather than a refinement: its duality gap is `8.2e-5` at the tenth iterate and `9.0e-7` at the
+eleventh, and `refine_iter = 0` changes nothing. The counts are not a like-for-like measure
+either, since the two stopping tests are different tests: `InteriorPoint` finishes exactly
+primal-feasible with a dual residual of `7.4e-13`, Clarabel with residuals near `2e-10` and a
+tighter relative gap, and the two objectives agree to `5.2e-10` relative. The reading of that
+row is that the two are within a few percent and the stopping rule decides it.
+
+The `Eq QP` rows are not a comparison of solvers at all. `InteriorPoint` reaches the answer
+there in one iteration against Clarabel's five or six, which is a property of an
+equality-constrained problem under each method's own test rather than a speed.
+
 ## The matrix-free backend
 
 `linsys = :indirect` never forms the reduced matrix. It multiplies by it through the caller's
