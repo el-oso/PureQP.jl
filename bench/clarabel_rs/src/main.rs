@@ -11,7 +11,15 @@
 //         --target-dir /tmp/clarabel_rs_target
 // Run (single-threaded, pinned core):
 //     RAYON_NUM_THREADS=1 taskset -c 15 \
-//         /tmp/clarabel_rs_target/release/clarabel_rs_bench <data_dir> [seconds] [tol]
+//         /tmp/clarabel_rs_target/release/clarabel_rs_bench <data_dir> [seconds] [tol] [ldl]
+//
+// `ldl` names Clarabel's `direct_solve_method`: "faer" (the default here) or "qdldl". Both are
+// sparse LDL factorizations of the same KKT matrix, so the pair separates the factorization
+// from everything else Clarabel does. faer switches from a simplicial factorization to a
+// supernodal one — which blocks the work into dense kernels — above a flops/nnz(L) ratio of
+// 40, and Clarabel hardcodes that `AUTO` threshold, so which path a case takes is a property
+// of the case rather than a setting. `solver.info.linsolver.name` is reported per case and
+// names the method that ran.
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
@@ -87,7 +95,7 @@ struct CaseResult {
     x: Vec<f64>,
 }
 
-fn run_problem(path: &Path, seconds: f64, tol: f64) -> CaseResult {
+fn run_problem(path: &Path, seconds: f64, tol: f64, ldl: &str) -> CaseResult {
     let name = path.file_stem().unwrap().to_string_lossy().into_owned();
     let prob = read_problem(path);
 
@@ -95,14 +103,14 @@ fn run_problem(path: &Path, seconds: f64, tol: f64) -> CaseResult {
     let a = CscMatrix::new(prob.m, prob.n, prob.a_colptr, prob.a_rowval, prob.a_nzval);
     let cones: Vec<SupportedConeT<f64>> = vec![NonnegativeConeT(prob.m)];
 
-    // "faer" forces the faer-backed sparse LDL factorization; "auto" would fall back to
-    // QDLDL on these small, low-fill problems (see bench/clarabel_rs/src/main.rs header).
+    // The method is named rather than left on "auto", which selects between Clarabel's own
+    // backends by availability and would hide which factorization ran.
     let settings = DefaultSettingsBuilder::default()
         .verbose(false)
         .tol_gap_abs(tol)
         .tol_gap_rel(tol)
         .tol_feas(tol)
-        .direct_solve_method("faer".to_string())
+        .direct_solve_method(ldl.to_string())
         .max_threads(1)
         .build()
         .expect("invalid Clarabel settings");
@@ -148,12 +156,13 @@ fn run_problem(path: &Path, seconds: f64, tol: f64) -> CaseResult {
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        eprintln!("usage: clarabel_rs_bench <data_dir> [seconds=0.3] [tol=1e-8]");
+        eprintln!("usage: clarabel_rs_bench <data_dir> [seconds=0.3] [tol=1e-8] [ldl=faer]");
         std::process::exit(2);
     }
     let data_dir = &args[1];
     let seconds: f64 = args.get(2).map(|s| s.parse().unwrap()).unwrap_or(0.3);
     let tol: f64 = args.get(3).map(|s| s.parse().unwrap()).unwrap_or(1.0e-8);
+    let ldl = args.get(4).map(String::as_str).unwrap_or("faer");
 
     let mut files: Vec<PathBuf> = fs::read_dir(data_dir)
         .unwrap_or_else(|e| panic!("{data_dir}: {e}"))
@@ -162,6 +171,7 @@ fn main() {
         .collect();
     files.sort();
 
-    let results: Vec<CaseResult> = files.iter().map(|p| run_problem(p, seconds, tol)).collect();
+    let results: Vec<CaseResult> =
+        files.iter().map(|p| run_problem(p, seconds, tol, ldl)).collect();
     println!("{}", serde_json::to_string_pretty(&results).unwrap());
 }
