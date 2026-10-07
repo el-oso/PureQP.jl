@@ -939,10 +939,16 @@ function run_daqp!(
         status == LDP_OPTIMAL || return (x, status, total)
         primal!(x, red, v)
         d = zero(T)
+        scale = one(T)
         for i in paired(x, xold)
             d = max(d, abs(x[i] - xold[i]))
+            scale = max(scale, abs(x[i]))
         end
-        d < eta_prox && return (x, status, total)
+        # Measured against the size of the point. An absolute test asks a point of norm `1e6`
+        # to settle to the same `1e-8` as a point of norm `1`, which is below what the pass
+        # that produced it resolves, so the loop runs to `max_prox` on a sequence that has
+        # converged. The floor of one keeps a point near the origin on the absolute test.
+        d < eta_prox * scale && return (x, status, total)
     end
     return (x, LDP_ITERATION_LIMIT, total)
 end

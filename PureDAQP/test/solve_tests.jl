@@ -1008,3 +1008,25 @@ end
     )
     @test_throws "cannot read this operand" PureDAQP.setup(Pop, q, A, l, u, ActiveSet())
 end
+
+@testitem "the proximal-point loop converges on a point far from the origin" begin
+    using PureDAQP, LinearAlgebra, Random
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    rng = MersenneTwister(7)
+    n, m = 20, 40
+    P = spd_factor(rng, n, 1.0e12)
+    A = rect_factor(rng, m, n, 1.0e2)
+    q = randn(rng, n)
+    b = A * (randn(rng, n) .* 1.0e6)
+    l, u = b .- 1.0, b .+ 1.0
+
+    sol = solve(P, q, A, l, u, ActiveSet(eps_prox = 1.0e-4))
+    # `eta_prox` is measured against `‖x‖∞`, which is `1.8e6` here. Against one instead, the
+    # loop is asked to settle a point of that size to `1.5e-8` absolute -- finer than the pass
+    # producing it resolves -- and runs out of passes on a sequence that stopped moving,
+    # reporting `MAX_ITER_REACHED` on an answer already good to nine digits. Raising
+    # `max_prox` does not reach it: the test is the limit, not the count.
+    @test sol.status == SOLVED
+    @test norm(sol.x, Inf) > 1.0e5
+end

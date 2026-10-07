@@ -13,8 +13,11 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
   so the factor is not `R₁ ⊗ R₂` and not triangular, and neither property is one the reduction
   needs.
 - `eta_prox = sqrt(eps(T))` — the proximal-point loop stops once the iterate moves less than
-  this in the ∞-norm.
-- `max_prox = 100` — the most outer proximal-point iterations in one solve.
+  this in the ∞-norm, relative to the size of the iterate.
+- `max_prox = 100` — the most outer proximal-point iterations in one solve. The loop contracts
+  at a rate set by `eps_prox` against the curvature of `P`, so an `eps_prox` well above
+  `λ_min(P)` needs more passes than this: raise it, or lower `eps_prox`, if a solve of a
+  nearly singular `P` returns `MAX_ITER_REACHED` having moved steadily toward the answer.
 - `zero_tol = sqrt(eps(T))` — a diagonal entry of the working set's `LDLᵀ` at or below this
   marks a linearly dependent row, which sends the iteration down its singular branch.
 - `primal_tol = sqrt(eps(T))` — a row priced below `-primal_tol` is violated and enters the
