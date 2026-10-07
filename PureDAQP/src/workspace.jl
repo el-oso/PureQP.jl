@@ -384,6 +384,12 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
             ws.warm = false
         end
     elseif status == LDP_ITERATION_LIMIT
+        # `MAX_ITER_REACHED` reports a point, so the iterate the loop stopped at is adopted
+        # here. Left alone, the workspace keeps whatever it held before -- the zeros `setup`
+        # filled, or the answer of the previous solve, either of which reads as this solve's.
+        copyto!(ws.x, x)
+        multipliers!(ws.y, ws.red)
+        mul!(ws.z, prob.A, ws.x)
         ws.status = MAX_ITER_REACHED
     else
         # The pass cycled. The iterate it reached is not a point worth reading: it is

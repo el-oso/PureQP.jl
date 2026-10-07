@@ -922,8 +922,12 @@ function run_daqp!(
     fill!(x, zero(T))
     if iszero(eps_prox)
         status, iters, v = inner_solve!(red, f, x, alg, max_iter)
-        status == LDP_OPTIMAL || return (x, status, iters)
-        primal!(x, red, v)
+        # The iteration limit returns the point the loop stopped at, which is what
+        # `MAX_ITER_REACHED` promises its caller. An infeasibility or a cycle carries no point
+        # worth forming, and `finish_solve!` discards those.
+        if status == LDP_OPTIMAL || status == LDP_ITERATION_LIMIT
+            primal!(x, red, v)
+        end
         return (x, status, iters)
     end
     xold = ws.xold

@@ -272,6 +272,13 @@ Append `m_r` to the working set. `false` when the row is not finite, which is th
 the caller cannot continue from.
 
 A dependent row goes in at `D[k] = 0`, which is the value [`first_dependent`](@ref) reads.
+
+The tolerance is `eps(T)` rather than the `sqrt(eps(T))` the factorization defaults to,
+because `D` holds the *square* of the distance `R`'s diagonal holds in the other
+representation. Compared against `sqrt(eps(T))`, a row counts as dependent once that distance
+falls below `eps(T)^(1/4)`, about `1e-4`, four orders above where [`WorkingSetQR`](@ref)
+draws the line; rows well inside the span of the others are then dropped, and the run settles
+on an active set that is not the solution's.
 """
 function add_row!(W::WorkingSetGram{T}, m_r::AbstractVector{T}) where {T}
     k = W.F.k
@@ -279,7 +286,7 @@ function add_row!(W::WorkingSetGram{T}, m_r::AbstractVector{T}) where {T}
     isfinite(beta) || return false
     g = view(W.g, 1:k)
     mul!(g, transpose(view(W.Ma, :, 1:k)), m_r)
-    add_row!(W.F, g, beta)
+    add_row!(W.F, g, beta, eps(T))
     # An explicit loop rather than `copyto!`, which checks whether two views of one matrix
     # alias and copies the source when it cannot tell -- an allocation site the hot-path
     # guarantee sees whether or not the branch can be reached.
