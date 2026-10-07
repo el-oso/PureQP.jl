@@ -365,6 +365,9 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
         copyto!(ws.x, x)
         multipliers!(ws.y, ws.red)
         mul!(ws.z, prob.A, ws.x)
+        # The refinement reads `ws.z` for the active rows' residual, and moves the point it
+        # was computed from, so `z` is formed again from the corrected `x`.
+        refine_primal!(ws) && mul!(ws.z, prob.A, ws.x)
         ws.status = SOLVED
     elseif status == LDP_INFEASIBLE
         fill!(ws.x, T(NaN))

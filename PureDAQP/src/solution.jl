@@ -51,6 +51,55 @@ function build_solution(ws::ActiveSetWorkspace{T}) where {T}
 end
 
 """
+    refine_primal!(ws) -> Bool
+
+Correct `x` on the rows the working set holds, and say whether it moved.
+
+`primal!` forms `x` from `R⁻¹(−u − v)`, and those two terms are far larger than their
+difference when `P` is badly conditioned -- a factor of 20 at `cond(P) = 1e8`. What cancels
+is accuracy in `x`, so the active rows of the point sit further from their bounds than the
+factorization itself is wrong by.
+
+The step that puts them back is the smallest one that zeroes their residual: `Mₐ R dx = −ρ`
+has the minimum-norm solution `R dx = −Mₐᵀ(Mₐ Mₐᵀ)⁻¹ρ`, and the working set already holds a
+factorization of `Mₐ Mₐᵀ`. `ws.z` holds `A x`, so the residual costs no product of its own,
+and the correction costs one triangular solve against `R`.
+
+One step, not a loop: the residual it leaves is at the rounding level of the data, which a
+second step cannot improve.
+"""
+function refine_primal!(ws::ActiveSetWorkspace{T}) where {T}
+    red = ws.red
+    lw = red.ws
+    k = nactive(lw.W)
+    k > 0 || return false
+    prob = ws.prob
+    # `mu_star` holds the multipliers the last pass solved for, which `multipliers!` does not
+    # read -- it reads `mu` -- so it is free to carry the residual.
+    rho = view(lw.mu_star, 1:k)
+    @inbounds for i in 1:k
+        r = lw.active[i]
+        # The reduction swaps the two bounds -- `set_targets!` builds the lower target from
+        # `bu` -- so a row held at its lower target is at the caller's upper bound.
+        bound = lw.side[r] == SIDE_LOWER ? prob.u0[r] : prob.l0[r]
+        # In the units the rows of `M` were normalized to, which is what the factorization
+        # below is a factorization of.
+        rho[i] = (ws.z[r] - bound) / red.scale[r]
+    end
+    solve_gram!(lw.W, rho)
+    # `xold` is the proximal centre of the pass in flight, read only at the top of a pass, so
+    # once the run has returned it is free for the correction to land in.
+    dx = lw.xold
+    active_product!(dx, lw.W, rho, lw.g)
+    # `transpose(red.Rt)` unwraps to `red.R`, which is what makes this the untransposed solve.
+    ldiv!(transpose(red.Rt), dx)
+    @inbounds @simd for j in paired(ws.x, dx)
+        ws.x[j] -= dx[j]
+    end
+    return true
+end
+
+"""
     report(ws) -> (objective, primal_residual, dual_residual, duality_gap)
 
 Everything a [`Solution`](@ref) reports about the point, from the caller's own data, in one

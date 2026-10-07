@@ -17,3 +17,26 @@
         @test count(>(sqrt(eps(Float64))), abs.(sol.y)) <= length(q)
     end
 end
+
+@testitem "the active rows are satisfied to rounding level under an ill-conditioned P" begin
+    using PureDAQP, LinearAlgebra, Random
+    include(joinpath(@__DIR__, "helpers.jl"))
+
+    rng = MersenneTwister(11)
+    for _ in 1:40
+        n, m = 20, 20
+        P = spd_factor(rng, n, 1.0e8)
+        A = rect_factor(rng, m, n, 1.0e4)
+        q = randn(rng, n)
+        x0 = randn(rng, n)
+        b = A * x0
+        l, u = b .- 1.0, b .+ 1.0
+        sol = solve(P, q, A, l, u, ActiveSet())
+        @test sol.status == SOLVED
+        # `x = R⁻¹(−u − v)` subtracts two vectors 20 times larger than their difference at
+        # this conditioning, so without the correction `refine_primal!` applies the active
+        # rows sit about `1e-6` from their bounds. Measured against the size of the point,
+        # which is where the cancellation shows up.
+        @test sol.prim_res < 1.0e-11 * (1 + norm(A * sol.x, Inf))
+    end
+end

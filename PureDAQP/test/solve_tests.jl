@@ -544,7 +544,14 @@ end
     scale = norm(implicit.x, Inf)
     @test maximum(max.(r .- u, l .- r)) < 1.0e-10 * scale
     @test implicit.prim_res < 1.0e-10 * scale
-    @test implicit.dual_res < 1.0e-10
+    # Stationarity scales with the terms of `Px + q + Aᵀy`, not with `x`. `refine_primal!`
+    # moves `x` onto the active rows and leaves `y` solved for the point before that step, so
+    # what it buys in feasibility it gives back here: `2e-9` of these terms, against a primal
+    # residual six orders smaller than the unrefined point's.
+    dual_scale = max(
+        norm(q, Inf), norm(kron(P1, P2) * implicit.x, Inf), norm(kron(A1, A2)' * implicit.y, Inf)
+    )
+    @test implicit.dual_res < 1.0e-8 * dual_scale
 
     # Neither operand reached an `m × n` array: the whole workspace is smaller than the reduced
     # matrix the dense pair holds for the same problem.
