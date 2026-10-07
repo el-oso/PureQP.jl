@@ -423,19 +423,26 @@ end
 
 How far from zero a multiplier has to be for its sign to mean anything.
 
-The multipliers come from `Mₐ Mₐᵀ μ = t`, whose conditioning is that of `Mₐ` squared, so
-they carry a relative error of about `cond(Mₐ)² eps`. The factorization already holds an
-estimate of that: the ratio of the largest and smallest diagonal entries of `R` bounds
-`cond(Mₐ)`, and the multipliers carry its square. Tested against exact zero instead, a
-multiplier that is indistinguishable from zero decides which row leaves the working set, and
-the row it drops re-enters on the next pass.
+The multipliers come from `Mₐ Mₐᵀ μ = t`, and the factorization already estimates that
+system's conditioning as the ratio of the largest and smallest diagonal entries of `R`.
+Tested against exact zero instead, a multiplier that is indistinguishable from zero decides
+which row leaves the working set, and the row it drops re-enters on the next pass.
+
+The floor stays linear in that ratio, and must. A normal-equations solve carries a relative
+error bounded by `cond(Mₐ)² eps`, but scaling `max|μ|` by that bound gives a floor above
+`max|μ|` itself once `cond(Mₐ)` passes `1/sqrt(10 k eps)`, about `1e7` for a working set of
+nine rows. Above it no sign can be rejected at all: [`working_set_multipliers!`](@ref)
+accepts a dual-infeasible set, prices against the point that set implies, and converges on
+the wrong active set. `zero_tol` admits a row whose diagonal is as small as `1e-8`, so a
+single such row takes the estimate past that threshold, and the result is a wrong answer
+rather than a loss of accuracy.
 """
 function multiplier_noise(ws::LDPWorkspace{T}, mus) where {T}
     k = nactive(ws.W)
     k > 0 || return zero(T)
     ratio = conditioning(ws.W)
     ratio > zero(T) || return zero(T)
-    return 10 * k * eps(T) * ratio * ratio * maximum(abs, mus)
+    return 10 * k * eps(T) * ratio * maximum(abs, mus)
 end
 
 """
