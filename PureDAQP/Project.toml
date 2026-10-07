@@ -1,6 +1,6 @@
 name = "PureDAQP"
 uuid = "3d6c1e44-5a86-4c7a-815f-9c4190067cf0"
-version = "0.1.6"
+version = "0.1.7"
 authors = ["el-oso <15278831+el-oso@users.noreply.github.com>"]
 
 [workspace]
