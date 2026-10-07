@@ -1015,7 +1015,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 5380,
+      "bytes": 5402,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -1098,7 +1098,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 4863,
+      "bytes": 5340,
       "julia_version": null,
       "keys": [
         "blas_threads",
@@ -1110,7 +1110,8 @@
         "note",
         "puredaqp",
         "rows",
-        "tool"
+        "tool",
+        "working_sets"
       ],
       "name": "puredaqp_vs_libdaqp",
       "package": "shared",
@@ -1119,7 +1120,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2337,
+      "bytes": 2336,
       "julia_version": null,
       "keys": [
         "blas_threads",

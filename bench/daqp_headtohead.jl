@@ -86,6 +86,27 @@ for n in NS, ratio in RATIOS
     flush(stdout)
 end
 
+# The small sizes above are the ones libdaqp wins, and what it wins there is per-iteration
+# cost. `:gram` spends less of it, so the same cells are measured again with that
+# representation to separate the cost of a row entering from anything fixed.
+println("\nThe small sizes with both working sets\n")
+small = []
+for (n, m) in ((25, 25), (25, 50), (25, 100), (50, 50), (100, 100))
+    rng_s = MersenneTwister(20260930)
+    P, q, A, l, u = random_qp(rng_s, n, m)
+    sense = zeros(Cint, m)
+    br = @be PureDAQP.solve($P, $q, $A, $l, $u, ActiveSet(working_set = :rows); max_iter = ITER_LIMIT) seconds = 2
+    bg = @be PureDAQP.solve($P, $q, $A, $l, $u, ActiveSet(working_set = :gram); max_iter = ITER_LIMIT) seconds = 2
+    bc = @be DAQP.quadprog($P, $q, $A, $u, $l, $sense; settings = $C_SETTINGS) seconds = 2
+    r_ms, g_ms, c_ms = 1000 * median(br).time, 1000 * median(bg).time, 1000 * median(bc).time
+    push!(small, (n = n, m = m, rows_ms = r_ms, gram_ms = g_ms, libdaqp_ms = c_ms))
+    @printf(
+        "n=%4d m=%4d  :rows %7.3f ms   :gram %7.3f ms   libdaqp %7.3f ms   rows/C %5.2fx   gram/C %5.2fx\n",
+        n, m, r_ms, g_ms, c_ms, c_ms / r_ms, c_ms / g_ms
+    )
+    flush(stdout)
+end
+
 # Written by hand rather than through a JSON package: bench carries no JSON dependency, and
 # the shape here is flat.
 open(joinpath(@__DIR__, "results", "puredaqp_vs_libdaqp.json"), "w") do io
@@ -106,6 +127,15 @@ open(joinpath(@__DIR__, "results", "puredaqp_vs_libdaqp.json"), "w") do io
             "    {\"n\": %d, \"m\": %d, \"m_over_n\": %g, \"iters\": %d, \"puredaqp_ms\": %.6f, \"libdaqp_ms\": %.6f, \"speedup\": %.6f, \"rel_err_vs_libdaqp\": %.3e, \"alloc_bytes\": %d}%s\n",
             r.n, r.m, r.ratio, r.iters, r.puredaqp_ms, r.libdaqp_ms, r.speedup,
             r.rel_err_vs_libdaqp, r.alloc_bytes, i == length(rows) ? "" : ","
+        )
+    end
+    println(io, "  ],")
+    println(io, "  \"working_sets\": [")
+    for (i, r) in enumerate(small)
+        @printf(
+            io,
+            "    {\"n\": %d, \"m\": %d, \"rows_ms\": %.6f, \"gram_ms\": %.6f, \"libdaqp_ms\": %.6f}%s\n",
+            r.n, r.m, r.rows_ms, r.gram_ms, r.libdaqp_ms, i == length(small) ? "" : ","
         )
     end
     println(io, "  ]")

@@ -204,13 +204,13 @@ solvers given the same iteration limit.
 
 | n \ m/n | 0.5 | 1 | 2 | 4 | 8 |
 |---|---|---|---|---|---|
-| 25 | 0.89× | 0.66× | 0.61× | 0.94× | 0.93× |
-| 50 | 1.40× | 1.10× | 1.09× | 1.14× | 1.04× |
-| 100 | 2.30× | 1.80× | 1.64× | 1.11× | 1.64× |
-| 200 | 3.34× | 2.32× | 1.39× | 1.71× | 2.14× |
-| 400 | **4.05×** | 1.70× | 1.49× | 1.85× | 2.19× |
+| 25 | 0.89× | 0.65× | 0.61× | 0.93× | 0.93× |
+| 50 | 1.37× | 1.08× | 1.08× | 1.14× | 1.36× |
+| 100 | 2.26× | 1.79× | 1.63× | 1.49× | 1.78× |
+| 200 | 3.31× | 2.32× | 1.91× | 1.91× | 1.96× |
+| 400 | **4.00×** | 2.43× | 2.16× | 2.19× | 1.97× |
 
-The two agree to between `4.5e-16` and `3.9e-14` in every cell, and the script checks that
+The two agree to between `4.2e-16` and `2.5e-14` in every cell, and the script checks that
 before recording a time.
 
 **`n` decides this, not the aspect ratio.** Reading down a column is a clean progression;
@@ -228,11 +228,11 @@ it:
 
 | n | m | `:rows` | `:gram` | libdaqp | `:rows` / C | `:gram` / C |
 |---|---|---|---|---|---|---|
-| 25 | 25 | 0.026 ms | 0.017 ms | 0.017 ms | 0.63× | **0.96×** |
-| 25 | 50 | 0.067 ms | 0.047 ms | 0.041 ms | 0.60× | 0.86× |
-| 25 | 100 | 0.080 ms | 0.059 ms | 0.062 ms | 0.78× | **1.06×** |
-| 50 | 50 | 0.117 ms | 0.089 ms | 0.124 ms | 1.06× | **1.39×** |
-| 100 | 100 | 0.527 ms | 0.437 ms | 0.819 ms | 1.55× | **1.87×** |
+| 25 | 25 | 0.029 ms | 0.019 ms | 0.020 ms | 0.68× | **1.03×** |
+| 25 | 50 | 0.045 ms | 0.031 ms | 0.032 ms | 0.72× | **1.04×** |
+| 25 | 100 | 0.095 ms | 0.068 ms | 0.078 ms | 0.82× | **1.15×** |
+| 50 | 50 | 0.101 ms | 0.078 ms | 0.111 ms | 1.09× | **1.43×** |
+| 100 | 100 | 0.489 ms | 0.404 ms | 0.894 ms | 1.83× | **2.21×** |
 
 ## Choosing a working set for the active-set method
 
@@ -247,10 +247,10 @@ for `ActiveSet`") says how to decide. Reproduce with
 
 | n | m | `:gram` | `:rows` | iterations | `:rows` cost |
 |---|---|---|---|---|---|
-| 25 | 50 | 0.039 ms | 0.057 ms | 47 / 47 | 1.48× |
-| 50 | 100 | 0.189 ms | 0.233 ms | 99 / 99 | 1.23× |
-| 100 | 200 | 1.048 ms | 1.236 ms | 214 / 214 | 1.18× |
-| 200 | 400 | 9.631 ms | 12.028 ms | 817 / 817 | 1.25× |
+| 25 | 50 | 0.041 ms | 0.059 ms | 47 / 47 | 1.45× |
+| 50 | 100 | 0.195 ms | 0.235 ms | 99 / 99 | 1.21× |
+| 100 | 200 | 1.059 ms | 1.242 ms | 214 / 214 | 1.17× |
+| 200 | 400 | 6.857 ms | 8.473 ms | 459 / 459 | 1.24× |
 
 The iteration counts are equal row for row here, so on these problems the whole difference is
 what one iteration costs. The counts are not guaranteed to match — the pivots differ in their
@@ -273,7 +273,7 @@ free and dropping the oldest costs the whole factor.
 
 | case | `:gram` | `:rows` |
 |---|---|---|
-| `cond(A R⁻¹) ≈ 1e17`, 30 variables, 200 rows | `NUMERICAL_ERROR` | `SOLVED`, violation 1.2e-06 |
+| `cond(A R⁻¹) ≈ 1e17`, 30 variables, 200 rows | `NUMERICAL_ERROR` | `SOLVED`, violation 2.9e-12 |
 
 The problem is feasible and `:rows` solves it.
 
@@ -281,7 +281,7 @@ The problem is feasible and `:rows` solves it.
 
 | case | `:gram` | `:rows` |
 |---|---|---|
-| 40 of 130 rows are combinations of the rest | `SOLVED`, violation 1.7e-13 | `SOLVED`, violation 7.4e-14 |
+| 40 of 130 rows are combinations of the rest | `SOLVED`, violation 2.8e-17 | `SOLVED`, violation 3.5e-17 |
 
 Dependence that is exact is not the same difficulty as dependence blurred by rounding. Both
 forms carry the dependent row and walk the direction it opens.
@@ -1067,12 +1067,12 @@ that have since changed is a failing test.
 
 | algorithm | path | n | backend | its | matrix backend | its | setup× | solve× | memory× |
 |---|---|---|---|---|---|---|---|---|---|
-| PureOSQP | CG | 576 | `indirect` | 25 | `cholesky` | 25 | 6.2× | 7.7× | 35× |
-| PureOSQP | direct | 576 | `kronecker` | 25 | `cholesky` | 25 | **122×** | **12.3×** | 35× |
+| PureOSQP | CG | 576 | `indirect` | 25 | `cholesky` | 25 | 6.1× | 7.6× | 35× |
+| PureOSQP | direct | 576 | `kronecker` | 25 | `cholesky` | 25 | **122×** | **12×** | 35× |
 | PureIPM | CG | 144 | `indirect` | 5 | `bunchkaufman` | 5 | 8.2× | **32×** | 21× |
-| PureIPM | direct | 576 | `product_reduced` | 5 | `bunchkaufman` | 5 | 55× | 2.5× | 8.4× |
-| PureDAQP | direct, QR | 256 | `rows` | 107 | `rows` | 107 | 1.3× | 2.8× | 1.3× |
-| PureDAQP | direct, LDLᵀ | 256 | `gram` | 107 | `gram` | 107 | 1.3× | 4.6× | 1.4× |
+| PureIPM | direct | 576 | `product_reduced` | 5 | `bunchkaufman` | 5 | 53× | 2.5× | 8.4× |
+| PureDAQP | direct, QR | 256 | `rows` | 107 | `rows` | 107 | 1.4× | 1.4× | 1.3× |
+| PureDAQP | direct, LDLᵀ | 256 | `gram` | 107 | `gram` | 107 | 1.3× | 3.1× | 1.4× |
 
 The iteration counts match across the two columns on every row, so the ratios are the
 representation and nothing else.
@@ -1082,7 +1082,7 @@ Both columns reach the same answer. The objectives agree to machine precision on
 solve each step only to a tolerance of their own.
 
 The two `PureDAQP` rows are one problem under both of its working-set representations, so their
-absolute times compare directly: 0.351 ms through the rows and a `QR`, 0.161 ms through the Gram
+absolute times compare directly: 0.697 ms through the rows and a `QR`, 0.243 ms through the Gram
 matrix and an `LDLᵀ`.
 
 **Where the gain comes from differs by path.** On `kronecker` it is algebraic: the reduced matrix is

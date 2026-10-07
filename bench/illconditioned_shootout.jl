@@ -20,6 +20,9 @@
 #         # writes bench/results/illconditioned_shootout.json
 using PureOSQP, PureIPM, PureDAQP, PureQPBase
 using Clarabel, COSMO, QPALM, DAQP
+# The Kronecker family's `A` declares its structure, so PureOSQP's backend ladder reaches the
+# indirect solver for it, and that backend lives behind a weak dependency.
+using Krylov
 using LinearAlgebra, SparseArrays, Random, JSON, Printf, Chairmarks
 
 include(joinpath(@__DIR__, "helpers_conditioning.jl"))
