@@ -647,7 +647,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 19709,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "backends",
         "blas_threads",
@@ -699,7 +699,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 12920,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "blas_threads",
         "cases",
@@ -719,7 +719,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 19784552,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "blas_threads",
         "description",
@@ -772,7 +772,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 31076889,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "blas_threads",
         "description",
@@ -789,7 +789,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 30379894,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "blas_threads",
         "description",
@@ -858,7 +858,7 @@
     {
       "blas_threads": null,
       "bytes": 10807935,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "errors",
         "julia",
@@ -891,7 +891,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 127006,
-      "julia_version": null,
+      "julia_version": "1.12.7",
       "keys": [
         "blas_threads",
         "budget_seconds",
@@ -1086,7 +1086,7 @@
     {
       "blas_threads": null,
       "bytes": 1079,
-      "julia_version": null,
+      "julia_version": "1.13.1",
       "keys": [
         "julia",
         "shapes"
@@ -1099,7 +1099,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 5340,
-      "julia_version": null,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "daqp_jl",
@@ -1116,12 +1116,12 @@
       "name": "puredaqp_vs_libdaqp",
       "package": "shared",
       "results": "bench/results/puredaqp_vs_libdaqp.json",
-      "script": null
+      "script": "daqp_headtohead.jl"
     },
     {
       "blas_threads": 1.0,
       "bytes": 2336,
-      "julia_version": null,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -1134,7 +1134,7 @@
       "name": "puredaqp_warm_start",
       "package": "shared",
       "results": "bench/results/puredaqp_warm_start.json",
-      "script": null
+      "script": "warm_start.jl"
     },
     {
       "blas_threads": 1.0,
@@ -1182,7 +1182,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 1715,
-      "julia_version": null,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "host",
@@ -1205,19 +1205,11 @@
   "unrun": [
     {
       "package": "shared",
-      "script": "daqp_headtohead.jl"
-    },
-    {
-      "package": "shared",
       "script": "juliac_trim_build.jl"
     },
     {
       "package": "shared",
       "script": "unmaterialized_problems.jl"
-    },
-    {
-      "package": "shared",
-      "script": "warm_start.jl"
     }
   ]
 }

@@ -64,6 +64,16 @@ tolerance. For [`ActiveSet`](@ref) it is not: it adds or drops one row per itera
 at the exact solution over the active rows, so the count measures the problem's active set
 rather than the accuracy asked for.
 
+**The point `ActiveSet` returns is corrected on the active rows.** Forming `x` from the
+reduction's `R⁻¹(−u − v)` subtracts two terms far larger than their difference when `P` is
+badly conditioned, and what cancels is accuracy in `x`: the active rows of the point sit
+further from their bounds than the factorization is wrong by. One step of the smallest
+correction that zeroes their residual puts them back, reusing the factorization the working
+set already holds. The residual it leaves is at the rounding level of the data, so there is no
+second step. Where the returned point stands against other solvers on an ill-conditioned
+problem is measured in
+[Benchmarks](@ref "Every solver on one ill-conditioned problem").
+
 `PureIPM/bench/ipm_vs_clarabel.jl` runs all three on the smallest instance of each OSQP suite
 problem class: `InteriorPoint` at `eps_abs = eps_rel = 1e-8`, `OperatorSplitting` at `1e-6` —
 the tightest tolerance ADMM reaches in a modest iteration count on these problems — and

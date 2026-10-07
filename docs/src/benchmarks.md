@@ -85,6 +85,38 @@ The factorization count is often more than 1. Equilibration rescales the bounds,
 whose scaled gap `ũ - l̃` falls below `RHO_TOL` is treated as an equality, which changes its
 `ρ`. libosqp applies the same rule, so an `update!` can still trigger a factorization.
 
+## What a warm start is worth to the active-set method
+
+[`ActiveSet`](@ref) carries its working set between solves, so a re-solve after
+[`update!`](@ref) starts from the previous answer's active rows. How much that saves depends on
+how far the data moved, which is what a sweep over the size of a perturbation to `q` measures.
+Reproduce with `julia --project=bench bench/warm_start.jl`; samples are in
+`bench/results/puredaqp_warm_start.json`. Single-threaded BLAS, `n = 250`, `m = 500`, a dense
+`P` with eigenvalues spread over `1e0` to `1e-5`, 8 draws per perturbation. Setup is included
+in the cold time and excluded from the warm ones, which is the split a caller re-solving a
+sequence pays.
+
+| perturbation to `q` | median | iterations | vs cold |
+|---|---|---|---|
+| none | 0.096 ms | — | **429×** |
+| `1e-4` | 0.119 ms | 1–3 | **347×** |
+| `1e-3` | 0.219 ms | 2–5 | 188× |
+| `1e-2` | 0.643 ms | 9–35 | 64× |
+| `5e-2` | 2.71 ms | 77–136 | 15× |
+| `1e-1` | 6.20 ms | 161–252 | 6.6× |
+
+A cold solve of the same problem takes 41.2 ms and 1338 iterations.
+
+**The saving is the share of the active set that did not change.** The working set is a good
+guess exactly to that extent, so the iteration count grows with the perturbation while the cold
+count stays where it is. At the largest perturbation here the warm solve still takes a sixth of
+the cold time, and every one of the 40 draws across the sweep beat the cold solve.
+
+**A warm solve of the unchanged data allocates nothing** — 0 bytes.
+
+The script also measures a second, larger problem read from a directory of CSVs when one is
+present, and skips it without complaint otherwise, so it runs on a fresh checkout.
+
 ## Linear-system backend
 
 `PureOSQP/bench/kkt_backend.jl` reproduces the cost and accuracy comparison between the reduced
@@ -919,6 +951,71 @@ objectives as the direct backends, but it needs 2.3× to 3.4× more iterations a
 than the `cholesky` and `block` backends. From `κ = 1e8` it does not converge. The reduced matrix it works with has condition
 number `κ(A)²`, so `κ = 1e8` means `1e16` for CG. For badly conditioned problems, use a direct
 backend.
+
+## Every solver on one ill-conditioned problem
+
+Two dense `400×400` problems at `cond(A) = 1e8`, with 40 of the 400 rows active at the optimum
+and the bounds placed so that they cut off the unconstrained minimizer. One family carries
+Kronecker structure a solver can be told about; the other is unstructured, so the comparison is
+of implementations alone. Reproduce with
+`julia --project=bench bench/illconditioned_shootout.jl`; samples are in
+`bench/results/illconditioned_shootout.json`. Single-threaded BLAS, `tol = 1e-6` for every
+solver that takes one.
+
+`x⋆` is planted: the bounds and `q` are built so that a drawn point is the optimum, so the
+reference is optimal by construction rather than by another solver's say-so. The error column is
+`‖x − x⋆‖∞ / max(1, ‖x⋆‖∞)`. Clarabel at `1e-12` is run as an independent check that the
+planting is sound, and agrees with `x⋆` to `9.6e-13` on the Kronecker family and `1.2e-9` on the
+dense one. `cond(A) = 1e8` is the limit at which that check holds; higher, and the solution is
+not determined well enough for the error column to mean anything.
+
+**Kronecker structure, `cond(A) = 1e8`**
+
+| solver | time | error in `x` | iterations | violation |
+|---|---|---|---|---|
+| PureDAQP | **1.26 ms** | **1.7e-15** | 49 | 5.6e-17 |
+| DAQP (C) | 1.49 ms | 2.0e-15 | — | 1.4e-16 |
+| PureOSQP | 37.8 ms | 8.3e-6 | 1000 | 6.5e-8 |
+| PureIPM | 51.9 ms | 7.0e-5 | 9 | 0 |
+| COSMO | 85.0 ms | 9.3e-6 | 225 | 1.1e-6 |
+| QPALM | 129 ms | 2.9e-6 | 51 | 2.5e-8 |
+| PureOSQP `:kronecker` | 226 ms | 7.3e-5 | 1775 | 1.4e-6 |
+| OSQP (libosqp) | 280 ms | 8.3e-6 | 1000 | 6.5e-8 |
+| Clarabel | 507 ms | 9.5e-7 | 13 | 0 |
+
+**Unstructured, `cond(A) = 1e8`**
+
+| solver | time | error in `x` | iterations | violation |
+|---|---|---|---|---|
+| PureDAQP | **3.27 ms** | **7.1e-12** | 43 | 2.2e-16 |
+| DAQP (C) | 22.4 ms | 2.4e-11 | — | 1.0e-15 |
+| PureIPM | 61.3 ms | 8.1e-2 | 9 | 0 |
+| QPALM | 102 ms | 2.3e-5 | 37 | 4.4e-9 |
+| PureOSQP | 193 ms | 2.2e-2 | 6125 | 1.1e-9 |
+| Clarabel | 448 ms | 6.3e-2 | 10 | 0 |
+| COSMO | 1270 ms | 2.1e-2 | 2720 | 4.5e-7 |
+| OSQP (libosqp) | 2066 ms | 2.2e-2 | 5850 | 1.1e-9 |
+
+Every solver returns a feasible point; the verdict comes from the returned `x`, not from the
+status the solver reports. The iteration count is not recorded for DAQP.
+
+**Few active rows is where an active-set method belongs.** 40 of 400 rows are active, which is
+the regime the [iteration-count split](@ref "Accuracy and iteration count") identifies. Both
+active-set solvers are six to nine orders of magnitude closer to `x⋆` than any other solver
+here. Against the fastest solver that is not an active-set method, PureDAQP is 30× faster on
+the structured family and 19× on the unstructured one.
+
+**On the unstructured family the objective does not separate the solvers and `x` does.** The
+objectives agree to `3.5e-7` relative across the whole table, while the errors in `x` spread
+over ten orders of magnitude. The problem is flat along the directions the first-order and
+interior-point solvers leave, so a comparison made on objective alone would report these runs
+as equivalent.
+
+**Declaring the Kronecker structure costs time here.** `PureOSQP` on the same family is 6×
+faster left to its default ladder than with `:kronecker`, which routes to the indirect solver:
+the reduced matrix conjugate gradients work with has condition number `κ(A)²`, which is `1e16`
+at this `κ`. [Matrix types](@ref "What each algorithm does with each type") says which
+structures pay and when.
 
 ## The primal-dual integral
 

@@ -12,9 +12,10 @@
 # it is recorded per family for exactly this reason.
 #
 # Quality is judged from `x` alone against the caller's own `P, q, A, l, u`, because the dual
-# sign conventions differ across these solvers. The reference is Clarabel at `1e-12`,
-# cross-checked against PureIPM at `1e-10`; the agreement between those two is reported per
-# family and is what makes the error column worth reading.
+# sign conventions differ across these solvers. The reference is the planted `x⋆`, which is
+# optimal by construction; Clarabel at `1e-12` is run as an independent check that the planting
+# is sound, and its agreement with `x⋆` is reported per family and is what makes the error
+# column worth reading.
 #
 #     julia --project=bench bench/illconditioned_shootout.jl
 #         # writes bench/results/illconditioned_shootout.json
