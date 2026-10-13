@@ -123,3 +123,32 @@ end
     _, _, lss = backend_for(P, q, S, ls25, us25; factorize = false)
     @test backend_name(lss) === :indirect
 end
+
+@testitem "a stack checks its blocks' entries, never the rows they stand for" begin
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(11)
+
+    # Two Kronecker blocks, each standing for 1.6e9 entries from four 200x200 factors. Walking
+    # the stack's own entries through `getindex` would read every one of them, so a stack that
+    # does not delegate to its blocks cannot finish this at all.
+    k = 200
+    factors = [Matrix(I * 1.0, k, k) + randn(k, k) / k for _ in 1:4]
+    b1 = PureQPBase.KroneckerOperator(factors[1], factors[2])
+    b2 = PureQPBase.KroneckerOperator(factors[3], factors[4])
+    S = PureQPBase.StackedOperator(b1, b2)
+    rows, cols = size(S)
+    @test rows == 2k^2
+    @test cols == k^2
+    @test (@elapsed PureQPBase.check_finite(S, rows, cols, "A")) < 1.0
+
+    # A non-finite entry is reported by the block holding it, and by that block's own factor.
+    factors[4][3, 5] = Inf
+    bad = PureQPBase.StackedOperator(b1, PureQPBase.KroneckerOperator(factors[3], factors[4]))
+    err = try
+        PureQPBase.check_finite(bad, rows, cols, "A")
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("A's block 2's second Kronecker factor is not finite at entry (3, 5)", err.msg)
+end

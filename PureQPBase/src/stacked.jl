@@ -76,6 +76,21 @@ Base.size(A::StackedOperator) = (A.rowstart[end] - 1, A.cols)
 # in a representation that has lost which rows belong to which block.
 holds_structure(::StackedOperator) = true
 
+# Each block checks its own entries in its own way, so a Kronecker block checks its factors.
+# Without this the generic method walks every `(i, j)` of the stack through `getindex`, which
+# reaches the blocks one entry at a time and costs more than the rest of `setup` put together.
+function check_finite(M::StackedOperator, rows::Integer, cols::Integer, name::String)
+    return stacked_check_finite(M.blocks, name, 1)
+end
+
+@inline stacked_check_finite(::Tuple{}, name, i) = nothing
+
+@inline function stacked_check_finite(blocks::Tuple, name, i)
+    A1 = first(blocks)
+    check_finite(A1, size(A1, 1), size(A1, 2), name * "'s block " * string(i))
+    return stacked_check_finite(Base.tail(blocks), name, i + 1)
+end
+
 # The block holding row `i`, and that row's index within it. A linear scan: a stack has a handful
 # of blocks, and this keeps the search allocation-free and free of the bookkeeping a search tree
 # would add for a dozen entries.
