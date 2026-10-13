@@ -13,6 +13,7 @@ using PureQPBase               # holds the backends and their extensions
 using Krylov                   # supplies the :indirect backend, a weak dependency
 using LDLFactorizations        # supplies the LDLᵀ backends, likewise
 using BandedMatrices           # supplies the banded backend, likewise
+using LinearMaps               # reaches setup through PureQPBaseLinearMapsExt, likewise
 using StrictMode, StrictModeTest
 using LinearAlgebra, SparseArrays, Random
 using InteractiveUtils: subtypes
@@ -53,6 +54,65 @@ let root = dirname(@__DIR__)
     isempty(unaudited) || error(
         "no StrictMode section for " * join(string.(collect(unaudited)), ", ") *
             ": add its kernels below and list it in AUDITED."
+    )
+end
+
+"""
+`PureQPBase` extensions whose operand a section below puts on the hot path.
+
+An extension decides what the kernels run on. The operand it hands `setup` is what `price!`,
+`row`, `mul_A!` and the backends specialize for, so a representation that reaches `setup` only
+through an extension no section here loads leaves those kernels unproved on it — and an
+unexercised representation reads exactly like a proved one from the summary line.
+"""
+const EXERCISED_EXTENSIONS = Set{Symbol}(
+    [
+        :PureQPBaseBandedMatricesExt, :PureQPBaseKrylovExt, :PureQPBaseLDLFactorizationsExt,
+        :PureQPBaseLinearMapsExt, :PureQPBaseSparseArraysExt,
+    ]
+)
+
+"""
+Extensions that put no operand of their own on the hot path, with what each one does instead.
+
+Listed rather than skipped, so that an extension is either exercised above or named here.
+"""
+const OPERANDLESS_EXTENSIONS = Dict{Symbol, String}(
+    :PureQPBaseChainRulesCoreExt => "a derivative rule, applied to a finished solution",
+    :PureQPBaseGPUArraysCoreExt => "array traits, which decide refusals rather than operands",
+    :PureQPBaseMathOptInterfaceExt => "a modelling front end, which hands over plain matrices",
+    :PureQPBaseSciMLOperatorsExt => "wraps an operator into the `ProductOperator` the " *
+        "`:productoperator` sweep below already runs on",
+    :PureQPBaseTestExt => "helpers for the test suites",
+)
+
+let toml = joinpath(dirname(@__DIR__), "PureQPBase", "Project.toml")
+    # The names are read from the manifest of extensions itself, so one added there cannot be
+    # missed here.
+    section, names = false, Symbol[]
+    for line in eachline(toml)
+        if startswith(line, "[extensions]")
+            section = true
+            continue
+        end
+        section || continue
+        startswith(line, "[") && break
+        m = match(r"^\s*(\w+)\s*=", line)
+        isnothing(m) || push!(names, Symbol(m.captures[1]))
+    end
+    isempty(names) && error("found no [extensions] in $toml, so this gate checks nothing")
+    unclassified = setdiff(Set(names), EXERCISED_EXTENSIONS, Set(keys(OPERANDLESS_EXTENSIONS)))
+    isempty(unclassified) || error(
+        "unclassified PureQPBase extension(s) " * join(string.(collect(unclassified)), ", ") *
+            ": exercise the operand in a section below and list it in EXERCISED_EXTENSIONS, " *
+            "or say in OPERANDLESS_EXTENSIONS what it does instead."
+    )
+    notloaded = filter(
+        e -> isnothing(Base.get_extension(PureQPBase, e)), collect(EXERCISED_EXTENSIONS)
+    )
+    isempty(notloaded) || error(
+        "EXERCISED_EXTENSIONS names " * join(string.(notloaded), ", ") *
+            " but loading this file did not trigger them: add `using` for the trigger package above."
     )
 end
 
@@ -543,9 +603,13 @@ end
 # tolerances as an `ActiveSet` rather than as keywords, which is a signature
 # `test_signatures` can state.
 #
-# Twice over, because the reduction reads its rows two ways. A dense pair holds `A R⁻¹` and
-# reads a row as a view into it; any other pair holds `A` and `R` and derives each row from a
-# product and a transposed solve, which is different code under the same guarantee.
+# Three times over, because the reduction reads its rows two ways and reaches `setup` by two
+# routes. A dense pair holds `A R⁻¹` and reads a row as a view into it; any other pair holds `A`
+# and `R` and derives each row from a product and a transposed solve, which is different code
+# under the same guarantee. The third pair arrives as `LinearMap`s, so `setup` is reached
+# through `PureQPBaseLinearMapsExt`: what that route produces is an operand type the hot path
+# has to run on exactly as well as one the caller built directly, and nothing else in this file
+# passes a `LinearMap`.
 for (Pin, Ain) in (
         let
             Random.seed!(1)
@@ -557,6 +621,17 @@ for (Pin, Ain) in (
             PureQPBase.KroneckerOperator([2.0 0.5; 0.5 3.0], [4.0 1.0; 1.0 2.0]),
             PureQPBase.KroneckerOperator([1.0 0.5; 0.0 1.0; 1.0 1.0], [1.0 0.0; 0.5 1.0]),
         ),
+        let
+            # A Kronecker product stacked on a constant block: both are shapes the extension
+            # hands over as the base's own representation rather than wrapping, so the
+            # reduction is the implicit one over a `StackedOperator`.
+            X = [2.0 0.5 0.0 0.0; 0.5 3.0 0.25 0.0; 0.0 0.25 2.5 0.5; 0.0 0.0 0.5 2.0]
+            K = kron(LinearMap([1.0 0.5; 0.0 1.0]), LinearMap([1.0 0.0; 0.5 1.0]))
+            (
+                LinearMap(X; issymmetric = true, isposdef = true),
+                [K; LinearMaps.FillMap(0.25, (4, 4))],
+            )
+        end,
     )
     n, m = size(Ain, 2), size(Ain, 1)
     q = collect(range(-1.0, 1.0; length = n))
@@ -599,7 +674,10 @@ for (Pin, Ain) in (
         (PureDAQP.solve_ldp!, (LW, AT, Int), :hot, nothing),
     ]
 
-    println("PureDAQP (dual active set), rows held as ", nameof(MR))
+    println(
+        "PureDAQP (dual active set), rows held as ", nameof(MR),
+        " over ", nameof(typeof(ws.prob.A))
+    )
     for (f, types, tier, measure) in checks
         label = "  " * string(nameof(f))
         try
