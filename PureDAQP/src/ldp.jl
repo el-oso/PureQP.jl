@@ -747,27 +747,64 @@ function build_reduction(
     return pack_reduction(R, DenseRows(Mt), bu, bl, iseq, scale, eps_prox, n, m, WS)
 end
 
+"""
+How many rows of `A R⁻¹` are solved for in one call when the scales are computed.
+
+The buffer is `n × ROW_BLOCK` and is read column by column right after the solve, so the block
+is sized to hold in cache rather than to amortize anything: at `n = 500` it is 512 KB. A larger
+block measures no faster.
+"""
+const ROW_BLOCK = 128
+
+"""
+    solve_rows!(Rt, W) -> W
+
+Overwrite each column of `W` with `R⁻ᵀ` times that column.
+
+[`PureQPBase.CholeskyFactor`](@ref) promises a solve against a vector and nothing more, so the
+generic method takes the columns one at a time. A triangular or diagonal factor has a solve
+against a matrix, which is one BLAS level-3 call for the whole block.
+"""
+function solve_rows!(Rt, W::AbstractMatrix)
+    for k in axes(W, 2)
+        ldiv!(Rt, view(W, :, k))
+    end
+    return W
+end
+solve_rows!(Rt::Union{LowerTriangular, UpperTriangular, Diagonal}, W::AbstractMatrix) = ldiv!(Rt, W)
+
 function build_reduction(
         R, A::AbstractMatrix{T}, bupper::AbstractVector{T}, blower::AbstractVector{T},
         iseq::AbstractVector{Bool}, eps_prox::T, ::Type{WS}
     ) where {T, WS}
     m, n = size(A)
-    # Every scale is one until the loop below writes it, so the row read back there is the
-    # unnormalized one whose norm is that scale.
+    # Every scale is one until the loop below writes it, so the rows read back there are the
+    # unnormalized ones whose norms are those scales.
     scale = ones(T, m)
     M = ImplicitRows(A, R, transpose(R), scale, Vector{T}(undef, n), Vector{T}(undef, n))
     bu = Vector{T}(undef, m)
     bl = Vector{T}(undef, m)
-    for j in 1:m
-        nrm = norm(row(M, j))
-        # A row of `A` in the kernel of `R⁻ᵀ` normalizes to nothing; it is taken unscaled,
-        # which is what a scale of one means. It is also no longer an equality the working set
-        # can hold, for the reason the strided method above states.
-        iszero(nrm) && (iseq[j] = false)
-        s = nrm > 0 ? nrm : one(T)
-        scale[j] = s
-        bu[j] = bupper[j] / s
-        bl[j] = blower[j] / s
+    # Rows in blocks: a block of right-hand sides reaches the triangular solve at BLAS level 3,
+    # which one right-hand side at a time cannot be blocked into.
+    W = Matrix{T}(undef, n, min(m, ROW_BLOCK))
+    for lo in 1:ROW_BLOCK:m
+        hi = min(lo + ROW_BLOCK - 1, m)
+        block = view(W, :, 1:(hi - lo + 1))
+        for (k, j) in enumerate(lo:hi)
+            dense_row!(view(block, :, k), A, j)
+        end
+        solve_rows!(M.Rt, block)
+        for (k, j) in enumerate(lo:hi)
+            nrm = norm(view(block, :, k))
+            # A row of `A` in the kernel of `R⁻ᵀ` normalizes to nothing; it is taken unscaled,
+            # which is what a scale of one means. It is also no longer an equality the working
+            # set can hold, for the reason the strided method above states.
+            iszero(nrm) && (iseq[j] = false)
+            s = nrm > 0 ? nrm : one(T)
+            scale[j] = s
+            bu[j] = bupper[j] / s
+            bl[j] = blower[j] / s
+        end
     end
     return pack_reduction(R, M, bu, bl, iseq, scale, eps_prox, n, m, WS)
 end
