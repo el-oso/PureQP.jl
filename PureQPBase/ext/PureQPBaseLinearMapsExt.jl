@@ -198,8 +198,25 @@ function kron_factor(::Type{T}, side, λ) where {T}
         B = matrix_factor(T, side[1], λ)
         B isa StridedMatrix && return B
     end
-    B = Matrix{T}(length(side) == 1 ? side[1] : kron(side...))
+    B = Matrix{T}(kron_operand(T, side))
     return isone(λ) ? B : rmul!(B, λ)
+end
+
+"""
+    kron_operand(T, side) -> AbstractMatrix
+
+`side` as one matrix: `kron` over the matrices its maps hold where every one of them holds a
+strided matrix, and the maps' own conversion otherwise.
+
+`Matrix(::LinearMap)` recovers a map's entries by applying it to every basis vector, which is
+`n` products of a matrix the map already holds, so reading the matrices is much the cheaper
+route. It is only cheaper for strided ones: `kron` over a lazy operand reads it an entry at a
+time, which is slower than the products by orders of magnitude.
+"""
+function kron_operand(::Type{T}, side) where {T}
+    parts = map(m -> matrix_factor(T, m, one(T)), side)
+    all(p -> p isa StridedMatrix, parts) || return length(side) == 1 ? side[1] : kron(side...)
+    return length(parts) == 1 ? parts[1] : kron(parts...)
 end
 
 # `KroneckerOperator` holds exactly two factors, both strided and of one type: it builds its
@@ -223,7 +240,7 @@ function unwrap(::Type{T}, M::LinearMaps.KroneckerMap, λ) where {T}
     (iszero(split) || cost > KRON_FORM_ENTRIES) && return nothing
     A1 = kron_factor(T, maps[1:split], λ)
     A2 = kron_factor(T, maps[(split + 1):k], one(T))
-    return PureQPBase.KroneckerOperator(uniform(T, (A1, A2))...)
+    return PureQPBase.KroneckerOperator(kron_pair(T, A1, A2)...)
 end
 
 function unwrap(::Type{T}, M::LinearMaps.BlockDiagonalMap, λ) where {T}
@@ -284,13 +301,24 @@ conform(::Type{T}, B::AbstractMatrix) where {T} = eltype(B) === T ? B : Abstract
 """
     uniform(T, mats) -> Vector
 
-`mats` as a vector of one matrix type, which `KroneckerOperator` and `BlockDiagonal` require.
-Matrices of mixed types are all converted to `Matrix{T}`.
+`mats` as a vector of one matrix type, which `BlockDiagonal` requires. Matrices of mixed types
+are all converted to `Matrix{T}`.
 """
 function uniform(::Type{T}, mats) where {T}
     M = typeof(first(mats))
     all(B -> typeof(B) === M, mats) && return collect(mats)
     return Matrix{T}[Matrix{T}(B) for B in mats]
 end
+
+"""
+    kron_pair(T, A1, A2) -> Tuple
+
+The two factors as one matrix type, which `KroneckerOperator` requires of its pair.
+
+A tuple and not a vector: the pair is splatted into the constructor, and a vector's length is
+unknown where that call is compiled, which costs the result its type parameters.
+"""
+kron_pair(::Type{T}, A1::M, A2::M) where {T, M} = (A1, A2)
+kron_pair(::Type{T}, A1, A2) where {T} = (Matrix{T}(A1), Matrix{T}(A2))
 
 end
