@@ -313,15 +313,26 @@ end
 """
     first_dependent(W, zero_tol) -> Int
 
-The first row whose pivot is at or below `zero_tol`, or 0.
+The first row whose distance from the span of the rows before it is at or below `zero_tol`,
+or 0.
 
-The pivot is `‖Mₐᵀp‖²` for the part of the row orthogonal to those before it, a *square*,
-which is why this test cannot see a dependency the [`WorkingSetQR`](@ref) can.
+`D` holds that distance *squared* — the pivot `‖Mₐᵀp‖²` for the part of the row orthogonal to
+those before it — so the comparison is against `zero_tol^2`: `zero_tol` names a distance, and
+[`WorkingSetQR`](@ref) holds the distance itself. The square has to stay. Against `zero_tol`
+itself the line falls at `sqrt(zero_tol)`, four orders coarser at the default, which declares
+a working set singular where it is not, walks a direction that means nothing, and reports a
+feasible problem infeasible. At the default `zero_tol` the square is `eps(T)`, the tolerance
+[`add_row!`](@ref) admits a row at, so the two tests agree about which rows are dependent.
+
+Squaring cannot recover what forming `Mₐ Mₐᵀ` destroyed: the pivot is built by cancellation,
+so below roughly `sqrt(k·eps)` no tolerance separates a dependent row from an independent one.
+That is the limit [`WorkingSetQR`](@ref) exists for.
 """
 @inline function first_dependent(W::WorkingSetGram{T}, zero_tol::T) where {T}
     F = W.F
+    tol = zero_tol * zero_tol
     @inbounds for i in 1:F.k
-        F.D[i] <= zero_tol && return i
+        F.D[i] <= tol && return i
     end
     return 0
 end

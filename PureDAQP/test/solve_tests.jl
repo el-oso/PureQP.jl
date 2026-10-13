@@ -220,7 +220,7 @@ end
     @test obj(sol.x) < obj(x0)
 end
 
-@testitem "the Gram working set gives up loudly where it cannot decide rank" begin
+@testitem "the Gram working set never calls a feasible problem infeasible" begin
     using PureDAQP, LinearAlgebra, Random
 
     #=
@@ -257,10 +257,16 @@ end
 
     @test rows.status == SOLVED
     @test gram.status != PRIMAL_INFEASIBLE
-    @test gram.status == NUMERICAL_ERROR
-    # A status that is not a solution carries no point to read, so nothing here is a near miss
-    # that a caller might use.
-    @test all(isnan, gram.x)
+    # Which side of the disjunction `:gram` lands on at this conditioning is not something the
+    # representation promises, so both are checked for what they carry: a status that is not a
+    # solution carries no point to read, and a status that is one carries the solution. What
+    # `:gram` may not do is report a status that reads as an answer beside a point that is not.
+    if gram.status == SOLVED
+        @test maximum(abs, gram.x .- rows.x) <= 1.0e-9 * max(1.0, maximum(abs, rows.x))
+    else
+        @test gram.status == NUMERICAL_ERROR
+        @test all(isnan, gram.x)
+    end
 end
 
 @testitem "a genuinely infeasible problem is still reported infeasible" begin

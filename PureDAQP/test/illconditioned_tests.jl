@@ -103,3 +103,36 @@ end
     @test limited.status == MAX_ITER_REACHED
     @test limited.x != first_answer.x
 end
+
+@testitem "the Gram working set's two rank tests agree about which rows are dependent" begin
+    using PureDAQP, LinearAlgebra
+
+    # `WorkingSetGram` holds `D`, the squared distance of each active row from the span of the
+    # rows before it. `add_row!` admits a row whose square clears `eps(T)`, and
+    # `first_dependent` must draw the line in the same place: compared against `zero_tol`
+    # itself rather than its square, a row counts as dependent once its distance falls below
+    # `sqrt(zero_tol)`, which at the default is `1.2e-4` -- so a row the insertion just
+    # accepted is declared singular on the next iteration, the step walks a direction that
+    # means nothing, and a feasible problem is reported infeasible.
+    T = Float64
+    zero_tol = sqrt(eps(T))
+    @test zero_tol^2 == eps(T)
+
+    # Two unit rows at a known distance: the second one's pivot is that distance squared.
+    pair(d) = ([1.0, 0.0], [sqrt(max(0.0, 1 - d^2)), d])
+    for d in (1.0e-2, 1.0e-4, 1.0e-6, 1.0e-7)
+        W = PureDAQP.build_working_set(PureDAQP.WorkingSetGram, T, 2, 3)
+        held, entering = pair(d)
+        @test PureDAQP.add_row!(W, held)
+        @test PureDAQP.add_row!(W, entering)
+        @test PureDAQP.nactive(W) == 2
+        @test W.F.D[2] > eps(T)
+        @test iszero(PureDAQP.first_dependent(W, zero_tol))
+    end
+
+    # A row inside the span of the one before it is dependent, and is still caught.
+    W = PureDAQP.build_working_set(PureDAQP.WorkingSetGram, T, 2, 3)
+    PureDAQP.add_row!(W, [1.0, 0.0])
+    PureDAQP.add_row!(W, [1.0, 0.0])
+    @test PureDAQP.first_dependent(W, zero_tol) == 2
+end
