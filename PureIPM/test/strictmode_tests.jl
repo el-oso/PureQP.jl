@@ -41,15 +41,22 @@
     Pb = PureQPBase.BlockDiagonal([spd(10) for _ in 1:5])
     Ab = PureQPBase.BlockDiagonal([randn(10, 10) ./ sqrt(10) for _ in 1:5])
     block = (Pb, randn(50), Ab, -rand(50), rand(50))
-    # The interior-point ladder reaches these four of PureQPBase's own backends.
+    # A pair holding structure that the dense terminal declines, which is what the ladder's
+    # own `indirect_rung` serves with `ProductReduced` — and the one route on which the
+    # reduced backend holds the Cholesky factor rather than the inverse.
+    Ak = PureQPBase.KroneckerOperator(randn(4, 3), randn(3, 2))
+    bk = Ak * randn(6)
+    kronecker = (Diagonal(fill(2.0, 6)), randn(6), Ak, bk .- rand(12), bk .+ rand(12))
+    # The interior-point ladder reaches these five of PureQPBase's own backends.
     cases = [
-        (dense, PureQPBase.FullKKT),
-        (diagonal, PureQPBase.DiagonalReduced),
-        (tridiagonal, PureQPBase.TridiagonalReduced),
-        (block, PureQPBase.BlockReduced),
+        (dense, PureQPBase.FullKKT, (;)),
+        (diagonal, PureQPBase.DiagonalReduced, (;)),
+        (tridiagonal, PureQPBase.TridiagonalReduced, (;)),
+        (block, PureQPBase.BlockReduced, (;)),
+        (kronecker, PureQPBase.ProductReduced, (; scaling = 0)),
     ]
-    for (data, LS) in cases
-        ws = setup(data..., InteriorPoint())
+    for (data, LS, kw) in cases
+        ws = setup(data..., InteriorPoint(); kw...)
         @test ws.linsys isa LS
         # A full solve compiles every specialization the loop reaches on this data.
         @test solve!(ws).status == SOLVED
@@ -96,5 +103,5 @@ end
     PureIPM.set_regularization!(ws, 10 * ws.reg_primal, ws.reg_dual)
     @test ws.weights === wt
     @test wt.sigma == ws.reg_primal
-    @test ws.sigma_changed
+    @test ws.needs_full_factorize
 end

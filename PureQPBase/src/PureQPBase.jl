@@ -95,13 +95,24 @@ let
         @assert_trim_compatible solve_multiplier!(ls, prob, wt, bx, bz, x, z)
         return nothing
     end
-    function backend(linsys, P, A; scaling = 10)
+    function problem_for(P, A, scaling)
         n, m = size(A, 2), size(A, 1)
         q, l, u = collect(range(-1.0, 1.0; length = n)), fill(-1.0, m), fill(1.0, m)
         prob = validated_problem(Float64, n, m, P, q, A, l, u, scaling)
-        wt = SystemWeights(fill(0.1, m), fill(10.0, m), 1.0e-6)
-        ls, factored = named_backend(Val(linsys), P, A, prob, wt, ADMMSelection(), nothing)
+        return prob, SystemWeights(fill(0.1, m), fill(10.0, m), 1.0e-6)
+    end
+    function backend(linsys, P, A; scaling = 10, sel = ADMMSelection())
+        prob, wt = problem_for(P, A, scaling)
+        ls, factored = named_backend(Val(linsys), P, A, prob, wt, sel, nothing)
         factored || factorize!(ls, prob, wt)
+        return ls, prob, wt
+    end
+    # No `linsys` names `ProductReduced`, so it is built directly rather than through
+    # `named_backend`.
+    function product_backend(P, A, keep_factor; scaling = 10)
+        prob, wt = problem_for(P, A, scaling)
+        ls = ProductReduced(prob.q0, prob.n, prob.m, prob.A, keep_factor)
+        factorize!(ls, prob, wt)
         return ls, prob, wt
     end
     P = [4.0 1.0 0.0; 1.0 3.0 0.5; 0.0 0.5 2.0]
@@ -122,6 +133,16 @@ let
             (:kronecker, Diagonal(fill(2.0, 4)), KroneckerOperator([2.0 1.0; 0.0 1.0], [1.0 0.5; 0.5 2.0]), 0),
         )
         check(backend(linsys, Pc, Ac; scaling)...)
+    end
+
+    # `keeps_factor` makes a reduced backend hold the Cholesky factor for the interior-point
+    # method and the inverse for the operator-splitting one. The two differ in `FACTOR`, which
+    # is a type parameter, so each is its own specialization of both solves and both are
+    # checked. The loop above covers the inverse variants.
+    check(backend(:dense, P, A; sel = IPMSelection())...)
+    Akr = KroneckerOperator([2.0 1.0; 0.0 1.0], [1.0 0.5; 0.5 2.0])
+    for keep in (Val(false), Val(true))
+        check(product_backend(Diagonal(fill(2.0, 4)), Akr, keep)...)
     end
 
     ls, prob, wt = backend(:dense, P, A)

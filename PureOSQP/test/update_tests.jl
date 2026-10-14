@@ -97,6 +97,41 @@ end
     end
 end
 
+@testitem "update! of P refreshes what a reduced backend caches of it" begin
+    using PureIPM, PureQPBase
+    using LinearAlgebra, Random
+    # `ProductReduced` holds `c·D P D + σI` across refactorizations, and only `factorize!`
+    # writes it. The interior-point method refactorizes at each iteration's weights, so a
+    # warm solve after a new `P` reaches `refactor_weights!` first and would answer for the
+    # old `P` unless `update!` says a full factorization is owed.
+    rng = MersenneTwister(7)
+    n, m = 6, 12
+    A = PureQPBase.KroneckerOperator(randn(rng, 4, 3), randn(rng, 3, 2))
+    P1, P2 = Diagonal(fill(2.0, n)), Diagonal(fill(9.0, n))
+    q = randn(rng, n)
+    b = A * randn(rng, n)
+    l, u = b .- rand(rng, m), b .+ rand(rng, m)
+    opts = (; scaling = 0, eps_abs = 1.0e-9, eps_rel = 1.0e-9)
+    ws = setup(P1, q, A, l, u, InteriorPoint(); opts...)
+    @test ws.linsys isa PureQPBase.ProductReduced
+    @test PureOSQP.solve!(ws).status == SOLVED
+    update!(ws; P = P2)
+    @test ws.needs_full_factorize
+    got = PureOSQP.solve!(ws)
+    want = PureOSQP.solve(P2, q, A, l, u, InteriorPoint(); opts...)
+    @test want.status == SOLVED
+    @test got.status == SOLVED
+    @test got.x ≈ want.x rtol = 1.0e-5
+
+    # A point seeded before the first solve skips the starting point's own factorization, so
+    # that run reaches `refactor_weights!` before anything has written the cache at all.
+    ws2 = setup(P2, q, A, l, u, InteriorPoint(); opts...)
+    warm_start!(ws2; x = want.x, y = want.y)
+    seeded = PureOSQP.solve!(ws2)
+    @test seeded.status == SOLVED
+    @test seeded.x ≈ want.x rtol = 1.0e-5
+end
+
 @testitem "update! warm starts the next solve" begin
     using PureIPM
     using LinearAlgebra, SparseArrays, Random

@@ -178,6 +178,7 @@ PureQPBase.choose_backend
 PureQPBase.ReducedInverse
 PureQPBase.ReducedCholesky
 PureQPBase.ProductReduced
+PureQPBase.solve_by_factor!
 PureQPBase.DiagonalReduced
 PureQPBase.TridiagonalReduced
 PureQPBase.DiagonalLowRank
@@ -249,7 +250,10 @@ PureQPBase.kronecker_rung
 PureQPBase.lowrank_rung
 PureQPBase.formed_rung
 PureQPBase.dense_rung
+PureQPBase.structured_rung
+PureQPBase.worth_assembling
 PureQPBase.indirect_rung
+PureQPBase.keeps_factor
 ```
 
 ## Backend introspection

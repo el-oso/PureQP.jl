@@ -265,6 +265,43 @@ end
     @test structured.iter == dense.iter
 end
 
+@testitem "keeps_factor puts the factor on the IPM's reduced backends and the inverse on ADMM's" begin
+    using PureIPM, PureQPBase
+    using LinearAlgebra, Random
+    # `FACTOR` is a type parameter, so which of the two a reduced backend holds is visible in
+    # the workspace's type and has to stay decided by the algorithm rather than by a default.
+    @test PureQPBase.keeps_factor(PureQPBase.IPMSelection())
+    @test !PureQPBase.keeps_factor(PureQPBase.ADMMSelection())
+
+    rng = MersenneTwister(31)
+    n, m = 8, 16
+    X = randn(rng, n, n)
+    P = Matrix(Symmetric(X'X ./ n + I))
+    A = randn(rng, m, n)
+    b = A * randn(rng, n)
+    q, l, u = randn(rng, n), b .- rand(rng, m), b .+ rand(rng, m)
+    ipm = setup(P, q, A, l, u, InteriorPoint(); linsys = :dense)
+    admm = setup(P, q, A, l, u; linsys = :dense)
+    @test ipm.linsys isa PureQPBase.ReducedCholesky{Float64, Matrix{Float64}, true}
+    @test admm.linsys isa PureQPBase.ReducedCholesky{Float64, Matrix{Float64}, false}
+    @test PureOSQP.solve!(ipm).status == SOLVED
+    @test PureOSQP.solve!(admm).status == SOLVED
+
+    # The same split on `ProductReduced`, which the interior-point method reaches from its own
+    # terminal rung and the operator-splitting method from `structured_rung`.
+    Ak = PureQPBase.KroneckerOperator(randn(rng, 4, 3), randn(rng, 3, 2))
+    Pk = Diagonal(fill(2.0, 6))
+    bk = Ak * randn(rng, 6)
+    qk, lk, uk = randn(rng, 6), bk .- rand(rng, 12), bk .+ rand(rng, 12)
+    ipm_k = setup(Pk, qk, Ak, lk, uk, InteriorPoint(); scaling = 0)
+    @test ipm_k.linsys isa PureQPBase.ProductReduced{Float64, Matrix{Float64}, Vector{Float64}, S, true} where {S}
+    stack = PureQPBase.StackedOperator(Matrix(Ak), Diagonal(fill(1.5, 6)))
+    bs = stack * randn(rng, 6)
+    ls_, us_ = bs .- rand(rng, 18), bs .+ rand(rng, 18)
+    admm_s = setup(Matrix(Pk), qk, stack, ls_, us_; scaling = 0)
+    @test admm_s.linsys isa PureQPBase.ProductReduced{Float64, Matrix{Float64}, Vector{Float64}, S, false} where {S}
+end
+
 @testitem "an indefinite P is refused, whatever its storage" begin
     using LinearAlgebra
     n = 5

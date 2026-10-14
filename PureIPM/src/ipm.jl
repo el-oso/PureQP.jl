@@ -41,7 +41,7 @@ function set_regularization!(ws::InteriorPointWorkspace{T}, reg_primal::T, reg_d
     if reg_primal != ws.reg_primal
         ws.reg_primal = reg_primal
         ws.weights.sigma = reg_primal
-        ws.sigma_changed = true
+        ws.needs_full_factorize = true
     end
     return ws
 end
@@ -53,14 +53,18 @@ Factorize the Newton system at the current weights, raising both regularizations
 retrying whenever the backend reports failure, at most `max_reg_bumps` times per solve.
 `starting` says the weights are the unit weights of the starting point, which do not depend
 on `reg_dual`; otherwise they are recomputed after a bump. `false` means the bumps ran out.
+
+[`refactor_weights!`](@ref) may assume whatever the backend caches of the weight-independent
+part of the system is current, so it runs only once `needs_full_factorize` is clear — which
+means a full [`factorize!`](@ref) has written that part for the `P` and `σ` now in force.
 """
 function factorize_newton!(ws::InteriorPointWorkspace{T}, starting::Bool) where {T}
     ls = ws.linsys
     while true
-        full = starting || ws.sigma_changed
+        full = starting || ws.needs_full_factorize
         ok = full ? factorize!(ls, ws.prob, ws.weights) : refactor_weights!(ls, ws.prob, ws.weights)
         if ok
-            ws.sigma_changed = false
+            ws.needs_full_factorize = false
             return true
         end
         ws.reg_bumps < ws.algorithm.max_reg_bumps || return false
@@ -675,6 +679,11 @@ function solve!(ws::InteriorPointWorkspace{T}) where {T}
     ws.iter = 0
     ws.reg_bumps = 0
     set_regularization!(ws, alg.reg_primal, alg.reg_dual)
+    # The escape hatch of `full_force`: the backend rebuilds everything once here, so a solve
+    # cannot start from anything it cached earlier. Nothing in the method needs this — every
+    # path that changes `P` or `σ` already marks a full factorization as owed — and leaving it
+    # off is what makes the `R0` hoist worth having.
+    s.full_force && (ws.needs_full_factorize = true)
     ws.short_steps = 0
     ws.flat_merit = 0
     ws.last_merit = INFTY(T)

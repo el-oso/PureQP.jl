@@ -15,13 +15,11 @@ sum of the blocks' own. A join shares every row, so
     Aᵀ diag(w) A = ⎡ A₁ᵀ W A₁  A₁ᵀ W A₂ ⎤
                    ⎣ A₂ᵀ W A₁  A₂ᵀ W A₂ ⎦
 
-has a cross block for every pair, and no block's representation owns one. There is no
-`add_reduced_term!` method here: the generic one reaches each column of the reduced matrix as
-`Aᵀ(w ⊙ (A eⱼ))`, two products of the join, and that is what a `ProductReduced` backend over a
-join costs. A method forming the blocks pairwise would cost `Σᵢ nᵢ(fᵢ + aᵢ) + Σᵢ<ⱼ min(nᵢ, nⱼ)(fⱼ + aᵢ)`
-for blocks whose forward and adjoint products cost `fᵢ` and `aᵢ`, against the generic
-`n · Σᵢ(fᵢ + aᵢ)`; it is worth writing only for a backend that reaches `add_reduced_term!` with a
-join, which the dense terminals below do not (see `docs/design/horizontal-operators.md`).
+has a cross block for every pair, and no block's representation owns one. The
+[`add_reduced_term!`](@ref) method below forms those blocks pairwise instead of reaching every
+column of the whole join: for blocks whose forward and adjoint products cost `fᵢ` and `aᵢ` that
+is `Σᵢ nᵢ(fᵢ + aᵢ) + Σᵢ<ⱼ min(nᵢ, nⱼ)(fⱼ + aᵢ)`, against `n · Σᵢ(fᵢ + aᵢ)` for the generic
+method, which applies the whole operator per column and so reaches no block's own contraction.
 
 [`holds_structure`](@ref) is `false`: the join's blocks are each a slice of the columns, and the
 dense backends serve it directly, as they serve a matrix, with the blocks supplying the entries.
@@ -280,9 +278,9 @@ first-factor columns ([`kron_cross_term!`](@ref)); anything else goes column by 
     # The column form runs over the narrower block, so the count of products is the smaller of
     # the two and the products themselves are against the wider one.
     if kj <= ki
-        cross_columns!(R, T, Ai, Aj, w, D, m, ej, av, col, offi, offj, false)
+        cross_columns!(R, T, Ai, Aj, w, D, m, ej, av, col, offi, offj)
     else
-        cross_columns!(R, T, Aj, Ai, w, D, m, ej, av, col, offj, offi, true)
+        cross_columns!(R, T, Aj, Ai, w, D, m, ej, av, col, offj, offi)
     end
     return R
 end
@@ -298,25 +296,25 @@ end
     else
         ki, kj = size(Ai, 2), size(Aj, 2)
         if kj <= ki
-            cross_columns!(R, T, Ai, Aj, w, D, m, ej, av, col, offi, offj, false)
+            cross_columns!(R, T, Ai, Aj, w, D, m, ej, av, col, offi, offj)
         else
-            cross_columns!(R, T, Aj, Ai, w, D, m, ej, av, col, offj, offi, true)
+            cross_columns!(R, T, Aj, Ai, w, D, m, ej, av, col, offj, offi)
         end
     end
     return R
 end
 
 """
-    cross_columns!(R, T, Aa, Ab, w, D, m, ej, av, col, offa, offb, swapped) -> R
+    cross_columns!(R, T, Aa, Ab, w, D, m, ej, av, col, offa, offb) -> R
 
 Write `Dₐ Aₐᵀ diag(w) A_b D_b` and its transpose into `R`, one column of `A_b` at a time.
 
 `A_b` is the narrower block, so this is `size(A_b, 2)` forward products of it and as many
-adjoints of `Aₐ`. `swapped` says `Aₐ` sits after `A_b` in the join, which only decides which of
-the two off-diagonal blocks is written first — both are written.
+adjoints of `Aₐ`. Both off-diagonal blocks are written, so which of the pair came first in the
+join does not matter here and the caller may pass them in either order.
 """
 function cross_columns!(
-        R, ::Type{T}, Aa, Ab, w, D, m, ej, av, col, offa, offb, swapped
+        R, ::Type{T}, Aa, Ab, w, D, m, ej, av, col, offa, offb
     ) where {T}
     ka, kb = size(Aa, 2), size(Ab, 2)
     e = view(ej, 1:kb)

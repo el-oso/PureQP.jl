@@ -54,7 +54,23 @@ what is true now; this file is where the history lives.
   parameters. One wrapper implementation serves both, in `PureQPBase`, carrying the algorithm
   as a field and reporting its package as the solver name.
 
+### Fixed
+
+- **A `P` replaced by `update!` reached the interior-point method's next solve.**
+  `ProductReduced` keeps the weight-independent `c·D P D + σI` between refactorizations, and
+  only `factorize!` writes it. The interior-point method refactorizes at each iteration's
+  weights, so a warm solve after `update!(ws; P = ...)` ran against the old `P` and returned the
+  previous solution. `update!` now marks a full factorization as owed, as a regularization bump
+  already did; a workspace starts owing one, so a point seeded before the first solve no longer
+  reaches a factorization that nothing has written.
+
 ### Added
+
+- **The `full_force` option**, default `false`, starts every solve with a full factorization
+  instead of one that refreshes only the weight-dependent part. Nothing in either algorithm
+  needs it — every path that changes `P` or `σ` marks a full factorization as owed — so it is an
+  escape hatch for a backend one suspects of holding something stale, paid for with one extra
+  factorization per solve.
 
 - **`setup` and `solve` take `ActiveSet()`**, a dual active-set method in `PureDAQP` whose
   working set is a QR of its rows and whose reduction derives each row and each product from

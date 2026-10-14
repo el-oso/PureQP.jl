@@ -3,7 +3,7 @@
   "julia": "1.13.1",
   "blas_threads": 1,
   "cpu": "znver5",
-  "tool": "Chairmarks, samples=5, median reported, factorization included",
+  "tool": "Chairmarks, samples=5, median reported",
   "note": "clock unpinned on neuromancer; indicative, not a gate",
   "seed": 2026,
   "cases": [
@@ -13,23 +13,25 @@
       "m": 192,
       "stored": 2632,
       "compress": 3.0638297872340425,
+      "reference_backend": "indirect",
+      "iterations": 600,
+      "status": "SOLVED",
       "assembled": {
         "backend": "product_reduced",
-        "iterations": 175,
-        "status": "SOLVED",
-        "factorize_seconds": 7.3508e-5,
-        "iterate_seconds": 0.00041114900000000003,
-        "total_seconds": 0.00048465700000000005
+        "label": "assembled",
+        "factorize_seconds": 2.8874000000000002e-5,
+        "solve_seconds": 1.773e-6,
+        "residual": 4.841082963363719e-16
       },
       "products": {
         "backend": "indirect",
-        "iterations": 675,
-        "status": "SOLVED",
-        "factorize_seconds": 5.6516000000000006e-5,
-        "iterate_seconds": 0.003916434,
-        "total_seconds": 0.00397295
+        "label": "products",
+        "factorize_seconds": 4.1257e-5,
+        "solve_seconds": 3.266e-6,
+        "residual": 0.0013875304401452426
       },
-      "gain": 8.197446854166968
+      "gain_per_solve": 1.8420755781161873,
+      "breakeven": 0.0
     },
     {
       "name": "stack k=10 kb=200",
@@ -37,23 +39,25 @@
       "m": 600,
       "stored": 22304,
       "compress": 2.9591104734576756,
+      "reference_backend": "indirect",
+      "iterations": 775,
+      "status": "SOLVED",
       "assembled": {
         "backend": "product_reduced",
-        "iterations": 225,
-        "status": "SOLVED",
-        "factorize_seconds": 0.000397604,
-        "iterate_seconds": 0.001736988,
-        "total_seconds": 0.0021345920000000003
+        "label": "assembled",
+        "factorize_seconds": 0.00029770100000000004,
+        "solve_seconds": 4.919000000000001e-6,
+        "residual": 1.2312072428156996e-15
       },
       "products": {
         "backend": "indirect",
-        "iterations": 775,
-        "status": "SOLVED",
-        "factorize_seconds": 0.000453077,
-        "iterate_seconds": 0.017033265000000002,
-        "total_seconds": 0.017486342000000002
+        "label": "products",
+        "factorize_seconds": 0.00034428800000000005,
+        "solve_seconds": 9.969e-6,
+        "residual": 0.0007695739275455648
       },
-      "gain": 8.191889597637394
+      "gain_per_solve": 2.0266314291522667,
+      "breakeven": 0.0
     },
     {
       "name": "kron 8x6",
@@ -61,23 +65,25 @@
       "m": 48,
       "stored": 100,
       "compress": 23.04,
+      "reference_backend": "indirect",
+      "iterations": 350,
+      "status": "SOLVED",
       "assembled": {
         "backend": "product_reduced",
-        "iterations": 25,
-        "status": "SOLVED",
-        "factorize_seconds": 3.5236e-5,
-        "iterate_seconds": 2.2573000000000002e-5,
-        "total_seconds": 5.7809e-5
+        "label": "assembled",
+        "factorize_seconds": 2.5068e-5,
+        "solve_seconds": 5.91e-7,
+        "residual": 4.300599237757022e-16
       },
       "products": {
         "backend": "indirect",
-        "iterations": 350,
-        "status": "SOLVED",
-        "factorize_seconds": 1.2844000000000001e-5,
-        "iterate_seconds": 0.0008186010000000001,
-        "total_seconds": 0.0008314450000000001
+        "label": "products",
+        "factorize_seconds": 9.217e-6,
+        "solve_seconds": 1.212e-6,
+        "residual": 0.0004365571604797631
       },
-      "gain": 14.382622083066652
+      "gain_per_solve": 2.050761421319797,
+      "breakeven": 25.52495974235105
     },
     {
       "name": "kron 14x12",
@@ -85,23 +91,25 @@
       "m": 168,
       "stored": 340,
       "compress": 83.01176470588236,
+      "reference_backend": "indirect",
+      "iterations": 150,
+      "status": "SOLVED",
       "assembled": {
         "backend": "product_reduced",
-        "iterations": 150,
-        "status": "SOLVED",
-        "factorize_seconds": 0.00071119,
-        "iterate_seconds": 0.000468927,
-        "total_seconds": 0.001180117
+        "label": "assembled",
+        "factorize_seconds": 0.0005124950000000001,
+        "solve_seconds": 1.923e-6,
+        "residual": 1.435831389378355e-15
       },
       "products": {
         "backend": "indirect",
-        "iterations": 150,
-        "status": "SOLVED",
-        "factorize_seconds": 0.000152315,
-        "iterate_seconds": 0.001578552,
-        "total_seconds": 0.001730867
+        "label": "products",
+        "factorize_seconds": 0.000109346,
+        "solve_seconds": 3.407e-6,
+        "residual": 0.0009983031964486589
       },
-      "gain": 1.4666910145349994
+      "gain_per_solve": 1.7717108684347374,
+      "breakeven": 271.66374663072776
     },
     {
       "name": "kron 20x18",
@@ -109,23 +117,25 @@
       "m": 360,
       "stored": 724,
       "compress": 179.00552486187846,
+      "reference_backend": "indirect",
+      "iterations": 150,
+      "status": "SOLVED",
       "assembled": {
         "backend": "product_reduced",
-        "iterations": 175,
-        "status": "SOLVED",
-        "factorize_seconds": 0.005609531,
-        "iterate_seconds": 0.001709797,
-        "total_seconds": 0.007319328
+        "label": "assembled",
+        "factorize_seconds": 0.004056759,
+        "solve_seconds": 6.321e-6,
+        "residual": 3.549082102164738e-15
       },
       "products": {
         "backend": "indirect",
-        "iterations": 175,
-        "status": "SOLVED",
-        "factorize_seconds": 0.0006841690000000001,
-        "iterate_seconds": 0.0076345580000000005,
-        "total_seconds": 0.008318727000000001
+        "label": "products",
+        "factorize_seconds": 0.000507636,
+        "solve_seconds": 1.0880000000000001e-5,
+        "residual": 0.0009294174230025084
       },
-      "gain": 1.1365424530776598
+      "gain_per_solve": 1.7212466381901599,
+      "breakeven": 778.4871682386487
     }
   ]
 }

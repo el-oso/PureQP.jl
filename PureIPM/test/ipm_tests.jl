@@ -674,6 +674,42 @@ end
     )
 end
 
+@testitem "full_force starts every solve with a full factorization" begin
+    using PureIPM, PureQPBase
+    using LinearAlgebra, Random
+    # `ProductReduced` holds `c·D P D + σI` between refactorizations and only `factorize!`
+    # writes it, so zeroing it is a change nothing but a full factorization recovers from.
+    # With `full_force` off the next solve reuses it and answers for the wrong matrix, which is
+    # what makes this a test of the option and not of the arithmetic around it.
+    function staled(force)
+        rng = MersenneTwister(13)
+        n, m = 6, 12
+        A = PureQPBase.KroneckerOperator(randn(rng, 4, 3), randn(rng, 3, 2))
+        P, q = Diagonal(fill(3.0, n)), randn(rng, n)
+        b = A * randn(rng, n)
+        l, u = b .- rand(rng, m), b .+ rand(rng, m)
+        opts = (; scaling = 0, eps_abs = 1.0e-9, eps_rel = 1.0e-9)
+        want = solve(P, q, A, l, u, InteriorPoint(); opts...)
+        ws = setup(P, q, A, l, u, InteriorPoint(); opts..., full_force = force)
+        solve!(ws)
+        fill!(ws.linsys.R0, 0.0)
+        return ws, solve!(ws), want
+    end
+
+    @test !PureQPBase.default_options(InteriorPoint(), Float64).full_force
+
+    forced, got, want = staled(true)
+    @test want.status == SOLVED
+    # Only the option asked for the rebuild: nothing in the run marked one as owed.
+    @test !forced.needs_full_factorize
+    @test got.status == SOLVED
+    @test got.x ≈ want.x rtol = 1.0e-5
+
+    # The control, which is what keeps the test above from passing vacuously.
+    _, stale, _ = staled(false)
+    @test !isapprox(stale.x, want.x; rtol = 1.0e-5)
+end
+
 @testitem "update_settings! on an InteriorPointWorkspace validates and never refactorizes" begin
     using PureIPM, PureQPBase
     using LinearAlgebra, SparseArrays, Random

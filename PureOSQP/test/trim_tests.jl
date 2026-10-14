@@ -98,6 +98,24 @@
             )
         )
     )
+    push!(names, :solve_stacked)
+    push!(
+        sigs,
+        :(
+            TrimEntry.solve_stacked(
+                Matrix{Float64}, Vector{Float64}, TrimEntry.SK, Vector{Float64}, Vector{Float64}
+            )
+        )
+    )
+    push!(names, :solve_ipm_kronecker)
+    push!(
+        sigs,
+        :(
+            TrimEntry.solve_ipm_kronecker(
+                TrimEntry.DM, Vector{Float64}, TrimEntry.KO, Vector{Float64}, Vector{Float64}
+            )
+        )
+    )
     push!(names, :setup_kronecker)
     push!(
         sigs,

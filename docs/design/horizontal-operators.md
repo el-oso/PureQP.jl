@@ -76,15 +76,20 @@ type, as `stacked.jl` does, because iterating a heterogeneous tuple by runtime i
 | `is_materializable` | `all` over the blocks |
 | `holds_structure` | **`false`**, from the dimensions above — this is what lets the dense rungs serve it |
 
-**No `JoinedOperator` method for `add_reduced_term!`.** The generic one is correct, and for this
-data it is never called: `add_reduced_term!` runs only from `ProductReduced.factorize!`
-(`linsys.jl:1613`), which only `PureIPM`'s `indirect_rung` builds, and with `holds_structure =
-false` and every block materializable the dense rungs take these problems instead — ADMM to
-`ReducedCholesky`, IPM to `FullKKT`. Record in a comment what a block-pair reduction would cost,
-for whoever adds an ADMM `ProductReduced` rung: an `hcat` partitions the columns, so the pairs
-sum to `Σᵢ nᵢ(fᵢ+aᵢ) + Σᵢ<ⱼ min(nᵢ,nⱼ)(fⱼ+aᵢ)`, strictly below the generic `n·Σᵢ(fᵢ+aᵢ)`. The
-generic method's own cost is **not** lower for an `hcat` than for an opaque operator: `mul!(av,
-A, ej)` applies the whole operator (`linsys.jl:1545`), every block included.
+**`JoinedOperator` has its own `add_reduced_term!`** (`joined.jl`), which forms the reduced term
+block by block: the `(i, i)` block through block `i`'s own method, so a `KroneckerOperator` block
+contracts its factors, and each `(i, j)` block through the column form over the narrower of the
+pair — or through `kron_cross_term!` when both are Kronecker products over the same rows. An
+`hcat` partitions the columns, so the pairs sum to `Σᵢ nᵢ(fᵢ+aᵢ) + Σᵢ<ⱼ min(nᵢ,nⱼ)(fⱼ+aᵢ)`,
+strictly below the generic `n·Σᵢ(fᵢ+aᵢ)`. The generic method's cost is **not** lower for an
+`hcat` than for an opaque operator — `mul!(av, A, ej)` applies the whole operator, every block
+included — which is what the method is worth writing against.
+
+`add_reduced_term!` runs from `ProductReduced.factorize!`, which `PureIPM`'s `indirect_rung` and
+`PureQPBase`'s `structured_rung` both build. For this data, with `holds_structure = false` and
+every block materializable, the dense rungs take these problems — ADMM to `ReducedCholesky`, IPM
+to `FullKKT` — so a bare join reaches the method only inside a stack, which is where these
+problems carry one.
 
 ## Step 3 — the `unwrap` rule
 
@@ -93,19 +98,20 @@ A, ej)` applies the whole operator (`linsys.jl:1545`), every block included.
 `maps` against `rows`. Blocks go through `as_operator`, so anything unrecognised still becomes a
 `ProductOperator` and the rest keeps its structure.
 
-## Step 4 — ADMM has no rung for a structured operand
+## Step 4 — ADMM's rung for a structured operand
 
-Independent of `hcat`, and the reason "the 32 vcat files already reach a direct backend" is true
-only under `InteriorPoint`. Under `OperatorSplitting`, `select_backend` reaches `dense_rung`,
-which declines on `holds_structure(P) || holds_structure(A)` (`linsys.jl:848`);
-`holds_structure(::StackedOperator)` is `true` (`stacked.jl:77`); `formed_rung` is defined only
-for a `SparseMatrixCSC` `A`; and the block, Kronecker and low-rank rungs are typed to their own
-pairs. So a `StackedOperator` `A` under ADMM reaches `:indirect` today and would continue to.
+Independent of `hcat`, and the reason "the 32 vcat files already reach a direct backend" held
+only under `InteriorPoint`. `dense_rung` declines on `holds_structure(P) || holds_structure(A)`,
+`holds_structure(::StackedOperator)` is `true`, `formed_rung` is defined only for a
+`SparseMatrixCSC` `A`, and the block, Kronecker and low-rank rungs are typed to their own pairs,
+so under `OperatorSplitting` a `StackedOperator` `A` had nothing but `:indirect` below it.
 
-`ProductReduced` is algorithm-agnostic and lives in PureQPBase. An ADMM rung returning it for a
-`holds_structure` operand is a few lines and gives ADMM a direct backend for those operands. This
-is where a block-pair `add_reduced_term!` would start to pay, so the two belong together and
-after the litmus test, not before it.
+`structured_rung` is the rung that serves it. It returns `ProductReduced`, which is
+algorithm-agnostic and lives in PureQPBase, for an operand answering both `holds_structure` and
+`worth_assembling`; `StackedOperator` answers both, so a stack reaches a direct backend under
+ADMM. `worth_assembling` is what keeps the rung off `KroneckerOperator`, `RowCoupled` and
+`BlockDiagonal`, and states why. `bench/admm_structured_rung.jl` measures what it returns
+against conjugate gradients.
 
 ## Step 5 — the refactorization path
 

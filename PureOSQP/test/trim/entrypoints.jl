@@ -5,6 +5,9 @@ module TrimEntry
 
 using PureOSQP
 using PureIPM
+# For the operator types PureOSQP does not re-export. Imported without names, so nothing here
+# shadows the `PureOSQP.`-qualified calls below.
+import PureQPBase
 using Krylov
 using LinearAlgebra
 using BandedMatrices
@@ -132,6 +135,19 @@ solve_kronecker(P::DM, q::V, A::KO, l::V, u::V) = PureOSQP.solve(P, q, A, l, u; 
 
 # A second such pair, so the guard does not rest on one backend.
 solve_lowrank_scaled(P::DM, q::V, A::RC, l::V, u::V) = PureOSQP.solve(P, q, A, l, u; scaling = 0)
+
+# A stack, which answers both `holds_structure` and `worth_assembling`, so ADMM's
+# `structured_rung` serves it with `ProductReduced`. That is the only ADMM route to that
+# backend, and no `linsys` name reaches it, so without this entry point the trimmer never sees
+# the stack's `add_reduced_term!` or the inverse-holding solve on it.
+const SK = PureQPBase.StackedOperator{Float64, Tuple{KO, DM}, V}
+solve_stacked(P::M, q::V, A::SK, l::V, u::V) = PureOSQP.solve(P, q, A, l, u; scaling = 0)
+
+# The interior-point method on an `A` that holds structure: every rung above declines it, so
+# `indirect_rung` serves it with `ProductReduced` — holding the Cholesky factor here, where
+# `solve_stacked` gets the inverse, which makes the two different specializations of the solve.
+solve_ipm_kronecker(P::DM, q::V, A::KO, l::V, u::V) =
+    PureOSQP.solve(P, q, A, l, u, PureIPM.InteriorPoint(); scaling = 0)
 
 # `setup` with a keyword, reached directly rather than through `solve`. Its constants flow
 # through the untyped five-argument forwarder, which carries no annotation and is small enough

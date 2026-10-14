@@ -50,6 +50,7 @@ given.
 | `delta` | `1e-6` | `1e-6` | regularization of the polishing solve |
 | `cg_max_iter` | `20` | `500` | conjugate-gradient iterations per linear solve with `linsys = :indirect` |
 | `cg_tol_fraction` | `0.15` | `0.1` | each conjugate-gradient solve stops below this fraction of the level its algorithm sets |
+| `full_force` | `false` | `false` | start every solve with a full factorization rather than one that refreshes only the weights; read by `InteriorPoint`, whose iteration is the one that refreshes weights alone |
 | `verbose` | `false` | `false` | print a header, one line per termination check, and a footer |
 
 `ipm_floor(T)` is `1e-8` in `Float64` and finer arithmetic and `sqrt(eps(T))` in coarser
@@ -73,6 +74,7 @@ struct Options{T <: Real}
     delta::T
     cg_max_iter::Int
     cg_tol_fraction::T
+    full_force::Bool
     verbose::Bool
 end
 
@@ -100,7 +102,7 @@ function Options{T}(;
         max_iter, time_limit = Inf, eps_abs, eps_rel, eps_prim_inf, eps_dual_inf, scaling = 10,
         check_termination, check_dualgap = true, scaled_termination = false,
         warm_starting = true, linsys = :auto, polishing = false, polish_refine_iter = 3,
-        delta = 1.0e-6, cg_max_iter, cg_tol_fraction, verbose = false,
+        delta = 1.0e-6, cg_max_iter, cg_tol_fraction, full_force = false, verbose = false,
     ) where {T <: Real}
     linsys in LINSYS_OPTIONS || throw(
         ArgumentError(lazy"linsys must be one of $LINSYS_LIST, got :$linsys")
@@ -122,7 +124,7 @@ function Options{T}(;
         Int(max_iter), T(time_limit), T(eps_abs), T(eps_rel), T(eps_prim_inf), T(eps_dual_inf),
         Int(scaling), Int(check_termination), Bool(check_dualgap), Bool(scaled_termination),
         Bool(warm_starting), Symbol(linsys), Bool(polishing), Int(polish_refine_iter), T(delta),
-        Int(cg_max_iter), T(cg_tol_fraction), Bool(verbose),
+        Int(cg_max_iter), T(cg_tol_fraction), Bool(full_force), Bool(verbose),
     )
 end
 

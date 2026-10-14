@@ -17,7 +17,9 @@
 #   the A term    `D Aᵀ diag(E²ρ) A D`, which they do. A join contracts this block by block:
 #                 each diagonal block through its own representation's method, each off-diagonal
 #                 block through the column form over the narrower of the pair.
-#   the solve     one Cholesky and the inverse the backend stores.
+#   the solve     one Cholesky, whose factor the backend keeps: `keeps_factor` is true for this
+#                 algorithm, which makes four solves per factorization and so never pays for an
+#                 inversion.
 #
 # The shapes below mirror a real constraint operator: a stack of two joins, one holding a
 # Kronecker product beside a constant block, the other two Kronecker products sharing their row

@@ -200,12 +200,14 @@ adopt_settings!(ls::LinearSystem, alg, options) = nothing
 """
     ReducedInverse <: LinearSystem
 
-Backends that eliminate `ν` and solve the reduced `n×n` system by multiplying against its
-stored inverse.
+Backends that eliminate `ν` and solve the reduced `n×n` system against a stored factorization
+of it.
 
-They differ only in how the reduced matrix is *formed*, which is where the representation
-of `A` matters; once formed, the factorization, the inversion and the per-iteration `symv`
-are the same work regardless. `solve_system!` is therefore written once, here.
+They differ only in how the reduced matrix is *formed*, which is where the representation of
+`A` matters; once formed, the factorization and the per-iteration solve are the same work
+regardless. The `solve_system!` written here applies a stored inverse with one `symv`, which
+is what a backend holding the inverse needs; one holding the Cholesky factor overrides it with
+[`solve_by_factor!`](@ref).
 """
 abstract type ReducedInverse <: LinearSystem end
 
@@ -217,15 +219,17 @@ Eliminates `ν` and solves the `n×n` symmetric positive definite reduced system
     (P̃ + σI + Ãᵀ diag(ρ) Ã) x̃ = rhs_x + Ãᵀ(ρ ⊙ rhs_z),   z̃ = Ã x̃
 
 `W` holds the scaled `Ã` with `sqrt(ρ)` folded in, so the reduced matrix is one `syrk`.
-`Rinv` holds that matrix's inverse in its upper triangle, so each iteration's solve is a
-single `symv` rather than the two triangular solves of a Cholesky `ldiv!`. Both cost `2n²`
-flops, but a triangular solve computes its entries in sequence while `symv` does not, which
-makes it about seven times faster at `n = 200`. Inverting is sound here because the reduced
-matrix carries the `σI` regularization: its conditioning is bounded, and the residuals of
-the two forms agree to within a small factor.
+`Rinv` holds that matrix's inverse in its upper triangle when `FACTOR` is false and the
+Cholesky factor's upper triangle when it is true; [`keeps_factor`](@ref) decides which, and
+[`ProductReduced`](@ref) states the trade. Against the inverse each solve is a single `symv`
+rather than the two triangular solves of a Cholesky `ldiv!`. Both cost `2n²` flops, but a
+triangular solve computes its entries in sequence while `symv` does not, which makes it about
+seven times faster at `n = 200`. Inverting is sound here because the reduced matrix carries
+the `σI` regularization: its conditioning is bounded, and the residuals of the two forms
+agree to within a small factor.
 
-This is the default: the reduced matrix is smaller than the full system for every `m`, and
-measurement puts it faster in every dense regime.
+This is the form the dense rungs reach: the reduced matrix is smaller than the full system
+for every `m`, and measurement puts it faster in every dense regime.
 """
 struct ReducedCholesky{T <: Real, M <: AbstractMatrix{T}, FACTOR} <: ReducedInverse
     W::M
@@ -235,19 +239,23 @@ struct ReducedCholesky{T <: Real, M <: AbstractMatrix{T}, FACTOR} <: ReducedInve
 end
 
 """
-    ReducedCholesky(proto::AbstractVector, n, m; keep_factor = false)
+    ReducedCholesky(proto::AbstractVector, n, m, Val(keep_factor) = Val(false))
 
 Build the backend's storage as `similar(proto, ...)`, so it follows the array type of the
 data it was given rather than always being a `Matrix`. `proto` is a dense vector, not one
 of the problem matrices: both buffers are dense even when `P` and `A` are not.
 
 `keep_factor` holds the Cholesky factor in place of the inverse; see [`ProductReduced`](@ref).
+It arrives as a `Val` because it becomes the `FACTOR` type parameter: a `Bool` argument leaves
+`FACTOR` free in the inferred return type, and with it the `LS` parameter of every workspace
+built around this backend. [`keeps_factor`](@ref) is a dispatch constant, so `Val(keeps_factor(sel))`
+folds at the call site.
 """
 function ReducedCholesky(
-        proto::AbstractVector{T}, n::Integer, m::Integer; keep_factor::Bool = false
-    ) where {T <: Real}
+        proto::AbstractVector{T}, n::Integer, m::Integer, ::Val{FACTOR} = Val(false)
+    ) where {T <: Real, FACTOR}
     W = similar(proto, T, m, n)
-    return ReducedCholesky{T, typeof(W), keep_factor}(W, similar(proto, T, n, n))
+    return ReducedCholesky{T, typeof(W), FACTOR}(W, similar(proto, T, n, n))
 end
 
 """
@@ -719,7 +727,7 @@ factorization: such a method returns `true` and [`setup`](@ref) does not factor 
 method that only picks a representation returns `false`.
 
 A `(P, A)` pair with no method of its own descends [`select_backend`](@ref)'s ladder, whose
-named terminal rung is the dense reduced matrix.
+last rung needs nothing of an operand but products with it.
 """
 choose_backend(P, A, prob, wt, sel::SelectionFor) = select_backend(P, A, prob, wt, sel)
 
@@ -733,15 +741,19 @@ The rungs, in order:
 
 1. [`kkt_rung`](@ref) — factor the full `(n+m)×(n+m)` quasi-definite matrix sparsely.
 2. [`reduced_rung`](@ref) — factor the `n×n` reduced matrix sparsely.
-3. [`block_rung`](@ref) — the reduced matrix decouples into independent blocks, solved one
+3. [`kronecker_rung`](@ref) — a Kronecker pair under one weight, diagonalized rather than
+   assembled.
+4. [`block_rung`](@ref) — the reduced matrix decouples into independent blocks, solved one
    at a time and never assembled whole.
-4. [`lowrank_rung`](@ref) — the reduced matrix is a structured core plus a low-rank
+5. [`lowrank_rung`](@ref) — the reduced matrix is a structured core plus a low-rank
    correction, solved through the correction rather than formed.
-5. [`formed_rung`](@ref) — assemble the reduced matrix from stored entries and invert it
+6. [`formed_rung`](@ref) — assemble the reduced matrix from stored entries and invert it
    densely.
-6. [`dense_rung`](@ref) — form the reduced matrix densely and invert it. Every pair that can
-   be materialized at all stops here.
-7. [`indirect_rung`](@ref) — matrix-free, for an operator the terminal cannot materialize.
+7. [`dense_rung`](@ref) — form the reduced matrix densely and invert it. This is where a pair
+   of plain matrices stops.
+8. [`structured_rung`](@ref) — assemble the reduced matrix column by column from products,
+   for an operand whose representation the dense rung declines to flatten.
+9. [`indirect_rung`](@ref) — matrix-free, for an operator nothing above can serve.
 
 Rungs 1 and 2 decide from the sparsity pattern and then build what they chose, so the
 factorization they produce is the setup factorization and they return `true`. That is why a
@@ -754,9 +766,10 @@ outside it:
 - `linsys = :kkt`, `:dense`, `:indirect` and the named kinds (`:sparse`, `:diagonal`,
   `:tridiagonal`, `:block`, `:kronecker`, `:lowrank`) are handled in [`setup`](@ref) before
   the ladder is reached, so a caller who names a backend never descends it. `:sparse`
-  descends rungs 1, 2 and 5 only, and the named kinds reach their own rung or the
-  [`choose_backend`](@ref) method for their pair rather than the whole ladder. `:indirect`
-  in particular reaches [`indirect_backend`](@ref) directly and not through rung 5.
+  descends the two sparse rungs and [`formed_rung`](@ref) only, and the named kinds reach
+  their own rung or the [`choose_backend`](@ref) method for their pair rather than the whole
+  ladder. `:indirect` in particular reaches [`indirect_backend`](@ref) directly rather than
+  through [`indirect_rung`](@ref).
 - A [`choose_backend`](@ref) method for a specific `(P, A)` pair wins over this ladder by
   dispatch, which is how the structured and banded backends are chosen. The ladder is the
   body of the *fallback* method.
@@ -823,7 +836,7 @@ its product needs. This is where a sparse `A` that no sparse factorization suits
 the buffer is never allocated for one.
 
 Accumulating reads entries, so a method here declines an operand that answers
-[`is_materializable`](@ref) with `false`, as rung 6 does.
+[`is_materializable`](@ref) with `false`, as [`dense_rung`](@ref) does.
 
 The default declines for every algorithm. Whether the rung is worth having at all is a
 property of the algorithm — an inverse rebuilt once serves ADMM's whole run, where an
@@ -836,48 +849,50 @@ formed_rung(P, A, prob, sel::SelectionFor) = nothing
 """
     dense_rung(P, A, prob, sel) -> (LinearSystem, Bool) or nothing
 
-The ladder's terminal, which serves any pair of materializable matrices and is why every
-rung above it may decline freely. What it builds differs by algorithm, so there is no
-generic method: for [`ADMMSelection`](@ref) it is rung 6, [`ReducedCholesky`](@ref), which
-forms the reduced matrix with one dense product and inverts it.
+Where a pair of plain matrices stops, which is why every rung above it may decline freely.
+What it builds differs by algorithm, so there is no generic method: for
+[`ADMMSelection`](@ref) it is [`ReducedCholesky`](@ref), which forms the reduced matrix with
+one dense product and inverts it.
 
-Declines when either operand answers [`is_materializable`](@ref) with `false`, since forming
-the product reads entries. The ladder then falls through to [`indirect_rung`](@ref).
+Declines an operand that answers [`is_materializable`](@ref) with `false`, since forming the
+product reads entries, and one that answers [`holds_structure`](@ref) with `true`, since
+forming it would flatten a representation that answers for itself. Those two go on to
+[`structured_rung`](@ref) and [`indirect_rung`](@ref).
 """
 dense_rung(P, A, prob, sel::SelectionFor) = refuse_selection("PureQPBase.dense_rung", sel)
 
 """
     dense_rung(P, A, prob, sel::ADMMSelection) -> (LinearSystem, Bool) or nothing
 
-Ladder rung 6, the ADMM terminal: [`ReducedCholesky`](@ref).
+Ladder rung 7, where a pair of plain matrices stops: [`ReducedCholesky`](@ref).
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob, sel::ADMMSelection)
     (is_materializable(P) && is_materializable(A)) || return nothing
     (holds_structure(P) || holds_structure(A)) && return nothing
-    return (ReducedCholesky(prob.q0, prob.n, prob.m), false)
+    return (ReducedCholesky(prob.q0, prob.n, prob.m, Val(keeps_factor(sel))), false)
 end
 
 # Every rung declines rather than erroring on a pair it does not serve, so the ladder reaches
-# its next rung instead of the caller reaching a `MethodError`. This is the terminal rung's
-# share of that: an operand outside `AbstractMatrix` is served below, not here.
+# its next rung instead of the caller reaching a `MethodError`. This is this rung's share of
+# that: an operand outside `AbstractMatrix` is served below, not here.
 dense_rung(P, A, prob, sel::ADMMSelection) = nothing
 
 """
     indirect_rung(P, A, prob, sel) -> (LinearSystem, Bool)
 
-What sits below the terminal, reached by an operator [`dense_rung`](@ref) cannot
-materialize. It has no gate: reaching it means nothing above could serve. Whether a
-matrix-free solve is acceptable at all is the algorithm's decision — ADMM takes it, the
-interior-point method refuses — so there is no generic method.
+The ladder's last rung, reached by an operator nothing above could serve. It has no gate:
+reaching it means every rung above declined. What it builds differs by algorithm — ADMM takes
+conjugate gradients, the interior-point method assembles the reduced matrix from products —
+so there is no generic method.
 """
 indirect_rung(P, A, prob, sel::SelectionFor) = refuse_selection("PureQPBase.indirect_rung", sel)
 
 """
     indirect_rung(P, A, prob, sel::ADMMSelection) -> (LinearSystem, Bool)
 
-Ladder rung 7, below the ADMM terminal: conjugate gradients, which needs only products with
-`P` and `A` and so serves an operator no other rung can materialize. Without Krylov loaded
-there is no such backend and [`indirect_backend`](@ref) says so.
+Ladder rung 9, the last: conjugate gradients, which needs only products with `P` and `A` and
+so serves an operator no other rung can materialize. Without Krylov loaded there is no such
+backend and [`indirect_backend`](@ref) says so.
 """
 indirect_rung(P, A, prob, sel::ADMMSelection) =
     (indirect_backend(prob.q0, prob.n, prob.m, nothing), false)
@@ -885,13 +900,15 @@ indirect_rung(P, A, prob, sel::ADMMSelection) =
 """
     structured_rung(P, A, prob, sel) -> (LinearSystem, Bool) or nothing
 
-Serves a pair whose entries can be read but whose representation the dense terminal declines,
-with [`ProductReduced`](@ref): the reduced matrix assembled column by column from products.
+Ladder rung 8: serves a pair whose entries can be read but whose representation
+[`dense_rung`](@ref) declines, with [`ProductReduced`](@ref) — the reduced matrix assembled
+column by column from products.
 
 [`dense_rung`](@ref) refuses an operand that reports [`holds_structure`](@ref), because forming
 the reduced matrix from it would flatten a representation that answers for itself. Such a pair
 has entries and a factorization is available to it, so the rung below — conjugate gradients —
-is not the only answer, and it is a poor one for an ill-conditioned problem.
+is not the only answer, and it is a poor one for an ill-conditioned problem. Which such
+representations the rung takes is [`worth_assembling`](@ref)'s answer.
 
 It holds the reduced matrix, `n²`, and spends `n` products with `P` and `A` on every
 factorization. A caller for whom that is the wrong trade names `linsys = :indirect`.
@@ -904,26 +921,43 @@ structured_rung(P, A, prob, sel::SelectionFor) = nothing
 function structured_rung(P, A, prob, sel::ADMMSelection)
     (holds_structure(P) || holds_structure(A)) || return nothing
     (is_materializable(P) && is_materializable(A)) || return nothing
+    # Either operand may admit the rung, while the backend's assembly is written around `A`
+    # alone: `P` reaches it through the generic column products whatever it is held as. A `P`
+    # that answers `worth_assembling` with an `A` that does not therefore gains nothing from
+    # the rung beyond what the operand itself declined.
     (worth_assembling(P) || worth_assembling(A)) || return nothing
-    return (ProductReduced(prob.q0, prob.n, prob.m, A), false)
+    return (ProductReduced(prob.q0, prob.n, prob.m, A, Val(keeps_factor(sel))), false)
 end
 
 """
     worth_assembling(M) -> Bool
 
-Whether the `n²` reduced matrix is of the same order as what `M` stores, so that assembling it
-from products is worth one factorization serving many solves.
+Whether [`structured_rung`](@ref) may serve an operand of this representation, so that it
+reaches [`ProductReduced`](@ref) instead of conjugate gradients.
 
-False unless the representation says otherwise, which is the safe answer: a representation
-holding quadratically less than the matrix it stands for — `n₁² + n₂²` against `n₁²n₂²` for a
-Kronecker product, `k·n` against `n²` for `k` coupled rows — spends `n` products and `n²` of
-memory to save on solves that were already cheap against it. Measured on a Kronecker pair at
-`n = 360`, assembling the matrix takes 5.61 ms of a 7.32 ms solve and returns 1.14x, inside this
-machine's run-to-run spread.
+False unless the representation says otherwise, which is the safe answer on two counts, either
+of which would be enough.
 
-Declining is also what keeps the ladder's return type narrow. Each rung an operand can reach
-adds a backend to [`select_backend`](@ref)'s union, and the entry points taking these
-representations sit at the width where inference stops narrowing the workspace's `LS` parameter.
+The first is what assembling costs a representation that holds quadratically less than the
+matrix it stands for — `n₁² + n₂²` against `n₁²n₂²` for a Kronecker product, `k·n` against `n²`
+for `k` coupled rows. `bench/admm_structured_rung.jl` times both backends on one system: the
+assembled one solves about twice as fast and to machine precision where conjugate gradients
+stop at `1e-3`, and what decides is the factorization. For a `StackedOperator` that is no dearer
+than the conjugate-gradient backend's own diagonal refresh, so the matrix pays from the first
+solve. For a bare Kronecker pair it grows with `n`: at `n = 360` it is 4.06 ms against 0.51 ms
+while each solve is 6.32 µs against 10.88 µs, so the matrix pays for itself only past about 780
+solves per factorization — more than the run makes between `rho` updates. At `n = 48` the same
+figure is 26 solves, which a run of a few hundred iterations clears, so the small case is a
+measured exception.
+
+The second reason overrides that exception. Every rung an operand can reach adds a backend to
+[`select_backend`](@ref)'s return union, and the entry points taking these representations sit
+at the width where `tmerge` stops keeping the alternatives apart:
+`Base.Compiler.MAX_TYPEUNION_LENGTH`, which `PureQPBase/src/types.jl` states. Past it the
+workspace's `LS` parameter is no longer inferrable and the following `solve!` becomes a dynamic
+dispatch — wiring this rung for `KroneckerOperator`, `RowCoupled` and `BlockDiagonal` costs the
+`--trim` guarantee for five of `PureOSQP/test/trim/entrypoints.jl`'s entry points. Serving the
+small case alone would need that union narrowed first.
 
 Like [`holds_structure`](@ref), this is a statement by the operator's author about its own
 representation rather than a measured threshold, and the method body is a literal, so a call
@@ -1036,7 +1070,7 @@ function named_backend(::Val{LS}, P, A, prob, wt, sel::SelectionFor, preconditio
         check_formable(Val(LS), P, A)
         # Past `choose_backend` entirely. Its rule for a sparse `A` reads the pattern and not
         # the numbers, and this is the way to overrule one that misjudges a problem.
-        return (ReducedCholesky(q0, n, m; keep_factor = keeps_factor(sel)), false)
+        return (ReducedCholesky(q0, n, m, Val(keeps_factor(sel))), false)
     elseif LS === :indirect
         check_preconditioner(preconditioner, typeof(q0))
         return (indirect_backend(q0, n, m, preconditioner), false)
@@ -1360,13 +1394,16 @@ Whether a reduced backend serving this algorithm should hold the Cholesky factor
 its inverse.
 
 False by default, which suits an algorithm solving many times against one factorization: the
-`potri` is paid once and every solve is a `symv`. An algorithm that refactorizes as often as it
-solves answers true, since then the inversion costs more than the solves it saves and the
-triangular solves are the more accurate pair. See [`ProductReduced`](@ref).
+`potri` is paid once and every solve is a `symv`. An algorithm making only a handful of solves
+per factorization answers true, since then the inversion costs more than the solves it saves
+and the triangular solves are the more accurate pair. [`ProductReduced`](@ref) states where the
+crossover sits.
 """
 keeps_factor(sel) = false
-# The interior-point method refactorizes at each iteration's weights and solves against that
-# factorization twice, for the predictor and the corrector.
+# The interior-point method refactorizes at each iteration's weights, and makes four solves
+# against that factorization: `ipm_step!` calls `direction!` for the predictor and again for
+# the corrector, and each `direction!` is one `solve_multiplier!` plus `refine_iter` refinement
+# solves, which defaults to one. Four is far below the count that would pay for a `potri`.
 keeps_factor(::IPMSelection) = true
 
 """
@@ -1614,22 +1651,22 @@ function require_host(v::AbstractVector, what::String)
 end
 
 """
-    ProductReduced{T, M, V} <: ReducedInverse
+    ProductReduced{T, M, V, S, FACTOR} <: ReducedInverse
 
 Forms the reduced matrix `c·D P D + σI + D Aᵀ E diag(ρ) E A D` from products with `P` and `A`
-and inverts it, so a pair that supplies only products gets an exact factorization rather than
-an iteration.
+and factors it, so a pair that supplies only products gets an exact factorization rather than
+an iteration. `FACTOR` says whether the factorization kept is the Cholesky factor or the
+inverse; `R0` holds the weight-independent `c·D P D + σI` across refactorizations.
 
 Column `j` of the reduced matrix is
 
     D[j]·( c·D ⊙ (P eⱼ) + D ⊙ (Aᵀ(E² ⊙ ρ ⊙ (A eⱼ))) ) + σ eⱼ
 
 so the whole matrix costs one product with `P` and two with `A` per column: `3n` applications,
-and no operand of size `m·n` or `(n+m)²` anywhere. Storage is the `n×n` inverse, which is `n²`
-whatever `P` and `A` are held as — against `(n+m)²` for [`FullKKT`](@ref) and the `m×n` buffer
-[`ReducedCholesky`](@ref) needs for its product. Measured on a Kronecker pair at `n = 625`,
-`m = 2208`: 3.0 MiB here, 10.5 MiB for a dense `A`, 61.2 MiB for the KKT; 3.3 ms to assemble
-and 2.2 ms to invert, against 162.8 ms per `bunchkaufman!` of the full system.
+and no operand of size `m·n` or `(n+m)²` anywhere. Storage is two `n×n` matrices, the
+factorization and `R0`, which is `2n²` whatever `P` and `A` are held as — against `(n+m)²` for
+[`FullKKT`](@ref) and the `m×n` buffer [`ReducedCholesky`](@ref) needs for its product. At
+`n = 625`, `m = 2208` that is 6.0 MiB here, 10.5 MiB for a dense `A` and 61.2 MiB for the KKT.
 
 The adjoint product is taken through `adjoint`, never `transpose`: a structured operator
 defines `mul!` for an `Adjoint` and a `Transpose` of one falls back to reading entries, which on
@@ -1646,13 +1683,15 @@ struct ProductReduced{T <: Real, M <: AbstractMatrix{T}, V <: AbstractVector{T},
     # Which one is worth holding depends on how many solves a caller makes per factorization:
     # inverting costs one `potri` and makes each solve one `symv`, keeping the factor costs
     # nothing extra and makes each solve two triangular solves. Measured at `n = 505`: `potri`
-    # 2.27 ms against 90 µs per solve, so the inverse pays from about twenty-five solves up.
-    # The operator-splitting method makes one per iteration against a factorization it keeps for
-    # many, and the interior-point method makes two per factorization.
+    # 2.27 ms against a per-solve 16 µs for the `symv` and 90 µs for the triangular pair, so the
+    # inverse pays from about thirty solves per factorization up. The operator-splitting method
+    # makes one solve per iteration against a factorization it keeps for many; the interior-point
+    # method refactorizes every iteration and makes four solves against it ([`keeps_factor`](@ref)).
     Rinv::M
     # `c·D P D + σI`, the part of the reduced matrix the weights do not enter. Held so
-    # `refactor_weights!` can start from it rather than spend `n` products with `P` again;
-    # `factorize!` is what rebuilds it, and every path that invalidates it calls that.
+    # `refactor_weights!` can start from it rather than spend `n` products with `P` again.
+    # `factorize!` is what writes it, so a caller that changes `P` or `σ` must reach this backend
+    # through `factorize!` and not through `refactor_weights!`.
     R0::M
     # The basis vector, `A eⱼ` and the accumulated column. Owned so a factorization allocates
     # nothing, and private to one backend, so one must not be factored from two tasks at once.
@@ -1709,22 +1748,25 @@ own, handed over at the call.
 reduced_term_scratch(::Type{T}, A) where {T} = (adjoint(A),)
 
 """
-    ProductReduced(proto::AbstractVector, n, m, A; keep_factor = false)
+    ProductReduced(proto::AbstractVector, n, m, A, Val(keep_factor) = Val(false))
 
 Build the storage as `similar(proto, ...)`, so it follows the array type of the data rather
 than always being a `Matrix`.
 
 `keep_factor` holds the Cholesky factor in place of the inverse, which is what a caller making
-a couple of solves per factorization wants; the default inverts, which is what a caller making
-many of them wants. It is a type parameter rather than a field so neither solve carries a
-branch.
+a few solves per factorization wants; the default inverts, which is what a caller making many
+of them wants. It is a type parameter rather than a field so neither solve carries a branch,
+and it arrives as a `Val` so that parameter is inferrable: a `Bool` argument leaves `FACTOR`
+free in the inferred return type, and with it the `LS` parameter of every workspace built
+around this backend. [`keeps_factor`](@ref) is a dispatch constant, so `Val(keeps_factor(sel))`
+folds at the call site.
 """
 function ProductReduced(
-        proto::AbstractVector{T}, n::Integer, m::Integer, A; keep_factor::Bool = false
-    ) where {T <: Real}
+        proto::AbstractVector{T}, n::Integer, m::Integer, A, ::Val{FACTOR} = Val(false)
+    ) where {T <: Real, FACTOR}
     scratch = reduced_term_scratch(T, A)
     R = similar(proto, T, n, n)
-    return ProductReduced{T, typeof(R), typeof(similar(proto, T, n)), typeof(scratch), keep_factor}(
+    return ProductReduced{T, typeof(R), typeof(similar(proto, T, n)), typeof(scratch), FACTOR}(
         R, similar(proto, T, n, n), similar(proto, T, n), similar(proto, T, m),
         similar(proto, T, n), scratch, similar(proto, T, m)
     )

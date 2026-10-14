@@ -864,9 +864,10 @@ symbolic analysis it already did, so every refactorization after the first pays 
 numeric phase. The factorization is `L Lᵀ`, not `L D Lᵀ`; the solve below depends on that and
 [`cholmod_backend`](@ref) checks it before selecting this backend.
 
-This cannot be a [`PureQPBase.ReducedInverse`](@ref): that stores `R⁻¹` and solves with one
-`symv`, and the inverse of a sparse matrix is dense. The Cholesky factor is kept instead and
-each solve is a pair of sparse triangular solves. On a banded `R` that is the better trade by
+This cannot be a [`PureQPBase.ReducedInverse`](@ref): those hold a dense `n×n` factorization,
+and a sparse reduced matrix has no dense form worth holding — its inverse in particular is
+dense whatever the pattern. The sparse Cholesky factor is kept instead and each solve is a pair
+of sparse triangular solves. On a banded `R` that is the better trade by
 a wide margin — at `n = 4000` a refactorization goes from 1063 ms to 0.66 ms and a solve from
 1430 µs to 71 µs — and on a filled-in `R` it is worse, which [`sparse_form`](@ref) decides
 from the pattern.

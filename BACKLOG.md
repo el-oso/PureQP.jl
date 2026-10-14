@@ -124,13 +124,17 @@ when this happens; recognizing it would turn a timeout into an answer.
 
 `structured_rung` serves an operand answering `worth_assembling`, which a `StackedOperator`
 does, so a stack reaches `ProductReduced` under `OperatorSplitting` rather than conjugate
-gradients. A representation holding quadratically less than the matrix it stands for answers
-false and still reaches conjugate gradients: a `KroneckerOperator`, a `RowCoupled`, a
-`BlockDiagonal`. Two reasons stand behind that, and either alone would be enough:
+gradients. A bare `KroneckerOperator`, a `RowCoupled` and a `BlockDiagonal` answer false and
+still reach conjugate gradients.
+
+Two reasons stand behind that, and either alone would be enough:
 
   - the `n` products that assemble the matrix, and the `n²` holding it, buy back solves that
-    were already cheap against such a representation. `bench/admm_structured_rung.jl` measures
-    1.14x on a Kronecker pair at `n = 360`, where assembling takes 5.61 ms of a 7.32 ms solve;
+    were already cheap against such a representation. `bench/admm_structured_rung.jl` times both
+    backends on one system: at `n = 360` the assembled factorization is 4.06 ms against the
+    conjugate-gradient backend's 0.51 ms and each solve 6.32 µs against 10.88 µs, so the matrix
+    pays for itself only past about 780 solves per factorization, which is more than the run
+    makes between `rho` updates;
   - every rung an operand can reach adds a backend to `select_backend`'s return union, and the
     entry points taking these representations sit at the width where the workspace's `LS`
     parameter stops being inferrable — `Base.Compiler.MAX_TYPEUNION_LENGTH`, which
@@ -138,13 +142,10 @@ false and still reaches conjugate gradients: a `KroneckerOperator`, a `RowCouple
     `solve_lowrank`, `solve_kronecker`, `solve_lowrank_scaled`, `setup_kronecker` and
     `solve_block`.
 
-The first reason has a measured exception the second overrides: the same benchmark gives 14.38x
-on a Kronecker pair at `n = 48`, where the `n²` matrix is small enough that assembling it costs
-tens of microseconds. Serving the small case alone would need the union narrowed first, so that
-is where to start if those pairs are worth taking.
-
-A block-pair `add_reduced_term!` for a join is what makes the assembled arm worth its
-factorization here (`docs/design/horizontal-operators.md`).
+The first reason has a measured exception the second overrides: the same benchmark puts the
+breakeven at 26 solves for a Kronecker pair at `n = 48`, which a run of a few hundred iterations
+clears. Serving the small case alone would need the union narrowed first, so that is where to
+start if those pairs are worth taking.
 
 ## Operator splitting does not reach the tolerance at cond(P) = 1e12
 

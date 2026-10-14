@@ -76,10 +76,11 @@ Base.size(A::StackedOperator) = (A.rowstart[end] - 1, A.cols)
 # in a representation that has lost which rows belong to which block.
 holds_structure(::StackedOperator) = true
 
-# A stack holds every row of every block, so what it stores is of the same order as the matrix it
-# stands for, and the reduced matrix assembled from it is worth the one factorization that serves
-# every solve. The blocks' own representations are read through their reduced terms, so a
-# compressing block loses nothing by being stacked.
+# A stack reaches `ProductReduced` rather than conjugate gradients. Its blocks are read through
+# their own reduced terms, so assembling the matrix costs no more than the conjugate-gradient
+# backend's diagonal refresh and every solve against it is faster and exact
+# (`bench/admm_structured_rung.jl`): there is no solve count past which the stack would have been
+# better off iterating.
 worth_assembling(::StackedOperator) = true
 
 # Each block checks its own entries in its own way, so a Kronecker block checks its factors.

@@ -43,6 +43,10 @@
         (block, (; linsys = :block), PureQPBase.BlockReduced),
         (lowrank, (; linsys = :lowrank), PureQPBase.DiagonalLowRank),
         (kronecker, (; linsys = :kronecker, scaling = 0), PureQPBase.KroneckerReduced),
+        # `keeps_factor(IPMSelection())` is true, which makes `Rinv` the Cholesky factor and
+        # `solve_system!` a different method. That variant is on the interior-point hot path,
+        # so it is proved beside the inverse one above.
+        (dense, (; linsys = :dense, selection = PureQPBase.IPMSelection()), PureQPBase.ReducedCholesky),
     ]
     # `ProductReduced` is reached through the interior-point ladder rather than by naming a
     # `linsys`, so `backend_for` cannot build it and it is proved in its own block below.
@@ -76,18 +80,23 @@
     # Built with `raw_problem` rather than `backend_for`: this backend is reached through the
     # interior-point ladder, so no `linsys` name builds it, and naming one that declines these
     # pairs would throw before the proof runs.
-    for (label, Pin, Ain) in (
-            ("contraction", kronecker[1], Ak),
-            ("stacked", kronecker[1], PureQPBase.StackedOperator(Matrix(Ak), Diagonal(fill(1.5, 20)))),
+    # `keep_factor` is the backend's `FACTOR` parameter, so each setting is its own
+    # specialization of both solves; the interior-point method is the caller that keeps the
+    # factor and the operator-splitting one the caller that inverts.
+    for (label, Pin, Ain, keep) in (
+            ("contraction", kronecker[1], Ak, Val(false)),
+            ("contraction, factor kept", kronecker[1], Ak, Val(true)),
+            ("stacked", kronecker[1], PureQPBase.StackedOperator(Matrix(Ak), Diagonal(fill(1.5, 20))), Val(false)),
             (
                 "joined", kronecker[1],
                 PureQPBase.JoinedOperator(PureQPBase.KroneckerOperator(randn(4, 3), randn(5, 4)), Fill(0.5, 20, 8)),
+                Val(false),
             ),
-            ("products", Diagonal(fill(2.0, 20)), PureQPBase.ProductOperator{Float64}(Matrix(Ak))),
+            ("products", Diagonal(fill(2.0, 20)), PureQPBase.ProductOperator{Float64}(Matrix(Ak)), Val(false)),
         )
         prob = raw_problem(Pin, Ain, 20, size(Ain, 1))
         wt = raw_weights(fill(0.75, size(Ain, 1)), 1.0e-6)
-        ls = PureQPBase.ProductReduced(prob.q0, prob.n, prob.m, prob.A)
+        ls = PureQPBase.ProductReduced(prob.q0, prob.n, prob.m, prob.A, keep)
         @test TypeContracts.check_contract(typeof(ls), PureQPBase.LinearSystem).passed
         @test PureQPBase.factorize!(ls, prob, wt)
         bx, bz = randn(prob.n), randn(prob.m)

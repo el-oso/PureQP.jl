@@ -107,9 +107,12 @@ mutable struct InteriorPointWorkspace{
     reg_primal::T
     reg_dual::T
     reg_bumps::Int
-    # The backend's factorization was built with a `sigma` other than the current one, so the
-    # next factorization must be a full one.
-    sigma_changed::Bool
+    # Whatever the backend caches of the weight-independent part of the Newton system — `P`,
+    # `σ` and the equilibration, never the weights — is not current, so the next factorization
+    # must be a full [`factorize!`](@ref) rather than a [`refactor_weights!`](@ref). Set by
+    # `set_regularization!` when `σ` moves, by `update!` when `P` is replaced, by `solve!` when
+    # the `full_force` option is on, and true at setup, since nothing has factorized yet.
+    needs_full_factorize::Bool
     # Guards: consecutive steps shorter than `STALL_STEP`, consecutive iterations whose merit
     # (`mu`, or `rnorm` without an inequality side) did not fall, the previous merit, whether
     # the certificate tests now run every iteration, and whether the iterate has passed the
@@ -204,7 +207,7 @@ function ipm_workspace(
         buf(n), buf(m), buf(n), buf(m), buf(m), buf(m), buf(m), buf(m), buf(m),
         buf(n), buf(m), buf(n), buf(m),
         buf(n), buf(m),
-        algorithm.reg_primal, algorithm.reg_dual, 0, false,
+        algorithm.reg_primal, algorithm.reg_dual, 0, true,
         0, 0, zero(T), false, false,
         zero(T), zero(T), zero(T),
         zero(T), zero(T), zero(T), zero(T), zero(T), zero(T), zero(T), zero(T),
@@ -342,16 +345,18 @@ end
 """
     dense_rung(P, A, prob, sel::IPMSelection) -> (LinearSystem, Bool) or nothing
 
-The interior-point terminal: [`FullKKT`](@ref) when LAPACK serves the element type. The
-reduced matrix it avoids is inverted once per outer iteration for a handful of solves, and
-its weights reach `1/δ_d`. Other element types get [`ReducedCholesky`](@ref), since
-`bunchkaufman!` has no generic method.
+Where a materializable pair stops under the interior-point method: [`FullKKT`](@ref) when
+LAPACK serves the element type. The reduced matrix it avoids is refactorized every outer
+iteration for four solves, and its weights reach `1/δ_d`, so forming it squares a conditioning
+this method cannot afford to square. Other element types get [`ReducedCholesky`](@ref), since
+`bunchkaufman!` has no generic method; it holds the Cholesky factor rather than an inverse,
+which is [`keeps_factor`](@ref)'s answer for this algorithm.
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob::Problem{T}, sel::IPMSelection) where {T}
     (is_materializable(P) && is_materializable(A)) || return nothing
     (holds_structure(P) || holds_structure(A)) && return nothing
     T <: LinearAlgebra.BlasFloat && return (FullKKT(prob.q0, prob.n, prob.m), false)
-    return (ReducedCholesky(prob.q0, prob.n, prob.m; keep_factor = keeps_factor(sel)), false)
+    return (ReducedCholesky(prob.q0, prob.n, prob.m, Val(keeps_factor(sel))), false)
 end
 
 dense_rung(P, A, prob, sel::IPMSelection) = nothing
@@ -383,9 +388,10 @@ lowrank_rung(P::Diagonal, A::RowCoupled, prob, wt, sel::IPMSelection; require_cr
     indirect_rung(P, A, prob, sel::IPMSelection)
 
 Serves the pair with [`PureQPBase.ProductReduced`](@ref): the reduced matrix assembled from
-products with `P` and `A` and then inverted. Nothing of size `m·n` or `(n+m)²` is formed, which
-is what the rungs above this one declined to do, and the solve stays a factorization rather than
-becoming an iteration.
+products with `P` and `A` and factorized by Cholesky. Nothing of size `m·n` or `(n+m)²` is
+formed, which is what the rungs above this one declined to do, and the solve stays a
+factorization rather than becoming an iteration. The factor is kept rather than inverted, since
+this algorithm makes four solves per factorization ([`PureQPBase.keeps_factor`](@ref)).
 
 What it does hold is the reduced matrix itself, `n²`, which no factored form of an
 interior-point system goes below: its Cholesky factor has full Kronecker rank with no spectral
@@ -398,7 +404,7 @@ supply them.
 """
 function indirect_rung(P, A, prob, sel::IPMSelection)
     products_only(P) && products_only(A) && refuse_ipm_no_products()
-    return (ProductReduced(prob.q0, prob.n, prob.m, A; keep_factor = keeps_factor(sel)), false)
+    return (ProductReduced(prob.q0, prob.n, prob.m, A, Val(keeps_factor(sel))), false)
 end
 
 "Whether `M` answers neither entries nor products, which leaves nothing to assemble from."
@@ -457,7 +463,9 @@ rebuilds them from `x`, `y` and the current classes at the next solve.
 No factorization happens here: every outer iteration factorizes the Newton system at its own
 weights regardless, and a solve resets the regularization from the algorithm parameters
 before its first one, so a later solve picks up the new data whether or not `P` or `A`
-changed.
+changed. A new `P` does set `needs_full_factorize`, because the weights do not enter the part
+of the system `P` belongs to: a backend caching that part refreshes it only in
+[`factorize!`](@ref), so the next factorization has to be the full one.
 """
 function update!(
         ws::InteriorPointWorkspace{T}; q = nothing, l = nothing, u = nothing, P = nothing, A = nothing
@@ -473,6 +481,7 @@ function update!(
     )
     ws.prob = adopt_update!(prob; P, A, q, l, u)
     prob = ws.prob
+    isnothing(P) || (ws.needs_full_factorize = true)
     if !isnothing(l) || !isnothing(u)
         ws.n_sides = classify_rows!(ws.rclass, ws.has_l, ws.has_u, prob)
     end
