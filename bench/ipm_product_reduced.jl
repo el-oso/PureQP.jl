@@ -61,7 +61,10 @@ function structured_pair(rng, k1, k2, kb)
     m, n = size(A)
     X = randn(rng, n, n)
     P = Matrix(Symmetric(X'X ./ n + 8I))
-    b = randn(rng, m)
+    # Bracket a point the operator actually reaches. Bounds drawn around an arbitrary vector
+    # leave the pair infeasible for most seeds, since there are more rows than columns, and the
+    # figures below only mean anything for a pair that solves.
+    b = A * randn(rng, n)
     return P, A, randn(rng, n), b .- rand(rng, m), b .+ rand(rng, m)
 end
 
@@ -115,6 +118,8 @@ function main()
     for c in cases
         c.backend == "ProductReduced" ||
             @warn "case reached $(c.backend), not ProductReduced" case = c.name
+        c.status == "SOLVED" ||
+            @warn "case did not solve, so its timings describe nothing" case = c.name c.status
     end
 
     mkpath(dirname(RESULTS))
