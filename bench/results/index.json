@@ -290,8 +290,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 2980,
-      "julia_version": "1.13.0",
+      "bytes": 3046,
+      "julia_version": "1.13.1",
       "keys": [
         "budget_seconds",
         "cases",
@@ -431,9 +431,9 @@
       "script": "rho_update.jl"
     },
     {
-      "blas_threads": 1.0,
-      "bytes": 22899,
-      "julia_version": "1.12.7",
+      "blas_threads": 8.0,
+      "bytes": 23267,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -646,8 +646,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 19709,
-      "julia_version": "1.12.7",
+      "bytes": 19797,
+      "julia_version": "1.13.1",
       "keys": [
         "backends",
         "blas_threads",
@@ -665,8 +665,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 6319,
-      "julia_version": "1.13.0",
+      "bytes": 6325,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -890,8 +890,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 127006,
-      "julia_version": "1.12.7",
+      "bytes": 128310,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "budget_seconds",

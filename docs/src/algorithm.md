@@ -397,17 +397,20 @@ outer iterations, the same for both columns unless the table says otherwise.
 | `:ldlfactorizations`, `:cholmod` (sparse reduced) | `banded_qp(200, 300)`; QP, LP | solved | ≤ 2.4e-9 | 9 and 12, equal |
 | `:sparse_kkt`, `:ldl_kkt` (sparse KKT) | `banded_qp(200, 300)`, Portfolio, Lasso, SVM, Huber | solved | ≤ 7.7e-9 | 7–12, equal |
 | `:lowrank` | two diagonal-plus-low-rank pairs; QP and with equality rows | solved | ≤ 4.3e-9 | 8–9, equal |
-| `:lowrank` | the same pairs as LPs | not solved (3 of 4 at 100 iterations, 1 numerical error) | up to 1e24 | 54–100 / 8–11 |
+| `:lowrank` | the same pairs as LPs | not solved (2 at 100 iterations, 2 numerical errors) | up to 4.7e7, and no residual at all where the solve ends | 44–100 / 8–11 |
 
 A backend stays among the interior-point candidates when it solves every one of its problems
 with a referee below `1e-5`, in at most twice the iterations `:kkt` takes, on the problems in
 the table above. Every backend passes except `:lowrank`, which fails on linear programs. When
 `P` is zero, a variable that only the dense rows reach keeps nothing but `reg_primal` in the
 diagonal core. That puts `1e8` in the core's inverse, and on those problems the Woodbury solve
-ends without a solution. So under `InteriorPoint()`, `linsys = :auto` gives a diagonal `P` with
-a `RowCoupled` `A` to `:kkt`, and `linsys = :lowrank` throws. `:sparse_formed` has no
-interior-point counterpart, because no interior-point candidate forms and inverts the reduced
-matrix.
+ends without a solution. So `linsys = :lowrank` throws under `InteriorPoint()`, and `:auto`
+gives a diagonal `P` with a `RowCoupled` `A` to `product_reduced`: a `RowCoupled` answers
+`holds_structure`, so the rungs that read entries decline it and the one that assembles the
+reduced matrix from products takes it. `:sparse_formed` has no interior-point counterpart,
+because it holds the inverse of the reduced matrix, and this method refactorizes at every
+iteration's weights and then solves twice — so its reduced backends keep the Cholesky factor
+instead.
 
 `:kkt` copies `A` into the full matrix one entry at a time at every factorization. We measured
 that copy on one core: 3% of an iteration on a dense QP (`n = 200`, `m = 400`), 7% on Lasso

@@ -106,8 +106,12 @@ for nthreads in THREADS
         # `LazyPSD` answers the reduced diagonal in closed form; a `ProductOperator` has no
         # entries to answer it from and runs unpreconditioned, which `probe` does not change
         # -- probing serves equilibration's column norms, not this seam.
-        lazy_prec = !all(isone, lazy.linsys.prec)
-        map_prec = !all(isone, lmap.linsys.prec)
+        # Whether the backend is preconditioned at all: an `IdentityPreconditioner` carries no
+        # values, and a Jacobi one built from a diagonal of ones is the identity in effect.
+        preconditioned(ls) =
+            ls.precond isa PureQPBase.JacobiPreconditioner && !all(isone, ls.precond.dinv)
+        lazy_prec = preconditioned(lazy.linsys)
+        map_prec = preconditioned(lmap.linsys)
 
         sl = @be PureOSQP.setup($P, $q, $A, $l, $u; OPTS...) seconds = BUDGET
         sm = @be PureOSQP.setup($Plm, $q, $A, $l, $u; OPTS...) seconds = BUDGET
