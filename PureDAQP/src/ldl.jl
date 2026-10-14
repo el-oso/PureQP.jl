@@ -103,8 +103,22 @@ those already active. It is stored as an exact zero: that is what makes the
 dependency detectable, since the caller scans `D` for a zero and takes the
 singular branch instead of dividing by it.
 """
+# Capacity is the caller's invariant, so exceeding it is a bug rather than a condition to handle.
+@noinline function throw_gram_full(k::Int, kmax::Int)
+    throw(
+        ArgumentError(
+            lazy"the Gram working set holds $kmax rows and a $(k + 1)th was added: the set " *
+                "carries one row more than there are variables and no path may exceed that"
+        )
+    )
+end
+
 function add_row!(F::GramLDL{T}, g::AbstractVector{T}, beta::T, zero_tol::T = sqrt(eps(T))) where {T}
     k = F.k
+    # The writes below are `@inbounds`, so a `k` past the buffer would write foreign memory
+    # rather than raise. The branch is never taken, and `@noinline` keeps its throw off the
+    # hot path's allocation proof.
+    k + 1 <= size(F.L, 1) || throw_gram_full(k, size(F.L, 1))
     if iszero(k)
         F.L[1, 1] = one(T)
         F.D[1] = beta
@@ -287,6 +301,12 @@ function add_row!(W::WorkingSetGram{T}, m_r::AbstractVector{T}) where {T}
     g = view(W.g, 1:k)
     mul!(g, transpose(view(W.Ma, :, 1:k)), m_r)
     add_row!(W.F, g, beta, eps(T))
+    # A row past the variable count is dependent on the rows held, whatever its pivot came out
+    # as: `n + 1` rows in `n` variables always admit a combination. That pivot is formed by
+    # cancellation, so it is noise of any size rather than the zero `first_dependent` reads, and
+    # a set claiming full rank in fewer dimensions than it has rows answers a singular system as
+    # though it were solvable.
+    k + 1 > size(W.Ma, 1) && (W.F.D[k + 1] = zero(T))
     # An explicit loop rather than `copyto!`, which checks whether two views of one matrix
     # alias and copies the source when it cannot tell -- an allocation site the hot-path
     # guarantee sees whether or not the branch can be reached.

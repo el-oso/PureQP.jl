@@ -1036,3 +1036,71 @@ end
     @test sol.status == SOLVED
     @test norm(sol.x, Inf) > 1.0e5
 end
+
+@testitem "the Gram working set never claims more independent rows than there are variables" begin
+    using PureQPBase, PureDAQP, LinearAlgebra, Random
+
+    # Five rows within `1e-4` rad of one another in two variables, with tight bounds: the state
+    # that puts a row dependent by counting into the working set. Its pivot is formed by
+    # cancellation, so reading it decides rank from noise -- the set then answers a singular
+    # system as though it were solvable, and reports a point violating a constraint as `SOLVED`.
+    function near_parallel(rng)
+        base = randn(rng, 2)
+        base ./= norm(base)
+        rows = Matrix{Float64}(undef, 6, 2)
+        for i in 1:5
+            th = 1.0e-4 * randn(rng)
+            rows[i, 1] = base[1] * cos(th) - base[2] * sin(th)
+            rows[i, 2] = base[1] * sin(th) + base[2] * cos(th)
+        end
+        rows[6, :] = randn(rng, 2)
+        l = randn(rng, 6)
+        return rows, randn(rng, 2), l, l .+ 1.0e-3 .* rand(rng, 6)
+    end
+
+    P = Matrix(1.0I, 2, 2)
+    rng = MersenneTwister(4242)
+    for _ in 1:400
+        A, q, l, u = near_parallel(rng)
+        rows = solve(P, q, A, l, u, ActiveSet(working_set = :rows))
+        gram = solve(P, q, A, l, u, ActiveSet(working_set = :gram))
+        # The two representations factor the same rows, so they answer the same question.
+        @test gram.status === rows.status
+        # And an answer called `SOLVED` satisfies the constraints it was given.
+        if gram.status === PureQPBase.SOLVED
+            @test maximum(max.(l .- A * gram.x, A * gram.x .- u)) < 1.0e-6
+        end
+    end
+end
+
+@testitem "more equalities than variables are carried as inequalities however they arrive" begin
+    using PureQPBase, PureDAQP, LinearAlgebra, Random
+
+    # The working set holds at most `n` rows and the reset activates every equality, so a problem
+    # stating more than `n` of them is capped: each further one is implied by the `n` that span
+    # the variables, or contradicts them, and priced as an inequality it says so either way.
+    # `update!` rebuilds the classification from new bounds and caps it the same way, where
+    # handing the reset more rows than the set holds reached past the factorization's storage.
+    Random.seed!(7)
+    A = randn(5, 2)
+    b = A * randn(2)
+    l, u = b .- rand(5), b .+ rand(5)
+    q = randn(2)
+    P = Matrix(1.0I, 2, 2)
+
+    for ws in (:rows, :gram), neq in (3, 4, 5)
+        tightened_l, tightened_u = copy(l), copy(u)
+        for j in 1:neq
+            tightened_u[j] = tightened_l[j] = b[j]
+        end
+        # Stated at setup, and reached through `update!`, must agree.
+        direct = solve(P, q, A, tightened_l, tightened_u, ActiveSet(working_set = ws))
+        w = setup(P, q, A, l, u, ActiveSet(working_set = ws))
+        solve!(w)
+        update!(w; l = tightened_l, u = tightened_u)
+        updated = solve!(w)
+        @test direct.status === PureQPBase.SOLVED
+        @test updated.status === direct.status
+        @test updated.x ≈ direct.x rtol = 1.0e-6
+    end
+end

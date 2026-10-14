@@ -365,9 +365,10 @@ function full_set_step!(
     return true
 end
 
-# The Gram representation has room for the dependent row, so the case above does not arise
-# for it: `maxrows` counts one more than there are variables, the row goes in at a zero
-# pivot, and `first_dependent` picks it up on the next pass through the loop.
+# The Gram representation has room for the dependent row, so the case above does not arise for
+# it: it holds one row more than there are variables, the row goes in at a pivot `add_row!` sets
+# to zero because it is past the variable count, and `first_dependent` picks it up on the next
+# pass through the loop.
 full_set_step!(
     ws::LDPWorkspace{T, <:WorkingSetGram}, r::Integer, side::Int8, ::T
 ) where {T} = (activate!(ws, r, side); true)
@@ -814,17 +815,7 @@ function pack_reduction(
         R, M, bu::Vector{T}, bl::Vector{T}, iseq::AbstractVector{Bool}, scale::Vector{T},
         eps_prox::T, n::Int, m::Int, ::Type{WS}
     ) where {T, WS}
-    # The working set is a factorization of its rows and holds at most `n` of them, so at most
-    # `n` rows can be equalities the reset puts in it unconditionally. A problem may state more:
-    # `n` of them span everything the others can say, so each further one is either implied by
-    # those or contradicts them. Priced as an inequality it is satisfied in the first case and
-    # proves the problem infeasible in the second, which is the answer either way, and is the
-    # only form the set can carry it in.
-    held = 0
-    for j in 1:m
-        iseq[j] || continue
-        held < n ? (held += 1) : (iseq[j] = false)
-    end
+    cap_equalities!(iseq, n, m)
     ws = LDPWorkspace(M, iseq, scale, build_working_set(WS, T, n, min(m, n) + 1))
     Rt = transpose(R)
     return DAQPReduction{T, typeof(R), typeof(Rt), typeof(ws.W), typeof(M)}(
@@ -851,9 +842,43 @@ function set_targets!(red::DAQPReduction{T}, v::AbstractVector{T}) where {T}
 end
 
 """
-    rebuild_bounds!(red, bupper, blower) -> red
+    cap_equalities!(iseq, n, m) -> Bool
+
+Demote every equality past the `n`th to an inequality.
+
+The working set is a factorization of its rows and holds at most `n` of them, so at most `n` rows
+can be equalities the reset puts in it unconditionally. A problem may state more: `n` of them span
+everything the others can say, so each further one is either implied by those or contradicts them.
+Priced as an inequality it is satisfied in the first case and proves the problem infeasible in the
+second, which is the answer either way, and is the only form the set can carry it in.
+
+Every path that decides which rows are equalities applies this, so the reset cannot be handed more
+than the set can hold: at setup, and again whenever [`update!`](@ref) rebuilds the bounds.
+
+Returns whether it demoted any, which is what tells a caller the classification moved.
+"""
+function cap_equalities!(iseq::AbstractVector{Bool}, n::Integer, m::Integer)
+    held = 0
+    demoted = false
+    for j in 1:m
+        iseq[j] || continue
+        if held < n
+            held += 1
+        else
+            iseq[j] = false
+            demoted = true
+        end
+    end
+    return demoted
+end
+
+"""
+    rebuild_bounds!(red, bupper, blower) -> Bool
 
 Adopt new caller bounds, keeping the factorization and the transformed constraint matrix.
+
+Returns whether the equality classification moved, which is what tells the caller the working set
+has to be reset rather than warm started.
 """
 function rebuild_bounds!(red::DAQPReduction{T}, bupper::AbstractVector{T}, blower::AbstractVector{T}) where {T}
     iseq = red.ws.iseq
@@ -869,6 +894,9 @@ function rebuild_bounds!(red::DAQPReduction{T}, bupper::AbstractVector{T}, blowe
         moved |= eq != iseq[j]
         iseq[j] = eq
     end
+    # The cap applies here as it does at setup: bounds that make more than `n` rows equalities
+    # would otherwise hand the reset more rows than the working set can hold.
+    moved |= cap_equalities!(iseq, nvars(red.ws.M), length(red.bu))
     return moved
 end
 
