@@ -679,11 +679,11 @@ function solve!(ws::InteriorPointWorkspace{T}) where {T}
     ws.iter = 0
     ws.reg_bumps = 0
     set_regularization!(ws, alg.reg_primal, alg.reg_dual)
-    # The escape hatch of `full_force`: the backend rebuilds everything once here, so a solve
+    # The escape hatch of `always_factorize`: the backend rebuilds everything once here, so a solve
     # cannot start from anything it cached earlier. Nothing in the method needs this — every
     # path that changes `P` or `σ` already marks a full factorization as owed — and leaving it
     # off is what makes the `R0` hoist worth having.
-    s.full_force && (ws.needs_full_factorize = true)
+    s.always_factorize && (ws.needs_full_factorize = true)
     ws.short_steps = 0
     ws.flat_merit = 0
     ws.last_merit = INFTY(T)

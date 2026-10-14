@@ -111,7 +111,7 @@ mutable struct InteriorPointWorkspace{
     # `σ` and the equilibration, never the weights — is not current, so the next factorization
     # must be a full [`factorize!`](@ref) rather than a [`refactor_weights!`](@ref). Set by
     # `set_regularization!` when `σ` moves, by `update!` when `P` is replaced, by `solve!` when
-    # the `full_force` option is on, and true at setup, since nothing has factorized yet.
+    # the `always_factorize` option is on, and true at setup, since nothing has factorized yet.
     needs_full_factorize::Bool
     # Guards: consecutive steps shorter than `STALL_STEP`, consecutive iterations whose merit
     # (`mu`, or `rnorm` without an inequality side) did not fall, the previous merit, whether

@@ -66,7 +66,7 @@ what is true now; this file is where the history lives.
 
 ### Added
 
-- **The `full_force` option**, default `false`, starts every solve with a full factorization
+- **The `always_factorize` option**, default `false`, starts every solve with a full factorization
   instead of one that refreshes only the weight-dependent part. Nothing in either algorithm
   needs it — every path that changes `P` or `σ` marks a full factorization as owed — so it is an
   escape hatch for a backend one suspects of holding something stale, paid for with one extra
