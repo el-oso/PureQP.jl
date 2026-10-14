@@ -41,20 +41,20 @@ include(joinpath(@__DIR__, "..", "..", "bench", "suite_problems.jl"))
 
 pin_to_cpu!(CORE)
 const P, q, A, l, u = random_qp(6)
-mk() = PO.setup(P, q, A, l, u, PO.InteriorPoint(); eps_abs = TOL, eps_rel = TOL)
+mk() = PO.setup(P, q, A, l, u, InteriorPoint(); eps_abs = TOL, eps_rel = TOL)
 
 us(b) = 1.0e-3 * minimum(b.times)
 row(name, t, total, allocs, bytes) =
     @printf("  %-34s %8.3f %6.1f%% %7d %9d\n", name, t, 100t / total, allocs, bytes)
 
-b_all = @benchmark PO.solve($P, $q, $A, $l, $u, PO.InteriorPoint(); eps_abs = TOL, eps_rel = TOL)
+b_all = @benchmark PO.solve($P, $q, $A, $l, $u, InteriorPoint(); eps_abs = TOL, eps_rel = TOL)
 b_setup = @benchmark mk()
 total = us(b_all)
 @printf("Random QP n=%d m=%d, tol=%.0e: %.3f us total, %d allocations, %d B\n", size(A, 2), size(A, 1), TOL, total, b_all.allocs, b_all.memory)
 
 # --- setup, replayed part by part ---------------------------------------------------------
 T = Float64
-alg = PO.InteriorPoint()
+alg = InteriorPoint()
 nv, mv = PO.validate(P, q, A, l, u)
 opts = PO.Options{T}(; PO.algorithm_defaults(alg, T)..., linsys = :auto, eps_abs = TOL, eps_rel = TOL)
 algv = PO.element_typed(alg, T, opts)
@@ -73,7 +73,9 @@ for (name, b) in (
         "is_convex" => @benchmark(PO.is_convex(T, $P, $(algv.reg_primal))),
         "equilibration (validated_problem)" => @benchmark(PO.validated_problem(T, $nv, $mv, $P, $q, $A, $l, $u, $(opts.scaling))),
         "backend selection + 1st factor" => @benchmark(PO.choose_backend($P, $A, $prob, $wt, $sel)),
-        "workspace allocation" => @benchmark(PO.ipm_workspace($backend, $prob, $wt, $algv, $opts)),
+        "workspace allocation" => @benchmark(
+            PureIPM.ipm_workspace($backend, $prob, $wt, $algv, $opts)
+        ),
     )
     row(name, us(b), total, b.allocs, b.memory)
 end
@@ -81,10 +83,10 @@ end
 # The starting point refactorizes the system `setup` already factored, at the same unit
 # weights, so the cost of one numeric factorization is paid twice before the loop begins.
 b_factor = @benchmark PO.factorize!(w.linsys, w.prob, w.weights) setup = (w = mk()) evals = 1
-b_start = @benchmark PO.starting_point!(w) setup = (w = mk()) evals = 1
+b_start = @benchmark PureIPM.starting_point!(w) setup = (w = mk()) evals = 1
 w = mk()
 fact_before, L_before = w.linsys.fact, copy(w.linsys.L.nzval)
-PO.starting_point!(w)
+PureIPM.starting_point!(w)
 @printf(
     "\none numeric factorization: %.3f us, %d allocations, %d B\n", us(b_factor), b_factor.allocs, b_factor.memory
 )
@@ -114,32 +116,32 @@ function instrumented_solve!(ws)
     ws.status = PO.UNSOLVED
     ws.iter = 0
     ws.reg_bumps = 0
-    PO.set_regularization!(ws, alg.reg_primal, alg.reg_dual)
+    PureIPM.set_regularization!(ws, alg.reg_primal, alg.reg_dual)
     ws.short_steps = 0
     ws.flat_merit = 0
     ws.last_merit = PO.INFTY(Float64)
     ws.alert = false
     ws.diverged = false
     ws.cg_misses = 0
-    bound = PO.iterate_bound(ws)
-    @t :starting_point PO.starting_point!(ws)
-    @t :residuals PO.ipm_residuals!(ws)
+    bound = PureIPM.iterate_bound(ws)
+    @t :starting_point PureIPM.starting_point!(ws)
+    @t :residuals PureIPM.ipm_residuals!(ws)
     for iter in 1:s.max_iter
         ws.status == PO.UNSOLVED || break
         ws.iter = iter
-        @t :weights PO.weights!(ws)
+        @t :weights PureIPM.weights!(ws)
         PO.set_refresh_index!(ws.linsys, iter - 1)
-        @t :factorize PO.factorize_newton!(ws, false)
-        @t :predictor_corrector PO.ipm_step!(ws)
-        @t :residuals PO.ipm_residuals!(ws)
-        stall = @t :stall PO.stalled!(ws, bound)
+        @t :factorize PureIPM.factorize_newton!(ws, false)
+        @t :predictor_corrector PureIPM.ipm_step!(ws)
+        @t :residuals PureIPM.ipm_residuals!(ws)
+        stall = @t :stall PureIPM.stalled!(ws, bound)
         if stall || ws.alert || (s.check_termination > 0 && iszero(iter % s.check_termination))
             st = @t :termination PO.check_termination(ws, false, stall || ws.alert)
             st == PO.UNSOLVED || (ws.status = st; break)
         end
         stall && break
     end
-    @t :build_solution PO.build_solution(ws)
+    @t :build_solution PureIPM.build_solution(ws)
     return ws.iter, ws.status
 end
 

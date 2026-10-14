@@ -6,37 +6,37 @@
       "iter": "2750",
       "obj_val": "-2.3419566700499357",
       "regime": "fixed ρ",
-      "setup": "0.000302189",
+      "setup": "0.0003110855",
       "status": "SOLVED",
-      "total": "0.014605486"
+      "total": "0.014306851"
     },
     {
       "form": "RowCoupled",
       "iter": "2750",
       "obj_val": "-2.341956670056322",
       "regime": "fixed ρ",
-      "setup": "0.000161995",
+      "setup": "0.000171012",
       "status": "SOLVED",
-      "total": "0.0123665795"
+      "total": "0.013119741"
     },
     {
       "form": "SparseMatrixCSC",
       "iter": "900",
       "obj_val": "-2.341953373536136",
       "regime": "adaptive ρ",
-      "setup": "0.000301828",
+      "setup": "0.00031114600000000005",
       "status": "SOLVED",
-      "total": "0.005072929"
+      "total": "0.004850534"
     },
     {
       "form": "RowCoupled",
       "iter": "1900",
       "obj_val": "-2.3419533721465924",
       "regime": "adaptive ρ",
-      "setup": "0.000162305",
+      "setup": "0.00017143300000000002",
       "status": "SOLVED",
-      "total": "0.008712438000000001"
+      "total": "0.0092323955"
     }
   ],
-  "julia_version": "1.12.7"
+  "julia_version": "1.13.1"
 }

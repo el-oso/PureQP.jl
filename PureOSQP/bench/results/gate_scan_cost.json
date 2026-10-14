@@ -7,10 +7,10 @@
       "m": 500,
       "nnz_A": 3782,
       "blas_threads": 1,
-      "backend": "cholesky",
-      "scan": 1.2213e-6,
-      "setup": 0.00029001600000000004,
-      "two_scan_share": 0.008422293942403177
+      "backend": "sparse_formed",
+      "scan": 1.1241000000000002e-6,
+      "setup": 0.00030192900000000004,
+      "two_scan_share": 0.00744612143914629
     },
     {
       "case": "Eq QP",
@@ -18,10 +18,10 @@
       "m": 100,
       "nnz_A": 2881,
       "blas_threads": 1,
-      "backend": "cholesky",
-      "scan": 8.122142857142857e-7,
-      "setup": 0.00138093,
-      "two_scan_share": 0.0011763294094766362
+      "backend": "sparse_formed",
+      "scan": 7.780526315789474e-7,
+      "setup": 0.0014049660000000001,
+      "two_scan_share": 0.0011075750325330966
     },
     {
       "case": "Portfolio",
@@ -29,10 +29,10 @@
       "m": 506,
       "nnz_A": 2294,
       "blas_threads": 1,
-      "backend": "ldl_kkt",
-      "scan": 1.0591428571428573e-6,
-      "setup": 0.000303131,
-      "two_scan_share": 0.00698802073785167
+      "backend": "sparse_kkt",
+      "scan": 1.0044e-6,
+      "setup": 0.000410398,
+      "two_scan_share": 0.004894760695714892
     },
     {
       "case": "Lasso",
@@ -40,10 +40,10 @@
       "m": 816,
       "nnz_A": 1786,
       "blas_threads": 1,
-      "backend": "ldlfactorizations",
-      "scan": 7.682631578947369e-7,
-      "setup": 0.00028334300000000003,
-      "two_scan_share": 0.005422849040877924
+      "backend": "cholmod",
+      "scan": 7.480952380952381e-7,
+      "setup": 0.000367437,
+      "two_scan_share": 0.004071964652962212
     },
     {
       "case": "SVM",
@@ -51,10 +51,10 @@
       "m": 1600,
       "nnz_A": 2549,
       "blas_threads": 1,
-      "backend": "ldlfactorizations",
-      "scan": 1.181625e-6,
-      "setup": 0.00032440100000000004,
-      "two_scan_share": 0.007284965212807605
+      "backend": "cholmod",
+      "scan": 1.1521e-6,
+      "setup": 0.000416554,
+      "two_scan_share": 0.005531575738079576
     },
     {
       "case": "Huber",
@@ -62,10 +62,10 @@
       "m": 1800,
       "nnz_A": 3526,
       "blas_threads": 1,
-      "backend": "ldlfactorizations",
-      "scan": 1.593e-6,
-      "setup": 0.0005182400000000001,
-      "two_scan_share": 0.006147730781105278
+      "backend": "cholmod",
+      "scan": 1.5042857142857144e-6,
+      "setup": 0.000708995,
+      "two_scan_share": 0.004243431094114103
     },
     {
       "case": "Control",
@@ -74,9 +74,9 @@
       "nnz_A": 6540,
       "blas_threads": 1,
       "backend": "sparse_formed",
-      "scan": 1.9503333333333336e-6,
-      "setup": 0.001446473,
-      "two_scan_share": 0.0026966743704629585
+      "scan": 1.9116e-6,
+      "setup": 0.001585686,
+      "two_scan_share": 0.0024110700353033327
     },
     {
       "case": "Sparse 800",
@@ -85,9 +85,9 @@
       "nnz_A": 12894,
       "blas_threads": 1,
       "backend": "sparse_formed",
-      "scan": 3.6830000000000006e-6,
-      "setup": 0.019556596500000002,
-      "two_scan_share": 0.0003766504054015739
+      "scan": 3.695571428571429e-6,
+      "setup": 0.0185268,
+      "two_scan_share": 0.000398943306838896
     },
     {
       "case": "Sparse 1600",
@@ -96,9 +96,9 @@
       "nnz_A": 50925,
       "blas_threads": 1,
       "backend": "sparse_formed",
-      "scan": 1.2789e-5,
-      "setup": 0.12184096300000001,
-      "two_scan_share": 0.0002099293978823854
+      "scan": 1.2969e-5,
+      "setup": 0.11986995,
+      "two_scan_share": 0.00021638450670914604
     },
     {
       "case": "Random QP",
@@ -106,10 +106,10 @@
       "m": 500,
       "nnz_A": 3782,
       "blas_threads": 8,
-      "backend": "cholesky",
-      "scan": 1.286529411764706e-6,
-      "setup": 0.000305686,
-      "two_scan_share": 0.008417326352955033
+      "backend": "sparse_formed",
+      "scan": 1.2470526315789473e-6,
+      "setup": 0.000584461,
+      "two_scan_share": 0.004267359606813619
     },
     {
       "case": "Eq QP",
@@ -117,10 +117,10 @@
       "m": 100,
       "nnz_A": 2881,
       "blas_threads": 8,
-      "backend": "cholesky",
-      "scan": 8.31e-7,
-      "setup": 0.0017385030000000002,
-      "two_scan_share": 0.0009559948990597081
+      "backend": "sparse_formed",
+      "scan": 7.987222222222223e-7,
+      "setup": 0.0023748425,
+      "two_scan_share": 0.0006726527946356209
     },
     {
       "case": "Portfolio",
@@ -128,10 +128,10 @@
       "m": 506,
       "nnz_A": 2294,
       "blas_threads": 8,
-      "backend": "ldl_kkt",
-      "scan": 1.0798333333333334e-6,
-      "setup": 0.00031346,
-      "two_scan_share": 0.006889767966141348
+      "backend": "sparse_kkt",
+      "scan": 1.0965454545454546e-6,
+      "setup": 0.000428627,
+      "two_scan_share": 0.005116548675400545
     },
     {
       "case": "Lasso",
@@ -139,10 +139,10 @@
       "m": 816,
       "nnz_A": 1786,
       "blas_threads": 8,
-      "backend": "ldlfactorizations",
-      "scan": 8.650869565217393e-7,
-      "setup": 0.0002939685,
-      "two_scan_share": 0.0058855758798765125
+      "backend": "cholmod",
+      "scan": 8.476e-7,
+      "setup": 0.00037458500000000003,
+      "two_scan_share": 0.00452554159936997
     },
     {
       "case": "SVM",
@@ -150,10 +150,10 @@
       "m": 1600,
       "nnz_A": 2549,
       "blas_threads": 8,
-      "backend": "ldlfactorizations",
-      "scan": 1.3086875e-6,
-      "setup": 0.00033361800000000004,
-      "two_scan_share": 0.007845425007043983
+      "backend": "cholmod",
+      "scan": 1.325e-6,
+      "setup": 0.00042288600000000003,
+      "two_scan_share": 0.006266464248047937
     },
     {
       "case": "Huber",
@@ -161,10 +161,10 @@
       "m": 1800,
       "nnz_A": 3526,
       "blas_threads": 8,
-      "backend": "ldlfactorizations",
-      "scan": 1.6305e-6,
-      "setup": 0.0005401170000000001,
-      "two_scan_share": 0.006037580746393836
+      "backend": "cholmod",
+      "scan": 1.6631666666666668e-6,
+      "setup": 0.000733762,
+      "two_scan_share": 0.004533259194852464
     },
     {
       "case": "Control",
@@ -173,9 +173,9 @@
       "nnz_A": 6540,
       "blas_threads": 8,
       "backend": "sparse_formed",
-      "scan": 1.9069166666666668e-6,
-      "setup": 0.0010998405,
-      "two_scan_share": 0.0034676240176037647
+      "scan": 1.933636363636364e-6,
+      "setup": 0.0017096595000000003,
+      "two_scan_share": 0.0022620134168661815
     },
     {
       "case": "Sparse 800",
@@ -184,9 +184,9 @@
       "nnz_A": 12894,
       "blas_threads": 8,
       "backend": "sparse_formed",
-      "scan": 3.7872e-6,
-      "setup": 0.011201648000000002,
-      "two_scan_share": 0.0006761862183135909
+      "scan": 3.8825000000000005e-6,
+      "setup": 0.013053793000000001,
+      "two_scan_share": 0.0005948462642237395
     },
     {
       "case": "Sparse 1600",
@@ -195,11 +195,11 @@
       "nnz_A": 50925,
       "blas_threads": 8,
       "backend": "sparse_formed",
-      "scan": 1.3085000000000001e-5,
-      "setup": 0.04960742950000001,
-      "two_scan_share": 0.0005275419481269434
+      "scan": 1.3205000000000001e-5,
+      "setup": 0.055564109,
+      "two_scan_share": 0.0004753068208112543
     }
   ],
   "cpu_threads": 16,
-  "julia_version": "1.12.7"
+  "julia_version": "1.13.1"
 }

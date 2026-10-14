@@ -9,10 +9,10 @@
       "n": 10,
       "refactorizations": 8,
       "steps": 20,
-      "t_fresh": 0.00140655,
-      "t_osqp": 0.001756168,
+      "t_fresh": 0.001366569,
+      "t_osqp": 0.001715559,
       "t_pureblas": null,
-      "t_update": 0.001003781
+      "t_update": 0.000977004
     },
     {
       "dobj_osqp": 1.7493730950572647e-12,
@@ -21,10 +21,10 @@
       "n": 25,
       "refactorizations": 14,
       "steps": 20,
-      "t_fresh": 0.005825655,
-      "t_osqp": 0.010276129,
+      "t_fresh": 0.015884032,
+      "t_osqp": 0.010698754,
       "t_pureblas": null,
-      "t_update": 0.002865879
+      "t_update": 0.002604386
     },
     {
       "dobj_osqp": 3.7983515459583905e-14,
@@ -33,10 +33,10 @@
       "n": 50,
       "refactorizations": 7,
       "steps": 20,
-      "t_fresh": 0.020040294,
-      "t_osqp": 0.06247154,
+      "t_fresh": 0.020543608,
+      "t_osqp": 0.06711324,
       "t_pureblas": null,
-      "t_update": 0.013341013
+      "t_update": 0.0136046
     },
     {
       "dobj_osqp": 3.353210876741251e-13,
@@ -45,10 +45,10 @@
       "n": 100,
       "refactorizations": 3,
       "steps": 20,
-      "t_fresh": 0.079725705,
-      "t_osqp": 0.530712615,
+      "t_fresh": 0.079575072,
+      "t_osqp": 0.753379559,
       "t_pureblas": null,
-      "t_update": 0.075754804
+      "t_update": 0.081378295
     },
     {
       "dobj_osqp": 2.8222714520788013e-15,
@@ -57,10 +57,10 @@
       "n": 200,
       "refactorizations": 1,
       "steps": 20,
-      "t_fresh": 0.333778093,
-      "t_osqp": 2.618012892,
+      "t_fresh": 0.341918083,
+      "t_osqp": 2.747304723,
       "t_pureblas": null,
-      "t_update": 0.297481293
+      "t_update": 0.365787588
     }
   ],
   "steps": 20

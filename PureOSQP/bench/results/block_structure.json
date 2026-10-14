@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "backend": "cholesky",
+      "backend": "sparse_formed",
       "block_words": "1275",
       "blocks": "1",
       "factor_words": "1275",
@@ -13,7 +13,7 @@
       "p_respects": "true"
     },
     {
-      "backend": "cholesky",
+      "backend": "sparse_formed",
       "block_words": "20100",
       "blocks": "1",
       "factor_words": "20100",
@@ -53,7 +53,7 @@
       "block_words": "173386",
       "blocks": "221",
       "factor_words": "977",
-      "flop_ceiling": "0.38538815810864985",
+      "flop_ceiling": "0.38538815810864974",
       "frac": "0.7277227722772277",
       "largest": "588",
       "n": "808",
@@ -85,5 +85,5 @@
       "p_respects": "true"
     }
   ],
-  "julia_version": "1.12.7"
+  "julia_version": "1.13.1"
 }

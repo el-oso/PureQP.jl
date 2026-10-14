@@ -50,11 +50,11 @@
       "accel_declined": 0
     },
     "family/cholesky_rank11/auto": {
-      "backend_name": "cholesky",
-      "iter": 100,
-      "refactor_count": 2,
+      "backend_name": "indirect",
+      "iter": 150,
+      "refactor_count": 1,
       "status": "solved",
-      "obj_val": -22.4248770706,
+      "obj_val": -22.4248773762,
       "accel_declined": 0
     },
     "family/cholesky_symmetric_banded/auto": {
@@ -330,5 +330,5 @@
       "accel_declined": 0
     }
   },
-  "julia_version": "1.13.0"
+  "julia_version": "1.13.1"
 }

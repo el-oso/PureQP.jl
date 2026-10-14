@@ -15,10 +15,10 @@
       "iterations": 10,
       "status": "SOLVED",
       "rel_kkt_error": 3.152022941321775e-6,
-      "solve_seconds": 0.00039080100000000003,
-      "factorize_seconds": 2.2771000000000003e-5,
-      "refactor_weights_seconds": 1.5277e-5,
-      "hoist_saving_seconds": 7.494000000000003e-6,
+      "solve_seconds": 0.0003963055,
+      "factorize_seconds": 2.3484e-5,
+      "refactor_weights_seconds": 1.5389e-5,
+      "hoist_saving_seconds": 8.095e-6,
       "allocated_per_solve": 0
     },
     {
@@ -29,10 +29,10 @@
       "iterations": 12,
       "status": "SOLVED",
       "rel_kkt_error": 1.5561729469482088e-6,
-      "solve_seconds": 0.001107619,
-      "factorize_seconds": 7.2079e-5,
-      "refactor_weights_seconds": 4.8808000000000004e-5,
-      "hoist_saving_seconds": 2.3270999999999995e-5,
+      "solve_seconds": 0.001123283,
+      "factorize_seconds": 7.349900000000001e-5,
+      "refactor_weights_seconds": 4.9233e-5,
+      "hoist_saving_seconds": 2.4266000000000008e-5,
       "allocated_per_solve": 0
     },
     {
@@ -43,10 +43,10 @@
       "iterations": 13,
       "status": "SOLVED",
       "rel_kkt_error": 1.8252899280923884e-6,
-      "solve_seconds": 0.002950139,
-      "factorize_seconds": 0.00024506,
-      "refactor_weights_seconds": 0.000142046,
-      "hoist_saving_seconds": 0.00010301400000000001,
+      "solve_seconds": 0.0029538620000000002,
+      "factorize_seconds": 0.0002391,
+      "refactor_weights_seconds": 0.00014189700000000001,
+      "hoist_saving_seconds": 9.7203e-5,
       "allocated_per_solve": 0
     }
   ]

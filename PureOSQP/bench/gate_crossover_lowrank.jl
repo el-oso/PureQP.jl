@@ -9,7 +9,9 @@
 # Swept at two BLAS thread counts, and the gate is set from the worse of them. `src/` and
 # `ext/` pin nothing, so the dense competitor's `symv` uses whatever threads the caller has;
 # a limit derived at one thread promises something the deployed solver does not deliver.
-using PureOSQP, LinearAlgebra, Chairmarks, Printf, JSON, Statistics, Random
+# `Krylov` for the rows past the low-rank rung's limit: those reach the conjugate-gradient
+# backend, which lives in a weak dependency and refuses by name without it.
+using PureOSQP, LinearAlgebra, Chairmarks, Printf, JSON, Statistics, Random, Krylov
 
 const OPTS = (eps_abs = 1.0e-9, eps_rel = 1.0e-9)
 const BUDGET = parse(Float64, get(ENV, "GATE_BUDGET", "0.5"))
@@ -43,7 +45,9 @@ function problem(n, k)
     return P, randn(rng, n), A, -rand(rng, n), rand(rng, n)
 end
 
-rank_grid(n) = sort(unique(clamp.(round.(Int, collect(FRACTIONS) .* n), 1, (n - 1) ÷ 2)))
+# The low-rank rung accepts while `10k <= n`, so a higher rank has no low-rank backend to
+# compare the dense path against and the sweep stops where the rung's domain does.
+rank_grid(n) = sort(unique(clamp.(round.(Int, collect(FRACTIONS) .* n), 1, n ÷ 10)))
 
 "Rewrite the results file with everything measured so far, so a run cut short still leaves
 usable samples behind."

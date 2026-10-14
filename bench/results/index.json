@@ -2,8 +2,8 @@
   "entries": [
     {
       "blas_threads": 1.0,
-      "bytes": 1037,
-      "julia_version": "1.13.0",
+      "bytes": 1058,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -17,8 +17,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 4271,
-      "julia_version": "1.12.7",
+      "bytes": 4273,
+      "julia_version": "1.13.1",
       "keys": [
         "cases",
         "cpu_threads",
@@ -32,7 +32,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2033,
+      "bytes": 2041,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -47,8 +47,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 2043,
-      "julia_version": "1.12.7",
+      "bytes": 2053,
+      "julia_version": "1.13.1",
       "keys": [
         "cases",
         "julia_version"
@@ -60,8 +60,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 11750,
-      "julia_version": "1.12.7",
+      "bytes": 11649,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "budget_seconds",
@@ -75,8 +75,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 685239,
-      "julia_version": "1.12.7",
+      "bytes": 2822117,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "budget_seconds",
@@ -90,12 +90,11 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3032966,
-      "julia_version": "1.12.7",
+      "bytes": 3333546,
+      "julia_version": "1.13.1",
       "keys": [
         "banded",
         "blas_threads",
-        "dense_factor_fill",
         "julia_version",
         "random",
         "settings"
@@ -107,8 +106,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 2525938,
-      "julia_version": "1.12.7",
+      "bytes": 1987137,
+      "julia_version": "1.13.1",
       "keys": [
         "budget_seconds",
         "cases",
@@ -122,8 +121,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 1780412,
-      "julia_version": "1.12.7",
+      "bytes": 1570332,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "budget_seconds",
@@ -137,8 +136,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 4798,
-      "julia_version": "1.12.7",
+      "bytes": 4733,
+      "julia_version": "1.13.1",
       "keys": [
         "budget_seconds",
         "cases",
@@ -152,7 +151,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3681,
+      "bytes": 3679,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -169,7 +168,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 7726,
+      "bytes": 7709,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -187,8 +186,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3780,
-      "julia_version": "1.13.0",
+      "bytes": 3781,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "by_density",
@@ -202,8 +201,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 6685,
-      "julia_version": "1.12.7",
+      "bytes": 5869,
+      "julia_version": "1.13.1",
       "keys": [
         "cases",
         "cpu_threads",
@@ -219,8 +218,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 3448,
-      "julia_version": "1.12.7",
+      "bytes": 3446,
+      "julia_version": "1.13.1",
       "keys": [
         "accuracy",
         "costs",
@@ -233,8 +232,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2395,
-      "julia_version": "1.12.7",
+      "bytes": 2404,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -247,8 +246,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3014,
-      "julia_version": "1.12.7",
+      "bytes": 2965,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -261,8 +260,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 956,
-      "julia_version": "1.12.7",
+      "bytes": 970,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -275,7 +274,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2411,
+      "bytes": 2407,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -290,7 +289,7 @@
     },
     {
       "blas_threads": null,
-      "bytes": 3046,
+      "bytes": 2992,
       "julia_version": "1.13.1",
       "keys": [
         "budget_seconds",
@@ -306,8 +305,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2740,
-      "julia_version": "1.13.0",
+      "bytes": 2689,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -320,7 +319,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2431,
+      "bytes": 2433,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -337,8 +336,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 4099,
-      "julia_version": "1.12.7",
+      "bytes": 4009,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -370,8 +369,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 23578,
-      "julia_version": "1.12.7",
+      "bytes": 23632,
+      "julia_version": "1.13.1",
       "keys": [
         "cases",
         "cpu_threads",
@@ -385,7 +384,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2886,
+      "bytes": 2889,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -402,7 +401,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 1654,
-      "julia_version": "1.12.7",
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -418,8 +417,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2378,
-      "julia_version": "1.12.7",
+      "bytes": 2396,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -477,7 +476,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3528,
+      "bytes": 3468,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -491,7 +490,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2398,
+      "bytes": 2423,
       "julia_version": "1.13.1",
       "keys": [
         "adaptive_rho_interval",
@@ -507,8 +506,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 2767,
-      "julia_version": "1.12.7",
+      "bytes": 2694,
+      "julia_version": "1.13.1",
       "keys": [
         "budget_seconds",
         "cases",
@@ -523,7 +522,7 @@
     },
     {
       "blas_threads": null,
-      "bytes": 1488,
+      "bytes": 1487,
       "julia_version": "1.13.1",
       "keys": [
         "julia_version",
@@ -538,7 +537,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 11897,
+      "bytes": 11859,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -646,7 +645,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 19797,
+      "bytes": 19828,
       "julia_version": "1.13.1",
       "keys": [
         "backends",
@@ -665,7 +664,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 6325,
+      "bytes": 6364,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -682,8 +681,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3483,
-      "julia_version": "1.13.0",
+      "bytes": 3549,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -698,8 +697,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 12920,
-      "julia_version": "1.12.7",
+      "bytes": 11726,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -731,42 +730,6 @@
       "name": "ipm_matrixfree_spike",
       "package": "PureIPM",
       "results": "PureIPM/bench/results/ipm_matrixfree_spike.json",
-      "script": "ipm_matrixfree_spike.jl"
-    },
-    {
-      "blas_threads": null,
-      "bytes": 335777,
-      "julia_version": null,
-      "keys": [
-        "columns",
-        "description",
-        "g1",
-        "g2",
-        "instances",
-        "products",
-        "settings"
-      ],
-      "name": "ipm_matrixfree_spike2",
-      "package": "PureIPM",
-      "results": "PureIPM/bench/results/ipm_matrixfree_spike2.json",
-      "script": "ipm_matrixfree_spike2.jl"
-    },
-    {
-      "blas_threads": null,
-      "bytes": 322456,
-      "julia_version": null,
-      "keys": [
-        "columns",
-        "description",
-        "g1",
-        "g2",
-        "instances",
-        "products",
-        "settings"
-      ],
-      "name": "ipm_matrixfree_spike2_nog2stop",
-      "package": "PureIPM",
-      "results": "PureIPM/bench/results/ipm_matrixfree_spike2_nog2stop.json",
       "script": null
     },
     {
@@ -788,8 +751,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 30379894,
-      "julia_version": "1.12.7",
+      "bytes": 37899545,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "description",
@@ -804,25 +767,9 @@
       "script": null
     },
     {
-      "blas_threads": null,
-      "bytes": 295258,
-      "julia_version": null,
-      "keys": [
-        "description",
-        "g1",
-        "g2",
-        "instances",
-        "products_note"
-      ],
-      "name": "ipm_matrixfree_spike_summary",
-      "package": "PureIPM",
-      "results": "PureIPM/bench/results/ipm_matrixfree_spike_summary.json",
-      "script": null
-    },
-    {
       "blas_threads": 1.0,
-      "bytes": 5665,
-      "julia_version": "1.13.0",
+      "bytes": 5750,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -836,29 +783,8 @@
     },
     {
       "blas_threads": null,
-      "bytes": 50061,
-      "julia_version": null,
-      "keys": [
-        "description",
-        "errors",
-        "fail_limit",
-        "g1",
-        "g2_floor100",
-        "g2_floor_n10",
-        "groups",
-        "kkt_vs_bunchkaufman",
-        "krylov_cap",
-        "vs_oracle"
-      ],
-      "name": "ipm_rowtypes_spike",
-      "package": "PureIPM",
-      "results": "PureIPM/bench/results/ipm_rowtypes_spike.json",
-      "script": "ipm_rowtypes_spike.jl"
-    },
-    {
-      "blas_threads": null,
-      "bytes": 10807935,
-      "julia_version": "1.12.7",
+      "bytes": 10696505,
+      "julia_version": "1.13.1",
       "keys": [
         "errors",
         "julia",
@@ -872,8 +798,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3716,
-      "julia_version": "1.13.0",
+      "bytes": 3695,
+      "julia_version": "1.13.1",
       "keys": [
         "admm_tol",
         "blas_threads",
@@ -890,7 +816,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 128310,
+      "bytes": 128545,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -910,8 +836,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 2210,
-      "julia_version": "1.13.0",
+      "bytes": 2247,
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -926,7 +852,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 1940,
-      "julia_version": "1.13.0",
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -941,8 +867,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 5804,
-      "julia_version": "1.13.0",
+      "bytes": 5765,
+      "julia_version": "1.13.1",
       "keys": [
         "admm_tol",
         "blas_threads",
@@ -958,8 +884,8 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 6441,
-      "julia_version": "1.13.0",
+      "bytes": 6543,
+      "julia_version": "1.13.1",
       "keys": [
         "admm_tol",
         "blas_threads",
@@ -978,7 +904,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 5821,
+      "bytes": 5736,
       "julia_version": "1.13.1",
       "keys": [
         "algorithm",
@@ -1000,7 +926,7 @@
     },
     {
       "blas_threads": null,
-      "bytes": 1344,
+      "bytes": 1342,
       "julia_version": null,
       "keys": [],
       "name": "admm_structured_operand",
@@ -1010,7 +936,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 3583,
+      "bytes": 3908,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -1029,7 +955,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 13697,
+      "bytes": 13722,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -1075,7 +1001,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 5402,
+      "bytes": 5373,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -1093,7 +1019,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 1517,
+      "bytes": 1489,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
@@ -1109,6 +1035,58 @@
       "package": "shared",
       "results": "bench/results/ipm_product_reduced.json",
       "script": "ipm_product_reduced.jl"
+    },
+    {
+      "blas_threads": null,
+      "bytes": 1505731,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_baseline",
+      "package": "shared",
+      "results": "bench/results/lmp_baseline.json",
+      "script": null
+    },
+    {
+      "blas_threads": null,
+      "bytes": 2368179,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_matrix",
+      "package": "shared",
+      "results": "bench/results/lmp_matrix.json",
+      "script": "lmp_matrix.jl"
+    },
+    {
+      "blas_threads": null,
+      "bytes": 2306118,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_matrix_fixed",
+      "package": "shared",
+      "results": "bench/results/lmp_matrix_fixed.json",
+      "script": null
+    },
+    {
+      "blas_threads": null,
+      "bytes": 1505748,
+      "julia_version": null,
+      "keys": [
+        "cells",
+        "meta"
+      ],
+      "name": "lmp_step1_fill",
+      "package": "shared",
+      "results": "bench/results/lmp_step1_fill.json",
+      "script": null
     },
     {
       "blas_threads": null,
@@ -1166,7 +1144,7 @@
     {
       "blas_threads": 1.0,
       "bytes": 8509,
-      "julia_version": "1.13.0",
+      "julia_version": "1.13.1",
       "keys": [
         "blas_threads",
         "cases",
@@ -1208,7 +1186,7 @@
     },
     {
       "blas_threads": 1.0,
-      "bytes": 1715,
+      "bytes": 1721,
       "julia_version": "1.13.1",
       "keys": [
         "blas_threads",

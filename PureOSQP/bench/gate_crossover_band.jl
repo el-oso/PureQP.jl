@@ -57,7 +57,9 @@ function problem(n, b)
     return P, randn(rng, n), A, -rand(rng, n), rand(rng, n)
 end
 
-band_grid(n) = sort(unique(clamp.([2; round.(Int, collect(FRACTIONS) .* n)], 2, n - 1)))
+# The banded rung accepts while `4b <= n`, so a wider band has no banded backend to compare the
+# dense path against and the sweep stops where the rung's domain does.
+band_grid(n) = sort(unique(clamp.([2; round.(Int, collect(FRACTIONS) .* n)], 2, n ÷ 4)))
 
 println("\nBanded backend against the dense path, sweeping the reduced bandwidth.\n")
 @printf(

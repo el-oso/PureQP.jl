@@ -9,7 +9,7 @@
       "obj_val": "300.96758411896985",
       "referee": "1.8497559040042688e-10",
       "reg_bumps": "0",
-      "seconds": "0.032421495",
+      "seconds": "0.032691069",
       "shape": "dense",
       "status": "SOLVED"
     },
@@ -21,7 +21,7 @@
       "obj_val": "300.96758411896985",
       "referee": "1.8497559040042688e-10",
       "reg_bumps": "0",
-      "seconds": "0.032181789",
+      "seconds": "0.032392633000000004",
       "shape": "dense",
       "status": "SOLVED"
     },
@@ -33,7 +33,7 @@
       "obj_val": "164.59517901074182",
       "referee": "6.786390560620248e-9",
       "reg_bumps": "0",
-      "seconds": "0.0043560560000000005",
+      "seconds": "0.00435418",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -45,7 +45,7 @@
       "obj_val": "164.59517901074946",
       "referee": "6.863604351536878e-9",
       "reg_bumps": "0",
-      "seconds": "0.014660546",
+      "seconds": "0.014645808000000001",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -57,7 +57,7 @@
       "obj_val": "164.59517901072692",
       "referee": "6.801538887657443e-9",
       "reg_bumps": "0",
-      "seconds": "0.035395422",
+      "seconds": "0.035945819000000004",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -69,7 +69,7 @@
       "obj_val": "298.4944043982071",
       "referee": "3.8598386709054466e-8",
       "reg_bumps": "0",
-      "seconds": "0.0489884",
+      "seconds": "0.049282950000000006",
       "shape": "dense",
       "status": "SOLVED"
     },
@@ -81,7 +81,7 @@
       "obj_val": "298.4944043982071",
       "referee": "3.8598386709054466e-8",
       "reg_bumps": "0",
-      "seconds": "0.048945843",
+      "seconds": "0.049219598",
       "shape": "dense",
       "status": "SOLVED"
     },
@@ -93,7 +93,7 @@
       "obj_val": "440.32581815418104",
       "referee": "1.7633909088488053e-7",
       "reg_bumps": "0",
-      "seconds": "0.005128579",
+      "seconds": "0.005117237",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -105,7 +105,7 @@
       "obj_val": "440.32581814285186",
       "referee": "1.8219264497076892e-7",
       "reg_bumps": "0",
-      "seconds": "0.01895788",
+      "seconds": "0.0188495795",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -117,7 +117,7 @@
       "obj_val": "440.3258181344497",
       "referee": "1.7970052024196548e-7",
       "reg_bumps": "0",
-      "seconds": "0.048057253",
+      "seconds": "0.048815920000000006",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -129,7 +129,7 @@
       "obj_val": "344.71508913869326",
       "referee": "1.0404533856700482e-6",
       "reg_bumps": "0",
-      "seconds": "0.280559076",
+      "seconds": "0.285965497",
       "shape": "dense",
       "status": "SOLVED_INACCURATE"
     },
@@ -141,7 +141,7 @@
       "obj_val": "344.71508913869326",
       "referee": "1.0404533856700482e-6",
       "reg_bumps": "0",
-      "seconds": "0.2833951905",
+      "seconds": "0.2826437945",
       "shape": "dense",
       "status": "SOLVED_INACCURATE"
     },
@@ -153,7 +153,7 @@
       "obj_val": "616.8675975713684",
       "referee": "2.258081964967573e-6",
       "reg_bumps": "0",
-      "seconds": "0.0154241915",
+      "seconds": "0.015435316000000001",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -165,7 +165,7 @@
       "obj_val": "616.8676004974061",
       "referee": "2.007593131736485e-6",
       "reg_bumps": "0",
-      "seconds": "0.07495705500000001",
+      "seconds": "0.075211071",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -177,7 +177,7 @@
       "obj_val": "616.8676020636952",
       "referee": "2.3746927908518956e-6",
       "reg_bumps": "0",
-      "seconds": "0.19858161900000001",
+      "seconds": "0.20114852400000002",
       "shape": "blocks of 50",
       "status": "SOLVED"
     },
@@ -189,7 +189,7 @@
       "obj_val": "8.695175468728354e6",
       "referee": "3277.160645666728",
       "reg_bumps": "0",
-      "seconds": "0.28423167550000006",
+      "seconds": "0.28664916700000004",
       "shape": "dense",
       "status": "MAX_ITER_REACHED"
     },
@@ -201,7 +201,7 @@
       "obj_val": "8.695175468728354e6",
       "referee": "3277.160645666728",
       "reg_bumps": "0",
-      "seconds": "0.28532865900000004",
+      "seconds": "0.287592252",
       "shape": "dense",
       "status": "MAX_ITER_REACHED"
     },
@@ -213,7 +213,7 @@
       "obj_val": "6.904601000061564e6",
       "referee": "6123.209429132445",
       "reg_bumps": "0",
-      "seconds": "0.021826132",
+      "seconds": "0.0217946315",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED"
     },
@@ -225,7 +225,7 @@
       "obj_val": "7.0188156876297565e6",
       "referee": "6186.575618909399",
       "reg_bumps": "0",
-      "seconds": "0.107773508",
+      "seconds": "0.10811619900000001",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED"
     },
@@ -237,7 +237,7 @@
       "obj_val": "6.910596092545668e6",
       "referee": "6125.757623352252",
       "reg_bumps": "0",
-      "seconds": "0.29088587600000004",
+      "seconds": "0.29444274400000003",
       "shape": "blocks of 50",
       "status": "MAX_ITER_REACHED"
     }

@@ -6,27 +6,27 @@
       "n": 200,
       "operator_iter": 225,
       "dense_iter": 125,
-      "operator_seconds": 0.003426306,
-      "dense_seconds": 0.002057817,
-      "speedup": 0.6005934671334083
+      "operator_seconds": 0.003417736,
+      "dense_seconds": 0.002195054,
+      "speedup": 0.6422538194875204
     },
     {
       "case": "no_advantage",
       "n": 500,
       "operator_iter": 150,
       "dense_iter": 125,
-      "operator_seconds": 0.01847379,
-      "dense_seconds": 0.019453044,
-      "speedup": 1.0530077477334103
+      "operator_seconds": 0.019954305,
+      "dense_seconds": 0.020152999,
+      "speedup": 1.0099574502845377
     },
     {
       "case": "no_advantage",
       "n": 1000,
       "operator_iter": 175,
       "dense_iter": 175,
-      "operator_seconds": 0.084254678,
-      "dense_seconds": 0.12405968,
-      "speedup": 1.472436699597855
+      "operator_seconds": 0.092543577,
+      "dense_seconds": 0.134434911,
+      "speedup": 1.4526660342943085
     },
     {
       "case": "asymptotic_win",
@@ -35,9 +35,9 @@
       "fill_percent": 9.94,
       "operator_iter": 200,
       "dense_iter": 75,
-      "operator_seconds": 0.012383253,
-      "dense_seconds": 0.014972191,
-      "speedup": 1.2090676819733877,
+      "operator_seconds": 0.011926508,
+      "dense_seconds": 0.015911642,
+      "speedup": 1.3341408901918315,
       "dense_mib": 1.9073486328125
     },
     {
@@ -47,9 +47,9 @@
       "fill_percent": 9.845,
       "operator_iter": 100,
       "dense_iter": 100,
-      "operator_seconds": 0.019874008,
-      "dense_seconds": 0.098433505,
-      "speedup": 4.95287639010712,
+      "operator_seconds": 0.021384839,
+      "dense_seconds": 0.107211658,
+      "speedup": 5.0134423738238105,
       "dense_mib": 7.62939453125
     },
     {
@@ -59,9 +59,9 @@
       "fill_percent": 9.7975,
       "operator_iter": 100,
       "dense_iter": 100,
-      "operator_seconds": 0.188152959,
-      "dense_seconds": 0.714014179,
-      "speedup": 3.7948602179570288,
+      "operator_seconds": 0.265230349,
+      "dense_seconds": 0.80587299,
+      "speedup": 3.038389057053196,
       "dense_mib": 30.517578125
     },
     {
@@ -71,9 +71,9 @@
       "fill_percent": 9.77375,
       "operator_iter": 100,
       "dense_iter": 75,
-      "operator_seconds": 0.808965364,
-      "dense_seconds": 4.674788937,
-      "speedup": 5.778725697086829,
+      "operator_seconds": 1.110917702,
+      "dense_seconds": 5.004546979,
+      "speedup": 4.504876436832581,
       "dense_mib": 122.0703125
     },
     {
@@ -83,9 +83,9 @@
       "cond_A": 1.0000001764476864e12,
       "kronecker_iter": 625,
       "dense_iter": 625,
-      "kronecker_seconds": 0.002270298,
-      "dense_seconds": 0.027874583,
-      "speedup": 12.277940164683226,
+      "kronecker_seconds": 0.002302626,
+      "dense_seconds": 0.029229792,
+      "speedup": 12.694111853162434,
       "cg_status": "SOLVED",
       "cg_iter": 625,
       "cg_obj": -81.9027697497016,
@@ -98,9 +98,9 @@
       "cond_A": 9.999996973865535e11,
       "kronecker_iter": 1100,
       "dense_iter": 1100,
-      "kronecker_seconds": 0.021799957,
-      "dense_seconds": 1.467551141,
-      "speedup": 67.3189924640677,
+      "kronecker_seconds": 0.021738806,
+      "dense_seconds": 1.599971968,
+      "speedup": 73.5998089315485,
       "cg_status": "SOLVED",
       "cg_iter": 850,
       "cg_obj": -358.88074941156185,

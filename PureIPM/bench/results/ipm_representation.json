@@ -6,7 +6,7 @@
       "family": "diagonal",
       "given": "structured",
       "iter": "8",
-      "seconds": "5.2398e-5",
+      "seconds": "5.4943000000000006e-5",
       "status": "SOLVED"
     },
     {
@@ -14,7 +14,7 @@
       "family": "diagonal",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.002806447",
+      "seconds": "0.0027538750000000002",
       "status": "SOLVED"
     },
     {
@@ -22,7 +22,7 @@
       "family": "diagonal",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.00011041800000000001",
+      "seconds": "0.00010099100000000001",
       "status": "SOLVED"
     },
     {
@@ -30,7 +30,7 @@
       "family": "tridiagonal_diag",
       "given": "structured",
       "iter": "8",
-      "seconds": "7.854800000000001e-5",
+      "seconds": "7.999000000000001e-5",
       "status": "SOLVED"
     },
     {
@@ -38,7 +38,7 @@
       "family": "tridiagonal_diag",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.002648604",
+      "seconds": "0.0026008215000000003",
       "status": "SOLVED"
     },
     {
@@ -46,7 +46,7 @@
       "family": "tridiagonal_diag",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.000162215",
+      "seconds": "0.000152798",
       "status": "SOLVED"
     },
     {
@@ -54,7 +54,7 @@
       "family": "banded_tridiag",
       "given": "structured",
       "iter": "8",
-      "seconds": "0.000188254",
+      "seconds": "0.00018801400000000002",
       "status": "SOLVED"
     },
     {
@@ -62,7 +62,7 @@
       "family": "banded_tridiag",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.0026164435",
+      "seconds": "0.002554654",
       "status": "SOLVED"
     },
     {
@@ -70,7 +70,7 @@
       "family": "banded_tridiag",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.000201329",
+      "seconds": "0.00019379500000000002",
       "status": "SOLVED"
     },
     {
@@ -78,7 +78,7 @@
       "family": "tridiagonal_bidiag",
       "given": "structured",
       "iter": "8",
-      "seconds": "9.3175e-5",
+      "seconds": "9.479900000000001e-5",
       "status": "SOLVED"
     },
     {
@@ -86,7 +86,7 @@
       "family": "tridiagonal_bidiag",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.0027962875000000003",
+      "seconds": "0.002732589",
       "status": "SOLVED"
     },
     {
@@ -94,7 +94,7 @@
       "family": "tridiagonal_bidiag",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.0001907195",
+      "seconds": "0.000179979",
       "status": "SOLVED"
     },
     {
@@ -102,7 +102,7 @@
       "family": "cholesky_symmetric_banded",
       "given": "structured",
       "iter": "8",
-      "seconds": "0.002753101",
+      "seconds": "0.002460482",
       "status": "SOLVED"
     },
     {
@@ -110,7 +110,7 @@
       "family": "cholesky_symmetric_banded",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.002616428",
+      "seconds": "0.002562429",
       "status": "SOLVED"
     },
     {
@@ -118,7 +118,7 @@
       "family": "cholesky_symmetric_banded",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.00020189",
+      "seconds": "0.00019327500000000002",
       "status": "SOLVED"
     },
     {
@@ -126,7 +126,7 @@
       "family": "banded_wide_inside",
       "given": "structured",
       "iter": "9",
-      "seconds": "0.0012701075",
+      "seconds": "0.001352448",
       "status": "SOLVED"
     },
     {
@@ -134,7 +134,7 @@
       "family": "banded_wide_inside",
       "given": "dense",
       "iter": "9",
-      "seconds": "0.0028993210000000003",
+      "seconds": "0.002834352",
       "status": "SOLVED"
     },
     {
@@ -142,7 +142,7 @@
       "family": "banded_wide_inside",
       "given": "sparse",
       "iter": "9",
-      "seconds": "0.0012565570000000002",
+      "seconds": "0.0012463690000000002",
       "status": "SOLVED"
     },
     {
@@ -150,7 +150,7 @@
       "family": "cholesky_wide_outside",
       "given": "structured",
       "iter": "8",
-      "seconds": "0.00127669",
+      "seconds": "0.001364095",
       "status": "SOLVED"
     },
     {
@@ -158,7 +158,7 @@
       "family": "cholesky_wide_outside",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.002600644",
+      "seconds": "0.0025420455000000003",
       "status": "SOLVED"
     },
     {
@@ -166,15 +166,15 @@
       "family": "cholesky_wide_outside",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.001243362",
+      "seconds": "0.001240233",
       "status": "SOLVED"
     },
     {
-      "backend": "bunchkaufman",
+      "backend": "product_reduced",
       "family": "lowrank_rank3",
       "given": "structured",
       "iter": "9",
-      "seconds": "0.0029641630000000006",
+      "seconds": "0.0008435290000000001",
       "status": "SOLVED"
     },
     {
@@ -182,7 +182,7 @@
       "family": "lowrank_rank3",
       "given": "dense",
       "iter": "9",
-      "seconds": "0.0033523595000000002",
+      "seconds": "0.0032686190000000004",
       "status": "SOLVED"
     },
     {
@@ -190,15 +190,15 @@
       "family": "lowrank_rank3",
       "given": "sparse",
       "iter": "9",
-      "seconds": "0.000220165",
+      "seconds": "0.00021212000000000002",
       "status": "SOLVED"
     },
     {
-      "backend": "bunchkaufman",
+      "backend": "product_reduced",
       "family": "lowrank_rank10",
       "given": "structured",
       "iter": "8",
-      "seconds": "0.0027242015",
+      "seconds": "0.001044293",
       "status": "SOLVED"
     },
     {
@@ -206,7 +206,7 @@
       "family": "lowrank_rank10",
       "given": "dense",
       "iter": "8",
-      "seconds": "0.00307961",
+      "seconds": "0.0030237080000000004",
       "status": "SOLVED"
     },
     {
@@ -214,15 +214,15 @@
       "family": "lowrank_rank10",
       "given": "sparse",
       "iter": "8",
-      "seconds": "0.000345211",
+      "seconds": "0.000336123",
       "status": "SOLVED"
     },
     {
-      "backend": "bunchkaufman",
+      "backend": "product_reduced",
       "family": "cholesky_rank11",
       "given": "structured",
       "iter": "9",
-      "seconds": "0.002936451",
+      "seconds": "0.001174899",
       "status": "SOLVED"
     },
     {
@@ -230,7 +230,7 @@
       "family": "cholesky_rank11",
       "given": "dense",
       "iter": "9",
-      "seconds": "0.0032944255000000003",
+      "seconds": "0.003244569",
       "status": "SOLVED"
     },
     {
@@ -238,10 +238,10 @@
       "family": "cholesky_rank11",
       "given": "sparse",
       "iter": "9",
-      "seconds": "0.000397389",
+      "seconds": "0.000387701",
       "status": "SOLVED"
     }
   ],
   "eps": 1.0e-8,
-  "julia_version": "1.13.0"
+  "julia_version": "1.13.1"
 }

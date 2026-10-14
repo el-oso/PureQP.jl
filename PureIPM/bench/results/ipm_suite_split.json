@@ -5,80 +5,80 @@
       "backend": "ldlfactorizations",
       "class": "Random QP",
       "iter": "11",
-      "iterate_seconds": "9.830509090909093e-5",
+      "iterate_seconds": "9.898777272727275e-5",
       "m": "500",
       "n": "50",
-      "setup_seconds": "0.00046909400000000003",
-      "solve_seconds": "0.0010813560000000001",
-      "total_seconds": "0.00155045"
+      "setup_seconds": "0.00046362850000000006",
+      "solve_seconds": "0.0010888655000000002",
+      "total_seconds": "0.0015524940000000002"
     },
     {
       "backend": "bunchkaufman",
       "class": "Eq QP",
       "iter": "1",
-      "iterate_seconds": "0.0011552605000000001",
+      "iterate_seconds": "0.0011521605000000001",
       "m": "100",
       "n": "200",
-      "setup_seconds": "0.0010672145",
-      "solve_seconds": "0.0011552605000000001",
-      "total_seconds": "0.0022224750000000002"
+      "setup_seconds": "0.001065287",
+      "solve_seconds": "0.0011521605000000001",
+      "total_seconds": "0.0022174475"
     },
     {
       "backend": "ldl_kkt",
       "class": "Portfolio",
       "iter": "12",
-      "iterate_seconds": "7.476075000000002e-5",
+      "iterate_seconds": "7.453625000000001e-5",
       "m": "506",
       "n": "505",
-      "setup_seconds": "0.00031929100000000003",
-      "solve_seconds": "0.0008971290000000002",
-      "total_seconds": "0.0012164200000000002"
+      "setup_seconds": "0.000316586",
+      "solve_seconds": "0.0008944350000000001",
+      "total_seconds": "0.001211021"
     },
     {
       "backend": "ldlfactorizations",
       "class": "Lasso",
       "iter": "7",
-      "iterate_seconds": "9.298357142857143e-5",
+      "iterate_seconds": "9.274121428571428e-5",
       "m": "816",
       "n": "816",
-      "setup_seconds": "0.000309523",
-      "solve_seconds": "0.000650885",
-      "total_seconds": "0.000960408"
+      "setup_seconds": "0.00031523850000000003",
+      "solve_seconds": "0.0006491884999999999",
+      "total_seconds": "0.000964427"
     },
     {
       "backend": "ldlfactorizations",
       "class": "SVM",
       "iter": "10",
-      "iterate_seconds": "0.0001126721",
+      "iterate_seconds": "0.00011358310000000001",
       "m": "1600",
       "n": "808",
-      "setup_seconds": "0.00036277300000000005",
-      "solve_seconds": "0.001126721",
-      "total_seconds": "0.001489494"
+      "setup_seconds": "0.000369966",
+      "solve_seconds": "0.0011358310000000001",
+      "total_seconds": "0.0015057970000000001"
     },
     {
       "backend": "ldlfactorizations",
       "class": "Huber",
       "iter": "8",
-      "iterate_seconds": "0.00019773481250000003",
+      "iterate_seconds": "0.000197298",
       "m": "1800",
       "n": "1806",
-      "setup_seconds": "0.0005902015",
-      "solve_seconds": "0.0015818785000000003",
-      "total_seconds": "0.0021720800000000003"
+      "setup_seconds": "0.0005884680000000001",
+      "solve_seconds": "0.001578384",
+      "total_seconds": "0.002166852"
     },
     {
       "backend": "ldl_kkt",
       "class": "Control",
       "iter": "8",
-      "iterate_seconds": "0.00023802325",
+      "iterate_seconds": "0.00023864700000000003",
       "m": "540",
       "n": "320",
-      "setup_seconds": "0.000666645",
-      "solve_seconds": "0.001904186",
-      "total_seconds": "0.002570831"
+      "setup_seconds": "0.0006752220000000001",
+      "solve_seconds": "0.0019091760000000003",
+      "total_seconds": "0.0025843980000000003"
     }
   ],
   "eps": 1.0e-8,
-  "julia_version": "1.13.0"
+  "julia_version": "1.13.1"
 }

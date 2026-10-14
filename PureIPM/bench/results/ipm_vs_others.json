@@ -4,8 +4,8 @@
   "clarabel_version": "0.11.1",
   "ecos_version": "1.1.3",
   "ipm_tol": 1.0e-8,
-  "julia_version": "1.13.0",
-  "moi_version": "1.53.0",
+  "julia_version": "1.13.1",
+  "moi_version": "1.54.0",
   "note": "ECOS solves a bridged SOCP reformulation (epigraph var + a second-order cone per case), not the QP; its iteration count is not comparable to the IPM's or Clarabel's. ecos.reform_ms is derived as (wall-clock median) - (ECOS's own reported tsetup+tsolve), not an independently timed quantity.",
   "results": [
     {
@@ -13,13 +13,13 @@
         "iter": 200,
         "obj": -0.9935227576816348,
         "status": "SOLVED",
-        "time_ms": 0.073859
+        "time_ms": 0.048551000000000004
       },
       "clarabel": {
         "iter": 9,
         "obj": -0.9935210668976094,
         "status": "SOLVED",
-        "time_ms": 0.127921
+        "time_ms": 0.092044
       },
       "dx_ipm_admm": 1.6285277910296301e-6,
       "dx_ipm_clarabel": 2.4369744541149667e-8,
@@ -29,15 +29,15 @@
         "obj": -0.9935210691558658,
         "ok": true,
         "reason": "",
-        "reform_ms": 1.7945150000000003,
+        "reform_ms": 1.6764070000000002,
         "status": "OPTIMAL",
-        "total_time_ms": 1.9924170000000003
+        "total_time_ms": 1.8212500000000003
       },
       "ipm": {
         "iter": 9,
         "obj": -0.9935210642864293,
         "status": "SOLVED",
-        "time_ms": 0.129183
+        "time_ms": 0.07795600000000001
       },
       "m": 60,
       "n": 6,
@@ -48,13 +48,13 @@
         "iter": 50,
         "obj": -1.0725096420874436,
         "status": "SOLVED",
-        "time_ms": 0.035787
+        "time_ms": 0.024857000000000004
       },
       "clarabel": {
         "iter": 6,
         "obj": -1.0725096410998847,
         "status": "SOLVED",
-        "time_ms": 0.09464800000000001
+        "time_ms": 0.06914000000000001
       },
       "dx_ipm_admm": 1.0349440345032353e-9,
       "dx_ipm_clarabel": 8.191588368642644e-11,
@@ -64,15 +64,15 @@
         "obj": -1.0725096429245158,
         "ok": true,
         "reason": "",
-        "reform_ms": 1.828269,
+        "reform_ms": 1.3033550000000003,
         "status": "OPTIMAL",
-        "total_time_ms": 2.03098
+        "total_time_ms": 1.4466750000000002
       },
       "ipm": {
         "iter": 2,
         "obj": -1.0725096422556641,
         "status": "SOLVED",
-        "time_ms": 0.051227
+        "time_ms": 0.033122
       },
       "m": 10,
       "n": 20,
@@ -83,13 +83,13 @@
         "iter": 125,
         "obj": -1.9446211656255536,
         "status": "SOLVED",
-        "time_ms": 0.25526
+        "time_ms": 0.174549
       },
       "clarabel": {
         "iter": 11,
         "obj": -1.9446192692698763,
         "status": "SOLVED",
-        "time_ms": 0.536068
+        "time_ms": 0.38638800000000006
       },
       "dx_ipm_admm": 2.3649264482401844e-5,
       "dx_ipm_clarabel": 2.1221798246857265e-5,
@@ -99,15 +99,15 @@
         "obj": -1.9446192709604686,
         "ok": true,
         "reason": "",
-        "reform_ms": 2.143863,
+        "reform_ms": 1.4987930000000005,
         "status": "OPTIMAL",
-        "total_time_ms": 3.121922
+        "total_time_ms": 2.1909970000000003
       },
       "ipm": {
         "iter": 10,
         "obj": -1.9446192695168627,
         "status": "SOLVED",
-        "time_ms": 0.397208
+        "time_ms": 0.239131
       },
       "m": 102,
       "n": 101,
@@ -118,13 +118,13 @@
         "iter": 100,
         "obj": 198.73860470880263,
         "status": "SOLVED",
-        "time_ms": 0.295956
+        "time_ms": 0.216307
       },
       "clarabel": {
         "iter": 9,
         "obj": 198.7386048330222,
         "status": "SOLVED",
-        "time_ms": 0.7899560000000001
+        "time_ms": 0.5662360000000001
       },
       "dx_ipm_admm": 1.5325821214824846e-6,
       "dx_ipm_clarabel": 1.0293933064460523e-6,
@@ -134,15 +134,15 @@
         "obj": 198.7386026599445,
         "ok": true,
         "reason": "",
-        "reform_ms": 2.3523950000000005,
+        "reform_ms": 1.6628520000000002,
         "status": "OPTIMAL",
-        "total_time_ms": 3.8066210000000003
+        "total_time_ms": 2.7238700000000002
       },
       "ipm": {
         "iter": 6,
         "obj": 198.73860498130338,
         "status": "SOLVED",
-        "time_ms": 0.296648
+        "time_ms": 0.195829
       },
       "m": 204,
       "n": 204,
@@ -153,13 +153,13 @@
         "iter": 375,
         "obj": 92.62079368764985,
         "status": "SOLVED",
-        "time_ms": 0.9740920000000001
+        "time_ms": 0.7306860000000001
       },
       "clarabel": {
         "iter": 8,
         "obj": 92.62079366569414,
         "status": "SOLVED",
-        "time_ms": 0.665732
+        "time_ms": 0.4879490000000001
       },
       "dx_ipm_admm": 4.268074669599371e-7,
       "dx_ipm_clarabel": 3.010812169174537e-9,
@@ -169,15 +169,15 @@
         "obj": 92.62079377757486,
         "ok": true,
         "reason": "",
-        "reform_ms": 2.7826450000000005,
+        "reform_ms": 1.875834,
         "status": "OPTIMAL",
-        "total_time_ms": 3.7752420000000004
+        "total_time_ms": 2.613102
       },
       "ipm": {
         "iter": 9,
         "obj": 92.62079388562297,
         "status": "SOLVED",
-        "time_ms": 0.5045890000000001
+        "time_ms": 0.34723400000000004
       },
       "m": 400,
       "n": 202,
@@ -188,13 +188,13 @@
         "iter": 125,
         "obj": 55.92023737300288,
         "status": "SOLVED",
-        "time_ms": 1.0798510000000001
+        "time_ms": 0.807891
       },
       "clarabel": {
         "iter": 10,
         "obj": 55.920237478104546,
         "status": "SOLVED",
-        "time_ms": 1.9615600000000002
+        "time_ms": 1.397232
       },
       "dx_ipm_admm": 2.113159368556828e-5,
       "dx_ipm_clarabel": 1.8088740085412113e-5,
@@ -204,15 +204,15 @@
         "obj": 55.92023730307261,
         "ok": true,
         "reason": "",
-        "reform_ms": 5.0256240000000005,
+        "reform_ms": 3.552903000000001,
         "status": "OPTIMAL",
-        "total_time_ms": 9.410091000000001
+        "total_time_ms": 6.733453000000001
       },
       "ipm": {
         "iter": 9,
         "obj": 55.92023767730773,
         "status": "SOLVED",
-        "time_ms": 1.210868
+        "time_ms": 0.843008
       },
       "m": 600,
       "n": 602,
@@ -223,13 +223,13 @@
         "iter": 50,
         "obj": 0.7650953262953438,
         "status": "SOLVED",
-        "time_ms": 0.132309
+        "time_ms": 0.09620100000000001
       },
       "clarabel": {
         "iter": 8,
         "obj": 0.7650953263208389,
         "status": "SOLVED",
-        "time_ms": 0.571956
+        "time_ms": 0.41483200000000003
       },
       "dx_ipm_admm": 1.3561620160196242e-8,
       "dx_ipm_clarabel": 8.435497855785457e-9,
@@ -239,15 +239,15 @@
         "obj": 0.7650953262568145,
         "ok": true,
         "reason": "",
-        "reform_ms": 2.09471,
+        "reform_ms": 1.467514,
         "status": "OPTIMAL",
-        "total_time_ms": 2.749362
+        "total_time_ms": 1.9488400000000001
       },
       "ipm": {
         "iter": 7,
         "obj": 0.765095326319561,
         "status": "SOLVED",
-        "time_ms": 0.346992
+        "time_ms": 0.22504400000000002
       },
       "m": 108,
       "n": 64,

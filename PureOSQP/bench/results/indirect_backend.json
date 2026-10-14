@@ -2,8 +2,8 @@
   "blas_threads": 1,
   "by_density": [
     {
-      "bytes_direct": 8532400,
-      "bytes_indirect": 597032,
+      "bytes_direct": 6597288,
+      "bytes_indirect": 669672,
       "density": 0.002,
       "iter_direct": 550,
       "iter_indirect": 775,
@@ -11,14 +11,14 @@
       "n": 1000,
       "nnz_A": 4069,
       "nnz_P": 4962,
-      "shrink": 14.291361267067762,
-      "speedup": 3.170396733095211,
-      "t_direct": 0.071956808,
-      "t_indirect": 0.022696468
+      "shrink": 9.851521341791205,
+      "speedup": 3.164391972197427,
+      "t_direct": 0.075459439,
+      "t_indirect": 0.023846426
     },
     {
-      "bytes_direct": 8955592,
-      "bytes_indirect": 1020224,
+      "bytes_direct": 9203144,
+      "bytes_indirect": 1092864,
       "density": 0.005,
       "iter_direct": 850,
       "iter_indirect": 1500,
@@ -26,14 +26,14 @@
       "n": 1000,
       "nnz_A": 9926,
       "nnz_P": 25254,
-      "shrink": 8.778064425067436,
-      "speedup": 1.192955744168295,
-      "t_direct": 0.101459606,
-      "t_indirect": 0.085048927
+      "shrink": 8.421124677910518,
+      "speedup": 1.0562600372429294,
+      "t_direct": 0.092684917,
+      "t_indirect": 0.0877482
     },
     {
-      "bytes_direct": 10237472,
-      "bytes_indirect": 2302104,
+      "bytes_direct": 10649280,
+      "bytes_indirect": 2374744,
       "density": 0.01,
       "iter_direct": 875,
       "iter_indirect": 1975,
@@ -41,14 +41,14 @@
       "n": 1000,
       "nnz_A": 20192,
       "nnz_P": 95128,
-      "shrink": 4.447006738183853,
-      "speedup": 0.40461714647758723,
-      "t_direct": 0.105224585,
-      "t_indirect": 0.260059629
+      "shrink": 4.484390738538554,
+      "speedup": 0.40895598719157383,
+      "t_direct": 0.108758877,
+      "t_indirect": 0.265942743
     },
     {
-      "bytes_direct": 14236528,
-      "bytes_indirect": 6301160,
+      "bytes_direct": 14963296,
+      "bytes_indirect": 6373800,
       "density": 0.02,
       "iter_direct": 1025,
       "iter_indirect": 4300,
@@ -56,16 +56,16 @@
       "n": 1000,
       "nnz_A": 39877,
       "nnz_P": 325080,
-      "shrink": 2.2593503418418197,
-      "speedup": 0.11990990217344176,
-      "t_direct": 0.140056494,
-      "t_indirect": 1.168014413
+      "shrink": 2.3476255922683484,
+      "speedup": 0.1215045525644745,
+      "t_direct": 0.142394006,
+      "t_indirect": 1.171923216
     }
   ],
   "by_size": [
     {
-      "bytes_direct": 509112,
-      "bytes_indirect": 202544,
+      "bytes_direct": 558456,
+      "bytes_indirect": 217584,
       "density": 0.025,
       "iter_direct": 1050,
       "iter_indirect": 6200,
@@ -73,14 +73,14 @@
       "n": 200,
       "nnz_A": 1938,
       "nnz_P": 4774,
-      "shrink": 2.5135871711825577,
-      "speedup": 0.11495176812454633,
-      "t_direct": 0.005074412,
-      "t_indirect": 0.044143836
+      "shrink": 2.5666225457754246,
+      "speedup": 0.11447358077621834,
+      "t_direct": 0.005137545,
+      "t_indirect": 0.044879744
     },
     {
-      "bytes_direct": 2486128,
-      "bytes_indirect": 518760,
+      "bytes_direct": 2610768,
+      "bytes_indirect": 555400,
       "density": 0.01,
       "iter_direct": 1100,
       "iter_indirect": 1275,
@@ -88,14 +88,14 @@
       "n": 500,
       "nnz_A": 4994,
       "nnz_P": 13010,
-      "shrink": 4.792443519161076,
-      "speedup": 0.7923491485762358,
-      "t_direct": 0.027302618,
-      "t_indirect": 0.034457812
+      "shrink": 4.70069859560677,
+      "speedup": 0.7789860661478564,
+      "t_direct": 0.027512018,
+      "t_indirect": 0.035317728
     },
     {
-      "bytes_direct": 8955592,
-      "bytes_indirect": 1020224,
+      "bytes_direct": 9203144,
+      "bytes_indirect": 1092864,
       "density": 0.005,
       "iter_direct": 850,
       "iter_indirect": 1500,
@@ -103,14 +103,14 @@
       "n": 1000,
       "nnz_A": 9926,
       "nnz_P": 25254,
-      "shrink": 8.778064425067436,
-      "speedup": 1.2018353933784467,
-      "t_direct": 0.104198208,
-      "t_indirect": 0.086699234
+      "shrink": 8.421124677910518,
+      "speedup": 1.0709817816072744,
+      "t_direct": 0.093528296,
+      "t_indirect": 0.087329493
     },
     {
-      "bytes_direct": 33938768,
-      "bytes_indirect": 2067400,
+      "bytes_direct": 59883464,
+      "bytes_indirect": 2212040,
       "density": 0.0025,
       "iter_direct": 800,
       "iter_indirect": 1900,
@@ -118,14 +118,14 @@
       "n": 2000,
       "nnz_A": 20104,
       "nnz_P": 52392,
-      "shrink": 16.41615942729999,
-      "speedup": 2.805653245724388,
-      "t_direct": 0.698702854,
-      "t_indirect": 0.24903393
+      "shrink": 27.071600875210212,
+      "speedup": 6.6737972728978345,
+      "t_direct": 1.704254621,
+      "t_indirect": 0.255365057
     },
     {
-      "bytes_direct": 74958488,
-      "bytes_indirect": 3151120,
+      "bytes_direct": 128669216,
+      "bytes_indirect": 3367760,
       "density": 0.0017,
       "iter_direct": 1025,
       "iter_indirect": 1250,
@@ -133,14 +133,14 @@
       "n": 3000,
       "nnz_A": 30495,
       "nnz_P": 81424,
-      "shrink": 23.7878874812765,
-      "speedup": 5.846621925129717,
-      "t_direct": 2.143023028,
-      "t_indirect": 0.366540381
+      "shrink": 38.20617146114925,
+      "speedup": 12.139262931625582,
+      "t_direct": 4.565794919,
+      "t_indirect": 0.376117969
     },
     {
-      "bytes_direct": 131818112,
-      "bytes_indirect": 4074744,
+      "bytes_direct": 219156232,
+      "bytes_indirect": 4363384,
       "density": 0.00125,
       "iter_direct": 875,
       "iter_indirect": 1700,
@@ -148,11 +148,11 @@
       "n": 4000,
       "nnz_A": 40171,
       "nnz_P": 101424,
-      "shrink": 32.35003524147775,
-      "speedup": 6.099748060852608,
-      "t_direct": 3.998227212,
-      "t_indirect": 0.655474156
+      "shrink": 50.22620791569113,
+      "speedup": 9.95274081973801,
+      "t_direct": 6.800724045,
+      "t_indirect": 0.683301632
     }
   ],
-  "julia_version": "1.13.0"
+  "julia_version": "1.13.1"
 }

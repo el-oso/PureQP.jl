@@ -1,12 +1,12 @@
 {
   "julia": "1.13.1",
   "shapes": [
-    {"n": 16, "reduction_ns": 8.6, "max_loop_ns": 5.0, "branch_loop_ns": 3.7, "max_over_reduction": 0.5801, "branch_over_reduction": 0.4317},
-    {"n": 64, "reduction_ns": 32.2, "max_loop_ns": 12.2, "branch_loop_ns": 12.7, "max_over_reduction": 0.3781, "branch_over_reduction": 0.3956},
-    {"n": 256, "reduction_ns": 63.1, "max_loop_ns": 36.5, "branch_loop_ns": 81.1, "max_over_reduction": 0.5791, "branch_over_reduction": 1.2854},
-    {"n": 576, "reduction_ns": 104.8, "max_loop_ns": 74.9, "branch_loop_ns": 210.5, "max_over_reduction": 0.7149, "branch_over_reduction": 2.0091},
-    {"n": 2000, "reduction_ns": 274.0, "max_loop_ns": 267.3, "branch_loop_ns": 789.6, "max_over_reduction": 0.9757, "branch_over_reduction": 2.8820},
-    {"n": 5000, "reduction_ns": 628.7, "max_loop_ns": 628.4, "branch_loop_ns": 2006.6, "max_over_reduction": 0.9994, "branch_over_reduction": 3.1916},
-    {"n": 50000, "reduction_ns": 6179.0, "max_loop_ns": 6176.5, "branch_loop_ns": 20278.0, "max_over_reduction": 0.9996, "branch_over_reduction": 3.2818}
+    {"n": 16, "reduction_ns": 8.8, "max_loop_ns": 4.9, "branch_loop_ns": 3.7, "max_over_reduction": 0.5618, "branch_over_reduction": 0.4219},
+    {"n": 64, "reduction_ns": 31.9, "max_loop_ns": 12.1, "branch_loop_ns": 12.7, "max_over_reduction": 0.3794, "branch_over_reduction": 0.3984},
+    {"n": 256, "reduction_ns": 64.7, "max_loop_ns": 35.9, "branch_loop_ns": 80.4, "max_over_reduction": 0.5548, "branch_over_reduction": 1.2428},
+    {"n": 576, "reduction_ns": 104.1, "max_loop_ns": 71.7, "branch_loop_ns": 210.2, "max_over_reduction": 0.6892, "branch_over_reduction": 2.0198},
+    {"n": 2000, "reduction_ns": 271.3, "max_loop_ns": 262.1, "branch_loop_ns": 783.8, "max_over_reduction": 0.9660, "branch_over_reduction": 2.8888},
+    {"n": 5000, "reduction_ns": 638.2, "max_loop_ns": 618.8, "branch_loop_ns": 1987.3, "max_over_reduction": 0.9696, "branch_over_reduction": 3.1141},
+    {"n": 50000, "reduction_ns": 6059.0, "max_loop_ns": 6056.3, "branch_loop_ns": 20067.0, "max_over_reduction": 0.9995, "branch_over_reduction": 3.3119}
   ]
 }

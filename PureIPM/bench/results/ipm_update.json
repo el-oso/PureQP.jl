@@ -5,81 +5,81 @@
       "backend": "ldlfactorizations",
       "class": "Random QP",
       "fresh_iters": "240",
-      "fresh_seconds": "0.035871659",
+      "fresh_seconds": "0.036130466",
       "m": "500",
       "n": "50",
       "steps": "20",
       "update_iters": "225",
-      "update_seconds": "0.019631739"
+      "update_seconds": "0.019662016"
     },
     {
       "backend": "bunchkaufman",
       "class": "Eq QP",
       "fresh_iters": "160",
-      "fresh_seconds": "0.128614573",
+      "fresh_seconds": "0.12406382",
       "m": "100",
       "n": "200",
       "steps": "20",
       "update_iters": "120",
-      "update_seconds": "0.064150336"
+      "update_seconds": "0.061813584"
     },
     {
       "backend": "ldl_kkt",
       "class": "Portfolio",
       "fresh_iters": "275",
-      "fresh_seconds": "0.027423105",
+      "fresh_seconds": "0.029001278",
       "m": "506",
       "n": "505",
       "steps": "20",
       "update_iters": "292",
-      "update_seconds": "0.020530843"
+      "update_seconds": "0.020351504"
     },
     {
       "backend": "ldlfactorizations",
       "class": "Lasso",
       "fresh_iters": "182",
-      "fresh_seconds": "0.025112623",
+      "fresh_seconds": "0.026106415",
       "m": "816",
       "n": "816",
       "steps": "20",
       "update_iters": "210",
-      "update_seconds": "0.017370119"
+      "update_seconds": "0.017856656"
     },
     {
       "backend": "ldlfactorizations",
       "class": "SVM",
       "fresh_iters": "205",
-      "fresh_seconds": "0.032363101",
+      "fresh_seconds": "0.032448841",
       "m": "1600",
       "n": "808",
       "steps": "20",
       "update_iters": "211",
-      "update_seconds": "0.021998908"
+      "update_seconds": "0.022036128"
     },
     {
       "backend": "ldlfactorizations",
       "class": "Huber",
       "fresh_iters": "192",
-      "fresh_seconds": "0.051487294",
+      "fresh_seconds": "0.052909151",
       "m": "1800",
       "n": "1806",
       "steps": "20",
       "update_iters": "185",
-      "update_seconds": "0.033384224"
+      "update_seconds": "0.034107426"
     },
     {
       "backend": "ldl_kkt",
       "class": "Control",
       "fresh_iters": "239",
-      "fresh_seconds": "0.072277816",
+      "fresh_seconds": "0.085406022",
       "m": "540",
       "n": "320",
       "steps": "20",
       "update_iters": "212",
-      "update_seconds": "0.04686707"
+      "update_seconds": "0.046082392"
     }
   ],
   "eps": 1.0e-8,
-  "julia_version": "1.13.0",
+  "julia_version": "1.13.1",
   "steps": 20
 }

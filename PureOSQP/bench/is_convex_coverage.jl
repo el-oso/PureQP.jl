@@ -133,7 +133,17 @@ function issymmetric_rows()
     return rows
 end
 
+"""
+    gpu_rows() -> Vector{Dict}
+
+The `is_convex` share of a `JLArray` setup.
+
+Returns no rows on a Julia whose LLVM segfaults compiling this path: the loop vectorizer dies in
+`VPScalarPHIRecipe::execute` on 1.13 with LLVM 20.1, which takes the whole process with it rather
+than raising. The sweep is restored by widening this check once a Julia that compiles it ships.
+"""
 function gpu_rows()
+    VERSION < v"1.13" || return Dict{String, Any}[]
     JLArrays.allowscalar(false)
     rows = Dict{String, Any}[]
     for nthreads in THREADS

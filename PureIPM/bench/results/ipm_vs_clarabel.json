@@ -3,36 +3,36 @@
   "blas_threads": 1,
   "clarabel_version": "0.11.1",
   "ipm_tol": 1.0e-8,
-  "julia_version": "1.13.0",
+  "julia_version": "1.13.1",
   "results": [
     {
       "activeset": {
         "eps_prox": 0.0,
-        "iter": 7,
-        "obj": -0.993521069152693,
+        "iter": 11,
+        "obj": -0.9935210691527151,
         "status": "SOLVED",
-        "time_ms": 0.005373333333333334
+        "time_ms": 0.010525
       },
       "admm": {
         "iter": 200,
         "obj": -0.9935227576816348,
         "status": "SOLVED",
-        "time_ms": 0.05447300000000001
+        "time_ms": 0.048912000000000004
       },
       "clarabel": {
         "iter": 9,
         "obj": -0.9935210668976094,
         "status": "SOLVED",
-        "time_ms": 0.09403700000000001
+        "time_ms": 0.093336
       },
-      "dx_ipm_activeset": 5.250301566516999e-8,
+      "dx_ipm_activeset": 5.2503015717287576e-8,
       "dx_ipm_admm": 1.6285277910296301e-6,
       "dx_ipm_clarabel": 2.4369744541149667e-8,
       "ipm": {
         "iter": 9,
         "obj": -0.9935210642864293,
         "status": "SOLVED",
-        "time_ms": 0.075062
+        "time_ms": 0.076935
       },
       "m": 60,
       "n": 6,
@@ -42,30 +42,30 @@
       "activeset": {
         "eps_prox": 0.0,
         "iter": 1,
-        "obj": -1.0725096422445022,
+        "obj": -1.0725096422554063,
         "status": "SOLVED",
-        "time_ms": 0.0039334
+        "time_ms": 0.007012999999999999
       },
       "admm": {
         "iter": 50,
         "obj": -1.0725096420874436,
         "status": "SOLVED",
-        "time_ms": 0.025758000000000003
+        "time_ms": 0.024617
       },
       "clarabel": {
         "iter": 6,
         "obj": -1.0725096410998847,
         "status": "SOLVED",
-        "time_ms": 0.070973
+        "time_ms": 0.069831
       },
-      "dx_ipm_activeset": 7.423542030129919e-13,
+      "dx_ipm_activeset": 1.9420921522147685e-14,
       "dx_ipm_admm": 1.0349440345032353e-9,
       "dx_ipm_clarabel": 8.191588368642644e-11,
       "ipm": {
         "iter": 2,
         "obj": -1.0725096422556641,
         "status": "SOLVED",
-        "time_ms": 0.032872
+        "time_ms": 0.032642000000000004
       },
       "m": 10,
       "n": 20,
@@ -74,31 +74,31 @@
     {
       "activeset": {
         "eps_prox": 0.0,
-        "iter": 99,
-        "obj": -1.9446192709526868,
+        "iter": 109,
+        "obj": -1.944619270952622,
         "status": "SOLVED",
-        "time_ms": 0.394353
+        "time_ms": 0.572268
       },
       "admm": {
         "iter": 125,
         "obj": -1.9446211656255536,
         "status": "SOLVED",
-        "time_ms": 0.177073
+        "time_ms": 0.17739400000000002
       },
       "clarabel": {
         "iter": 11,
         "obj": -1.9446192692698763,
         "status": "SOLVED",
-        "time_ms": 0.38502400000000003
+        "time_ms": 0.38693900000000003
       },
-      "dx_ipm_activeset": 2.3929734449099527e-5,
+      "dx_ipm_activeset": 2.3929734456269898e-5,
       "dx_ipm_admm": 2.3649264482401844e-5,
       "dx_ipm_clarabel": 2.1221798246857265e-5,
       "ipm": {
         "iter": 10,
         "obj": -1.9446192695168627,
         "status": "SOLVED",
-        "time_ms": 0.239511
+        "time_ms": 0.237357
       },
       "m": 102,
       "n": 101,
@@ -108,30 +108,30 @@
       "activeset": {
         "eps_prox": 0.0001,
         "iter": 6,
-        "obj": 198.7386047122449,
+        "obj": 198.73860471224393,
         "status": "SOLVED",
-        "time_ms": 1.051419
+        "time_ms": 1.6228470000000002
       },
       "admm": {
         "iter": 100,
         "obj": 198.73860470880263,
         "status": "SOLVED",
-        "time_ms": 0.21422300000000002
+        "time_ms": 0.21709900000000001
       },
       "clarabel": {
         "iter": 9,
         "obj": 198.7386048330222,
         "status": "SOLVED",
-        "time_ms": 0.5609860000000001
+        "time_ms": 0.565795
       },
-      "dx_ipm_activeset": 1.537333306847949e-6,
+      "dx_ipm_activeset": 1.5373344148071644e-6,
       "dx_ipm_admm": 1.5325821214824846e-6,
       "dx_ipm_clarabel": 1.0293933064460523e-6,
       "ipm": {
         "iter": 6,
         "obj": 198.73860498130338,
         "status": "SOLVED",
-        "time_ms": 0.195298
+        "time_ms": 0.199476
       },
       "m": 204,
       "n": 204,
@@ -140,31 +140,31 @@
     {
       "activeset": {
         "eps_prox": 0.0001,
-        "iter": 204,
-        "obj": 92.62079377743784,
+        "iter": 218,
+        "obj": 92.62079377745445,
         "status": "SOLVED",
-        "time_ms": 3.9502470000000005
+        "time_ms": 4.453348
       },
       "admm": {
         "iter": 375,
         "obj": 92.62079368764985,
         "status": "SOLVED",
-        "time_ms": 0.7145050000000001
+        "time_ms": 0.709196
       },
       "clarabel": {
         "iter": 8,
         "obj": 92.62079366569414,
         "status": "SOLVED",
-        "time_ms": 0.48288000000000003
+        "time_ms": 0.483591
       },
-      "dx_ipm_activeset": 4.6276201928311464e-9,
+      "dx_ipm_activeset": 4.627546427988722e-9,
       "dx_ipm_admm": 4.268074669599371e-7,
       "dx_ipm_clarabel": 3.010812169174537e-9,
       "ipm": {
         "iter": 9,
         "obj": 92.62079388562297,
         "status": "SOLVED",
-        "time_ms": 0.33964000000000005
+        "time_ms": 0.342385
       },
       "m": 400,
       "n": 202,
@@ -174,30 +174,30 @@
       "activeset": {
         "eps_prox": 0.0001,
         "iter": 397,
-        "obj": 55.92023737311678,
+        "obj": 55.92023737298702,
         "status": "SOLVED",
-        "time_ms": 45.40766
+        "time_ms": 71.52929200000001
       },
       "admm": {
         "iter": 125,
         "obj": 55.92023737300288,
         "status": "SOLVED",
-        "time_ms": 0.7875030000000001
+        "time_ms": 0.7953880000000001
       },
       "clarabel": {
         "iter": 10,
         "obj": 55.920237478104546,
         "status": "SOLVED",
-        "time_ms": 1.392462
+        "time_ms": 1.382284
       },
-      "dx_ipm_activeset": 2.1131593542854394e-5,
+      "dx_ipm_activeset": 2.1131593702608524e-5,
       "dx_ipm_admm": 2.113159368556828e-5,
       "dx_ipm_clarabel": 1.8088740085412113e-5,
       "ipm": {
         "iter": 9,
         "obj": 55.92023767730773,
         "status": "SOLVED",
-        "time_ms": 0.8362350000000001
+        "time_ms": 0.8434180000000001
       },
       "m": 600,
       "n": 602,
@@ -207,30 +207,30 @@
       "activeset": {
         "eps_prox": 0.0001,
         "iter": 3,
-        "obj": 0.7650953263167035,
+        "obj": 0.7650953263194218,
         "status": "SOLVED",
-        "time_ms": 0.061646
+        "time_ms": 0.07991
       },
       "admm": {
         "iter": 50,
         "obj": 0.7650953262953438,
         "status": "SOLVED",
-        "time_ms": 0.09741300000000001
+        "time_ms": 0.09596100000000002
       },
       "clarabel": {
         "iter": 8,
         "obj": 0.7650953263208389,
         "status": "SOLVED",
-        "time_ms": 0.41553300000000004
+        "time_ms": 0.412677
       },
-      "dx_ipm_activeset": 1.3534167564444033e-8,
+      "dx_ipm_activeset": 1.3534626086553203e-8,
       "dx_ipm_admm": 1.3561620160196242e-8,
       "dx_ipm_clarabel": 8.435497855785457e-9,
       "ipm": {
         "iter": 7,
         "obj": 0.765095326319561,
         "status": "SOLVED",
-        "time_ms": 0.22827
+        "time_ms": 0.224473
       },
       "m": 108,
       "n": 64,

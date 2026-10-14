@@ -59,11 +59,11 @@
     {
       "backend": "kronecker",
       "dense_iter": "300",
-      "dense_seconds": "0.000194636",
+      "dense_seconds": "0.000192212",
       "dense_status": "SOLVED",
       "kappa": "1.000001952458679e12",
       "kron_iter": "175",
-      "kron_seconds": "0.00011182000000000001",
+      "kron_seconds": "0.00010325400000000001",
       "kron_status": "SOLVED",
       "n": "30",
       "sweep": "against_equilibrated"
@@ -71,11 +71,11 @@
     {
       "backend": "kronecker",
       "dense_iter": "575",
-      "dense_seconds": "0.003265734",
+      "dense_seconds": "0.0032640715",
       "dense_status": "SOLVED",
       "kappa": "1.0000016507917158e12",
       "kron_iter": "350",
-      "kron_seconds": "0.000609846",
+      "kron_seconds": "0.000563832",
       "kron_status": "SOLVED",
       "n": "168",
       "sweep": "against_equilibrated"
@@ -83,15 +83,15 @@
     {
       "backend": "kronecker",
       "dense_iter": "500",
-      "dense_seconds": "0.027245397",
+      "dense_seconds": "0.029371865500000004",
       "dense_status": "SOLVED",
       "kappa": "1.0000008988472825e12",
       "kron_iter": "875",
-      "kron_seconds": "0.0039750015",
+      "kron_seconds": "0.003810907",
       "kron_status": "SOLVED",
       "n": "480",
       "sweep": "against_equilibrated"
     }
   ],
-  "julia_version": "1.12.7"
+  "julia_version": "1.13.1"
 }
