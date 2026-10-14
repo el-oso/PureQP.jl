@@ -152,3 +152,90 @@ end
     @test err isa ArgumentError
     @test occursin("A's block 2's second Kronecker factor is not finite at entry (3, 5)", err.msg)
 end
+
+@testitem "a join's reduced term is assembled from its blocks" begin
+    using PureQPBase, LinearAlgebra, FillArrays, Random
+    Random.seed!(29)
+
+    # Two Kronecker blocks over the same rows plus a constant block, which is the shape an
+    # interior-point reduced matrix meets when the constraint operator is a stack of joins.
+    # Without the join's own method this falls to the generic product form and never reaches
+    # either block's contraction, so the check is that the assembled matrix is the dense one.
+    rows = 12
+    b1 = PureQPBase.KroneckerOperator(randn(2, 1), randn(6, 5))      # 12 x 5
+    b2 = PureQPBase.KroneckerOperator(randn(2, 1), randn(6, 3))      # 12 x 3
+    b3 = Fill(0.25, rows, 4)
+    J = PureQPBase.JoinedOperator(b1, b2, b3)
+    n = size(J, 2)
+    @test n == 12
+
+    w = rand(rows) .+ 0.1
+    D = rand(n) .+ 0.5
+    R = zeros(n, n)
+    PureQPBase.add_reduced_term!(
+        R, Float64, J, w, D, n, rows, PureQPBase.reduced_term_scratch(Float64, J),
+        zeros(n), zeros(rows), zeros(n)
+    )
+    Jm = Matrix(J)
+    @test R ≈ Diagonal(D) * Jm' * Diagonal(w) * Jm * Diagonal(D) rtol = 1.0e-12
+    # The cross blocks are written on both sides of the diagonal, not just one.
+    @test R ≈ R' rtol = 1.0e-12
+
+    # A zero constant block contributes nothing, diagonally or in its cross terms.
+    Jz = PureQPBase.JoinedOperator(b1, b2, Fill(0.0, rows, 4))
+    Rz = zeros(n, n)
+    PureQPBase.add_reduced_term!(
+        Rz, Float64, Jz, w, D, n, rows, PureQPBase.reduced_term_scratch(Float64, Jz),
+        zeros(n), zeros(rows), zeros(n)
+    )
+    @test all(iszero, Rz[9:12, :])
+    @test all(iszero, Rz[:, 9:12])
+end
+
+@testitem "a join contracts a Kronecker pair's cross term to matrix products" begin
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(24)
+
+    # Two Kronecker blocks over the same row structure take the contracted form; the shapes
+    # below cover one column pair and several, and a first factor whose signs disagree with its
+    # partner's, which is what stops the weight folding into a row scaling.
+    function reduced(Ai, Aj)
+        J = PureQPBase.JoinedOperator(Ai, Aj)
+        n, m = size(J, 2), size(J, 1)
+        w = rand(m) .+ 0.1
+        D = rand(n) .+ 0.5
+        R = zeros(n, n)
+        PureQPBase.add_reduced_term!(
+            R, Float64, J, w, D, n, m, PureQPBase.reduced_term_scratch(Float64, J),
+            zeros(n), zeros(m), zeros(n)
+        )
+        Jm = Matrix(J)
+        return R, Diagonal(D) * Jm' * Diagonal(w) * Jm * Diagonal(D)
+    end
+    kron_of(m1, p, m2, q) = PureQPBase.KroneckerOperator(randn(m1, p), randn(m2, q))
+
+    for (a, b) in (
+            (kron_of(2, 1, 6, 5), kron_of(2, 1, 6, 3)),
+            (kron_of(3, 2, 5, 4), kron_of(3, 2, 5, 3)),
+            (kron_of(4, 3, 7, 2), kron_of(4, 1, 7, 6)),
+            (
+                PureQPBase.KroneckerOperator(reshape([1.0, -1.0], 2, 1), randn(6, 5)),
+                PureQPBase.KroneckerOperator(reshape([1.0, 1.0], 2, 1), randn(6, 4)),
+            ),
+        )
+        @test PureQPBase.kron_cross_pair(a, b)
+        R, Rtrue = reduced(a, b)
+        @test R ≈ Rtrue rtol = 1.0e-12
+        @test R ≈ R' rtol = 1.0e-12
+    end
+
+    # Rows that do not line up leave the pair on the column form, which must still be right.
+    mismatched = (kron_of(2, 1, 6, 5), kron_of(3, 1, 4, 3))
+    @test !PureQPBase.kron_cross_pair(mismatched...)
+    @test isempty(first(PureQPBase.kron_cross_scratch(Float64, mismatched)))
+    J = PureQPBase.JoinedOperator(kron_of(2, 1, 6, 5), PureQPBase.KroneckerOperator(randn(2, 1), randn(6, 3)))
+    # A qualifying pair sizes the buffers from the wider of the two second factors.
+    scratch = PureQPBase.kron_cross_scratch(Float64, J.blocks)
+    @test size(first(scratch)) == (6, 3)
+    @test size(last(scratch)) == (5, 3)
+end

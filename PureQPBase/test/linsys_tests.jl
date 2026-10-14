@@ -135,7 +135,7 @@ end
 
     # Both backends this package ships satisfy it.
     for B in (
-            PureQPBase.ReducedCholesky{Float64, Matrix{Float64}},
+            PureQPBase.ReducedCholesky{Float64, Matrix{Float64}, false},
             PureQPBase.FullKKT{
                 Float64, Matrix{Float64}, Vector{Float64},
                 BunchKaufman{Float64, Matrix{Float64}, Vector{Int}},

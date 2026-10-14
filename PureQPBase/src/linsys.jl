@@ -210,7 +210,7 @@ are the same work regardless. `solve_system!` is therefore written once, here.
 abstract type ReducedInverse <: LinearSystem end
 
 """
-    ReducedCholesky{T,M} <: ReducedInverse
+    ReducedCholesky{T,M,FACTOR} <: ReducedInverse
 
 Eliminates `ν` and solves the `n×n` symmetric positive definite reduced system
 
@@ -227,21 +227,27 @@ the two forms agree to within a small factor.
 This is the default: the reduced matrix is smaller than the full system for every `m`, and
 measurement puts it faster in every dense regime.
 """
-struct ReducedCholesky{T <: Real, M <: AbstractMatrix{T}} <: ReducedInverse
+struct ReducedCholesky{T <: Real, M <: AbstractMatrix{T}, FACTOR} <: ReducedInverse
     W::M
+    # The inverse when `FACTOR` is false, the Cholesky factor's upper triangle when it is true;
+    # see [`ProductReduced`](@ref) for which a caller wants.
     Rinv::M
 end
 
 """
-    ReducedCholesky(proto::AbstractVector, n, m)
+    ReducedCholesky(proto::AbstractVector, n, m; keep_factor = false)
 
 Build the backend's storage as `similar(proto, ...)`, so it follows the array type of the
 data it was given rather than always being a `Matrix`. `proto` is a dense vector, not one
 of the problem matrices: both buffers are dense even when `P` and `A` are not.
+
+`keep_factor` holds the Cholesky factor in place of the inverse; see [`ProductReduced`](@ref).
 """
-function ReducedCholesky(proto::AbstractVector{T}, n::Integer, m::Integer) where {T <: Real}
+function ReducedCholesky(
+        proto::AbstractVector{T}, n::Integer, m::Integer; keep_factor::Bool = false
+    ) where {T <: Real}
     W = similar(proto, T, m, n)
-    return ReducedCholesky{T, typeof(W)}(W, similar(proto, T, n, n))
+    return ReducedCholesky{T, typeof(W), keep_factor}(W, similar(proto, T, n, n))
 end
 
 """
@@ -1004,7 +1010,7 @@ function named_backend(::Val{LS}, P, A, prob, wt, sel::SelectionFor, preconditio
         check_formable(Val(LS), P, A)
         # Past `choose_backend` entirely. Its rule for a sparse `A` reads the pattern and not
         # the numbers, and this is the way to overrule one that misjudges a problem.
-        return (ReducedCholesky(q0, n, m), false)
+        return (ReducedCholesky(q0, n, m; keep_factor = keeps_factor(sel)), false)
     elseif LS === :indirect
         check_preconditioner(preconditioner, typeof(q0))
         return (indirect_backend(q0, n, m, preconditioner), false)
@@ -1099,7 +1105,7 @@ end
 invert_spd!(R::StridedMatrix{<:LinearAlgebra.BlasFloat}, F) = LAPACK.potri!('U', R)
 invert_spd!(R::AbstractMatrix, F) = copyto!(R, inv(F))
 
-function factorize!(ls::ReducedCholesky{T}, prob, wt)::Bool where {T}
+function factorize!(ls::ReducedCholesky{T, M, FACTOR}, prob, wt)::Bool where {T, M, FACTOR}
     P, A, D, E, c, n, m = prob.P, prob.A, prob.D, prob.E, prob.c, prob.n, prob.m
     R = ls.Rinv
     # `scaled_col!` writes only the entries the matrix actually has, so W is zeroed first.
@@ -1131,8 +1137,14 @@ function factorize!(ls::ReducedCholesky{T}, prob, wt)::Bool where {T}
     end
     F = cholesky!(Symmetric(R); check = false)
     issuccess(F) || return false
-    invert_spd!(R, F)
+    FACTOR || invert_spd!(R, F)
     return true
+end
+
+function solve_system!(
+        ls::ReducedCholesky{T, M, true}, prob, wt, rhs_x, rhs_z, x, z
+    )::Nothing where {T, M}
+    return solve_by_factor!(ls.Rinv, prob, wt, rhs_x, rhs_z, x, z)
 end
 
 function factorize!(ls::DiagonalReduced{T}, prob, wt)::Bool where {T}
@@ -1311,6 +1323,42 @@ end
 function solve_system!(ls::ReducedInverse, prob, wt, rhs_x, rhs_z, x, z)::Nothing
     reduced_rhs!(prob, wt, rhs_x, rhs_z)
     mul!(x, Symmetric(ls.Rinv, :U), prob.work_n)
+    prob.m > 0 && mul_A!(z, prob, x)
+    return nothing
+end
+
+"""
+    keeps_factor(sel) -> Bool
+
+Whether a reduced backend serving this algorithm should hold the Cholesky factor rather than
+its inverse.
+
+False by default, which suits an algorithm solving many times against one factorization: the
+`potri` is paid once and every solve is a `symv`. An algorithm that refactorizes as often as it
+solves answers true, since then the inversion costs more than the solves it saves and the
+triangular solves are the more accurate pair. See [`ProductReduced`](@ref).
+"""
+keeps_factor(sel) = false
+# The interior-point method refactorizes at each iteration's weights and solves against that
+# factorization twice, for the predictor and the corrector.
+keeps_factor(::IPMSelection) = true
+
+"""
+    solve_by_factor!(R, prob, wt, rhs_x, rhs_z, x, z) -> Nothing
+
+Solve the reduced system against a kept Cholesky factor, as two triangular solves.
+
+`R` holds the factor's upper triangle, so the reduced matrix is `RᵀR` and `R⁻¹(R⁻ᵀb)` is its
+inverse applied to `b`. This is what a backend holding the factor rather than the inverse shares;
+the [`ReducedInverse`](@ref) method above applies a stored inverse with one `symv` instead, which
+is the faster solve bought with a `potri` per factorization and a less accurate one.
+"""
+function solve_by_factor!(R, prob, wt, rhs_x, rhs_z, x, z)::Nothing
+    reduced_rhs!(prob, wt, rhs_x, rhs_z)
+    copyto!(x, prob.work_n)
+    U = UpperTriangular(R)
+    ldiv!(adjoint(U), x)
+    ldiv!(U, x)
     prob.m > 0 && mul_A!(z, prob, x)
     return nothing
 end
@@ -1567,8 +1615,19 @@ factor's is full, with no spectral decay, and the system is a linear matrix equa
 or more Kronecker terms, for which no direct method is known. A caller who cannot hold `n²`
 wants the matrix-free backend and [`KroneckerPreconditioner`](@ref).
 """
-struct ProductReduced{T <: Real, M <: AbstractMatrix{T}, V <: AbstractVector{T}, S} <: ReducedInverse
+struct ProductReduced{T <: Real, M <: AbstractMatrix{T}, V <: AbstractVector{T}, S, FACTOR} <: ReducedInverse
+    # The inverse when `FACTOR` is false, the Cholesky factor's upper triangle when it is true.
+    # Which one is worth holding depends on how many solves a caller makes per factorization:
+    # inverting costs one `potri` and makes each solve one `symv`, keeping the factor costs
+    # nothing extra and makes each solve two triangular solves. Measured at `n = 505`: `potri`
+    # 2.27 ms against 90 µs per solve, so the inverse pays from about twenty-five solves up.
+    # The operator-splitting method makes one per iteration against a factorization it keeps for
+    # many, and the interior-point method makes two per factorization.
     Rinv::M
+    # `c·D P D + σI`, the part of the reduced matrix the weights do not enter. Held so
+    # `refactor_weights!` can start from it rather than spend `n` products with `P` again;
+    # `factorize!` is what rebuilds it, and every path that invalidates it calls that.
+    R0::M
     # The basis vector, `A eⱼ` and the accumulated column. Owned so a factorization allocates
     # nothing, and private to one backend, so one must not be factored from two tasks at once.
     ej::V
@@ -1624,17 +1683,24 @@ own, handed over at the call.
 reduced_term_scratch(::Type{T}, A) where {T} = (adjoint(A),)
 
 """
-    ProductReduced(proto::AbstractVector, n, m)
+    ProductReduced(proto::AbstractVector, n, m, A; keep_factor = false)
 
 Build the storage as `similar(proto, ...)`, so it follows the array type of the data rather
 than always being a `Matrix`.
+
+`keep_factor` holds the Cholesky factor in place of the inverse, which is what a caller making
+a couple of solves per factorization wants; the default inverts, which is what a caller making
+many of them wants. It is a type parameter rather than a field so neither solve carries a
+branch.
 """
-function ProductReduced(proto::AbstractVector{T}, n::Integer, m::Integer, A) where {T <: Real}
+function ProductReduced(
+        proto::AbstractVector{T}, n::Integer, m::Integer, A; keep_factor::Bool = false
+    ) where {T <: Real}
     scratch = reduced_term_scratch(T, A)
     R = similar(proto, T, n, n)
-    return ProductReduced{T, typeof(R), typeof(similar(proto, T, n)), typeof(scratch)}(
-        R, similar(proto, T, n), similar(proto, T, m), similar(proto, T, n),
-        scratch, similar(proto, T, m)
+    return ProductReduced{T, typeof(R), typeof(similar(proto, T, n)), typeof(scratch), keep_factor}(
+        R, similar(proto, T, n, n), similar(proto, T, n), similar(proto, T, m),
+        similar(proto, T, n), scratch, similar(proto, T, m)
     )
 end
 
@@ -1646,19 +1712,39 @@ function backend_info(ls::ProductReduced)
 end
 
 function factorize!(ls::ProductReduced{T}, prob, wt)::Bool where {T}
-    P, A, D, E, c, n, m = prob.P, prob.A, prob.D, prob.E, prob.c, prob.n, prob.m
-    R, ej, col = ls.Rinv, ls.ej, ls.col
-    # `c·D P D + σI`, one product with `P` per column.
+    P, D, c, n = prob.P, prob.D, prob.c, prob.n
+    R0, ej, col = ls.R0, ls.ej, ls.col
+    # `c·D P D + σI`, one product with `P` per column. Written to `R0` rather than straight
+    # into the factorization, so `refactor_weights!` can reuse it: the weights enter nowhere
+    # here, and `σ` reaches this method by contract whenever it changes.
     for j in 1:n
         fill!(ej, zero(T))
         ej[j] = one(T)
         mul!(col, P, ej)
         dj = D[j]
         for i in 1:n
-            R[i, j] = c * D[i] * col[i] * dj
+            R0[i, j] = c * D[i] * col[i] * dj
         end
-        R[j, j] += wt.sigma
+        R0[j, j] += wt.sigma
     end
+    return refactor_weights!(ls, prob, wt)
+end
+
+"""
+    refactor_weights!(ls::ProductReduced, prob, wt) -> Bool
+
+Add the weighted term to the kept `c·D P D + σI` and factor, skipping the `n` products with
+`P` that built it.
+
+The interior-point method calls this on every iteration whose `σ` did not move, which on a
+run without a regularization bump is all of them but the first.
+"""
+function refactor_weights!(
+        ls::ProductReduced{T, M, V, S, FACTOR}, prob, wt
+    )::Bool where {T, M, V, S, FACTOR}
+    A, D, E, n, m = prob.A, prob.D, prob.E, prob.n, prob.m
+    R = ls.Rinv
+    copyto!(R, ls.R0)
     if m > 0
         # The reduced term is weighted by `E²ρ`, the scaled rows' weights.
         ws = ls.wscaled
@@ -1671,6 +1757,23 @@ function factorize!(ls::ProductReduced{T}, prob, wt)::Bool where {T}
     end
     F = cholesky!(Symmetric(R); check = false)
     issuccess(F) || return false
-    invert_spd!(R, F)
+    # `FACTOR` leaves the factor where the Cholesky wrote it; the inverse costs a `potri` here
+    # and is only worth it for a caller that solves against it many times.
+    FACTOR || invert_spd!(R, F)
     return true
+end
+
+"""
+    solve_system!(ls::ProductReduced{…,true}, prob, wt, rhs_x, rhs_z, x, z) -> Nothing
+
+Solve against the kept Cholesky factor, as two triangular solves.
+
+The reduced matrix is `RᵀR`, so `R⁻¹(R⁻ᵀb)` is its inverse applied to `b`. The method
+[`ReducedInverse`](@ref) shares instead applies a stored inverse with one `symv`, which is the
+faster solve and the slower factorization.
+"""
+function solve_system!(
+        ls::ProductReduced{T, M, V, S, true}, prob, wt, rhs_x, rhs_z, x, z
+    )::Nothing where {T, M, V, S}
+    return solve_by_factor!(ls.Rinv, prob, wt, rhs_x, rhs_z, x, z)
 end

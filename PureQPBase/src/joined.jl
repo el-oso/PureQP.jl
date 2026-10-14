@@ -190,9 +190,155 @@ is_materializable(A::JoinedOperator) = all(is_materializable, A.blocks)
 # and a join's answer must not move with the default's.
 holds_structure(::JoinedOperator) = false
 
+"Scratch each block's own reduced term needs, in block order."
+reduced_term_scratch(::Type{T}, A::JoinedOperator) where {T} =
+    (map(Ai -> reduced_term_scratch(T, Ai), A.blocks), kron_cross_scratch(T, A.blocks))
+
 # Each block checks its own entries in its own way, so a Kronecker block checks its factors.
 function check_finite(M::JoinedOperator, rows::Integer, cols::Integer, name::String)
     return joined_check_finite(M.blocks, name, 1)
+end
+
+"""
+    add_reduced_term!(R, T, A::JoinedOperator, weights, D, n, m, scratch, ej, av, col) -> R
+
+Add `D Aᵀ diag(w) A D` into `R`, block by block over the columns the join partitions.
+
+A join's reduced term is a block matrix: the `(i, i)` block is block `i`'s own reduced term, so
+it goes to that block's method and a `KroneckerOperator` block contracts its factors instead of
+answering `2n` products. The `(i, j)` blocks are `Dᵢ Aᵢᵀ diag(w) Aⱼ Dⱼ`, which no block can
+compute alone; those take the column form over the narrower of the two, one forward product of
+it and one adjoint of the other per column.
+
+Without this method a join falls to the generic product form, which reaches every column of the
+whole join through a forward and an adjoint product and so never reaches any block's own
+contraction.
+"""
+function add_reduced_term!(
+        R::AbstractMatrix{T}, ::Type{T}, A::JoinedOperator, weights::AbstractVector,
+        D::AbstractVector, n::Integer, m::Integer, scratch, ej, av, col
+    ) where {T}
+    joined_diag_term!(R, T, A.blocks, weights, D, m, first(scratch), ej, av, col, 1)
+    joined_cross_term!(R, T, A.blocks, weights, D, m, ej, av, col, last(scratch), 1)
+    return R
+end
+
+@inline joined_diag_term!(R, ::Type{T}, ::Tuple{}, w, D, m, ::Tuple, ej, av, col, off) where {T} = R
+
+@inline function joined_diag_term!(
+        R, ::Type{T}, blocks::Tuple, w, D, m, scratch::Tuple, ej, av, col, off
+    ) where {T}
+    A1 = first(blocks)
+    k = size(A1, 2)
+    rng = off:(off + k - 1)
+    add_reduced_term!(
+        view(R, rng, rng), T, A1, w, view(D, rng), k, m, first(scratch),
+        view(ej, 1:k), av, view(col, 1:k)
+    )
+    return joined_diag_term!(
+        R, T, Base.tail(blocks), w, D, m, Base.tail(scratch), ej, av, col, off + k
+    )
+end
+
+@inline joined_cross_term!(R, ::Type{T}, ::Tuple{}, w, D, m, ej, av, col, cross, off) where {T} = R
+
+@inline function joined_cross_term!(
+        R, ::Type{T}, blocks::Tuple, w, D, m, ej, av, col, cross, off
+    ) where {T}
+    A1 = first(blocks)
+    k = size(A1, 2)
+    rest = Base.tail(blocks)
+    joined_cross_pairs!(R, T, A1, rest, w, D, m, ej, av, col, cross, off, off + k)
+    return joined_cross_term!(R, T, rest, w, D, m, ej, av, col, cross, off + k)
+end
+
+@inline joined_cross_pairs!(
+    R, ::Type{T}, Ai, ::Tuple{}, w, D, m, ej, av, col, cross, offi, offj
+) where {T} = R
+
+@inline function joined_cross_pairs!(
+        R, ::Type{T}, Ai, rest::Tuple, w, D, m, ej, av, col, cross, offi, offj
+    ) where {T}
+    Aj = first(rest)
+    kj = size(Aj, 2)
+    cross_block!(R, T, Ai, Aj, w, D, m, ej, av, col, cross, offi, offj)
+    return joined_cross_pairs!(R, T, Ai, Base.tail(rest), w, D, m, ej, av, col, cross, offi, offj + kj)
+end
+
+"""
+    cross_block!(R, T, Ai, Aj, w, D, m, ej, av, col, cross, offi, offj) -> R
+
+One off-diagonal block of a join's reduced term, by whichever contraction the pair admits.
+
+Two Kronecker products over the same row structure contract to one matrix product per pair of
+first-factor columns ([`kron_cross_term!`](@ref)); anything else goes column by column.
+"""
+@inline function cross_block!(
+        R, ::Type{T}, Ai, Aj, w, D, m, ej, av, col, cross, offi, offj
+    ) where {T}
+    ki, kj = size(Ai, 2), size(Aj, 2)
+    # The column form runs over the narrower block, so the count of products is the smaller of
+    # the two and the products themselves are against the wider one.
+    if kj <= ki
+        cross_columns!(R, T, Ai, Aj, w, D, m, ej, av, col, offi, offj, false)
+    else
+        cross_columns!(R, T, Aj, Ai, w, D, m, ej, av, col, offj, offi, true)
+    end
+    return R
+end
+
+@inline function cross_block!(
+        R, ::Type{T}, Ai::KroneckerOperator, Aj::KroneckerOperator, w, D, m,
+        ej, av, col, cross, offi, offj
+    ) where {T}
+    # `kron_cross_scratch` sized the buffers from the same predicate, so a pair it admits has
+    # room here.
+    if kron_cross_pair(Ai, Aj)
+        kron_cross_term!(R, T, Ai, Aj, w, D, first(cross), last(cross), av, offi, offj)
+    else
+        ki, kj = size(Ai, 2), size(Aj, 2)
+        if kj <= ki
+            cross_columns!(R, T, Ai, Aj, w, D, m, ej, av, col, offi, offj, false)
+        else
+            cross_columns!(R, T, Aj, Ai, w, D, m, ej, av, col, offj, offi, true)
+        end
+    end
+    return R
+end
+
+"""
+    cross_columns!(R, T, Aa, Ab, w, D, m, ej, av, col, offa, offb, swapped) -> R
+
+Write `Dₐ Aₐᵀ diag(w) A_b D_b` and its transpose into `R`, one column of `A_b` at a time.
+
+`A_b` is the narrower block, so this is `size(A_b, 2)` forward products of it and as many
+adjoints of `Aₐ`. `swapped` says `Aₐ` sits after `A_b` in the join, which only decides which of
+the two off-diagonal blocks is written first — both are written.
+"""
+function cross_columns!(
+        R, ::Type{T}, Aa, Ab, w, D, m, ej, av, col, offa, offb, swapped
+    ) where {T}
+    ka, kb = size(Aa, 2), size(Ab, 2)
+    e = view(ej, 1:kb)
+    c = view(col, 1:ka)
+    for j in 1:kb
+        fill!(e, zero(T))
+        e[j] = one(T)
+        mul!(av, Ab, e)
+        for i in 1:m
+            av[i] *= w[i]
+        end
+        mul!(c, adjoint(Aa), av)
+        q = offb + j - 1
+        dq = D[q]
+        for i in 1:ka
+            p = offa + i - 1
+            v = D[p] * c[i] * dq
+            R[p, q] += v
+            R[q, p] += v
+        end
+    end
+    return R
 end
 
 @inline joined_check_finite(::Tuple{}, name, i) = nothing

@@ -161,3 +161,49 @@ end
     PureQPBase.validate(K, q, A, l, u)
     @test (@allocated PureQPBase.validate(K, q, A, l, u)) < dense_bytes ÷ 10
 end
+
+@testitem "the Kronecker reduced term agrees across both loop orders" begin
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(23)
+
+    # The contraction runs over whichever factor has fewer columns, so each shape below pins one
+    # arm. Both compute `D Aᵀ diag(w) A D` and must agree with the dense product; the arms differ
+    # only in which factor's column pairs the outer loop walks.
+    function reduced(m1, k1, m2, k2)
+        A1 = randn(m1, k1)
+        A2 = randn(m2, k2)
+        K = PureQPBase.KroneckerOperator(A1, A2)
+        n, m = k1 * k2, m1 * m2
+        w = rand(m) .+ 0.1
+        D = rand(n) .+ 0.5
+        R = zeros(n, n)
+        PureQPBase.add_reduced_term!(
+            R, Float64, K, w, D, n, m, PureQPBase.reduced_term_scratch(Float64, K),
+            zeros(n), zeros(m), zeros(n)
+        )
+        Km = Matrix(K)
+        return R, Diagonal(D) * Km' * Diagonal(w) * Km * Diagonal(D)
+    end
+
+    # `k₁ ≤ k₂` takes the order over `A₁`'s pairs, `k₁ > k₂` the order over `A₂`'s.
+    for (m1, k1, m2, k2) in ((2, 1, 6, 5), (3, 2, 5, 4), (7, 5, 6, 4), (4, 4, 4, 4), (5, 1, 4, 1))
+        R, Rtrue = reduced(m1, k1, m2, k2)
+        @test R ≈ Rtrue rtol = 1.0e-12
+        # Symmetric by construction, including the half the loop fills by transposition.
+        @test R ≈ R' rtol = 1.0e-12
+    end
+
+    # Each shape above really does select the arm it is there to cover, so neither is dead code.
+    # The scratch is sized by the arm: the order over `A₁`'s pairs needs a buffer over `A₂`'s
+    # rows and leaves the other empty, and the reverse.
+    over_first = PureQPBase.reduced_term_scratch(
+        Float64, PureQPBase.KroneckerOperator(randn(2, 1), randn(6, 5))
+    )
+    @test length(over_first[6]) == 6     # the `A₁`-order buffer is live
+    @test isempty(over_first[2])         # the `A₂`-order buffer is not
+    over_second = PureQPBase.reduced_term_scratch(
+        Float64, PureQPBase.KroneckerOperator(randn(7, 5), randn(6, 4))
+    )
+    @test length(over_second[2]) == 7    # and the other way round
+    @test isempty(over_second[6])
+end

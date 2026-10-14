@@ -304,6 +304,34 @@ function example_sparse_workspace(n, m)
     return ws
 end
 
+"""
+A pair that reaches [`PureQPBase.ProductReduced`](@ref), which no `linsys` name can force.
+
+`:product_reduced` is not in `LINSYS_OPTIONS`: the backend is reached only through the ladder,
+as the interior-point method's own `indirect_rung`, on a pair whose entries can be read but
+whose representation the dense terminal declines. A stack of Kronecker blocks is such a pair —
+`holds_structure` is true, so `dense_rung` refuses it, and no rung between them serves a stack.
+The same pair under the operator-splitting method reaches `IndirectCG` instead, so this
+backend's kernels are analysed here and nowhere else.
+"""
+function example_ipm_product_reduced_workspace()
+    Random.seed!(19)
+    k = 6
+    X = randn(k * k, k * k)
+    P = Matrix(Symmetric(X'X ./ (k * k) + 8I))
+    A = PureQPBase.StackedOperator(
+        PureQPBase.KroneckerOperator(randn(2, k), randn(5, k)),
+        PureQPBase.KroneckerOperator(randn(3, k), randn(4, k)),
+    )
+    m, n = size(A)
+    b = randn(m)
+    ws = PureOSQP.setup(
+        P, randn(n), A, b .- rand(m), b .+ rand(m), PureIPM.InteriorPoint(); scaling = 0
+    )
+    PureOSQP.solve!(ws)
+    return ws
+end
+
 function example_ipm_workspace(backend::Symbol)
     Random.seed!(101)
     n, m = 12, 30
@@ -325,6 +353,8 @@ function example_ipm_workspace(backend::Symbol)
         return example_ipm_block_workspace(200, 5)
     elseif backend === :indirect
         return example_ipm_indirect_workspace(200)
+    elseif backend === :product_reduced
+        return example_ipm_product_reduced_workspace()
     end
     ws = PureOSQP.setup(P, q, A, l, u, PureIPM.InteriorPoint(); linsys = backend)
     PureOSQP.solve!(ws)
@@ -542,7 +572,9 @@ end
 # respectively, a Woodbury solve that misses the tolerance on linear programs); `:sparse_formed`
 # is unreachable under the interior-point method for the same reason, having no `formed_rung`
 # method of its own.
-for example_kind in (:auto, :sparse_kkt, :diagonal, :tridiagonal, :banded, :block, :indirect)
+for example_kind in (
+        :auto, :sparse_kkt, :diagonal, :tridiagonal, :banded, :block, :indirect, :product_reduced,
+    )
     ws = example_ipm_workspace(example_kind)
     W = typeof(ws)
     LS = typeof(ws.linsys)

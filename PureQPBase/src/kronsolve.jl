@@ -321,6 +321,11 @@ function add_reduced_term!(
     A1, A2 = A.A1, A.A2
     m1, k1 = size(A1)
     m2, k2 = size(A2)
+    # Which factor's column pairs to run over. Each pair costs one `gemm` against the *other*
+    # factor, so running over the one with fewer columns leaves the larger `gemm` and fewer of
+    # them. The two orders are the same arithmetic; `k₁ = 1` against `k₂ = 449` is 1 pair and a
+    # `449 × 449` gemm one way, 101025 pairs and a `1 × 1` gemm the other.
+    k1 <= k2 && return kron_reduced_over_first!(R, T, A, weights, D, scratch)
     Omega, t, S, blk, A1t = scratch
     # `Ω[κ₂, κ₁] = w[(κ₁-1)m₂ + κ₂]`, the layout `A`'s row index already has.
     for c in 1:m1, r in 1:m2
@@ -363,14 +368,180 @@ function add_reduced_term!(
     return R
 end
 
+"""
+    kron_reduced_over_first!(R, T, A, weights, D, scratch) -> R
+
+The contraction run over the column pairs of `A₁` rather than of `A₂`.
+
+For one pair `(i₁, j₁)` the sum over `κ₁` gives `t = Ω(A₁[:,i₁] ⊙ A₁[:,j₁])`, a vector over the
+rows of `A₂`, and the `k₂ × k₂` block over `(i₂, j₂)` is `A₂ᵀ diag(t) A₂` — one `gemm`. This is
+the mirror of the other order and the same arithmetic; it is the one to run when `A₁` has the
+fewer columns, which leaves `k₁(k₁+1)/2` pairs and a `gemm` over `A₂`.
+
+`t` is not sign-definite off the diagonal, so it is folded into one side as a plain scale
+rather than as a square root.
+"""
+function kron_reduced_over_first!(
+        R::AbstractMatrix{T}, ::Type{T}, A::KroneckerOperator, weights::AbstractVector,
+        D::AbstractVector, scratch
+    ) where {T}
+    A1, A2 = A.A1, A.A2
+    m1, k1 = size(A1)
+    m2, k2 = size(A2)
+    Omega = scratch[1]
+    t2, S2, blk2, A2t = scratch[6], scratch[7], scratch[8], scratch[9]
+    for c in 1:m1, r in 1:m2
+        Omega[r, c] = weights[(c - 1) * m2 + r]
+    end
+    for i1 in 1:k1, j1 in 1:i1
+        for r in 1:m2
+            acc = zero(T)
+            for c in 1:m1
+                acc += Omega[r, c] * A1[c, i1] * A1[c, j1]
+            end
+            t2[r] = acc
+        end
+        for c in 1:k2, r in 1:m2
+            S2[r, c] = t2[r] * A2[r, c]
+        end
+        mul!(blk2, A2t, S2)
+        for j2 in 1:k2
+            q = (j1 - 1) * k2 + j2
+            dq = D[q]
+            for i2 in 1:k2
+                p = (i1 - 1) * k2 + i2
+                R[p, q] += D[p] * blk2[i2, j2] * dq
+            end
+        end
+        # The `(j₁, i₁)` pair is the transpose of this one and is not visited again.
+        if j1 != i1
+            for j2 in 1:k2
+                q = (i1 - 1) * k2 + j2
+                dq = D[q]
+                for i2 in 1:k2
+                    p = (j1 - 1) * k2 + i2
+                    R[p, q] += D[p] * blk2[j2, i2] * dq
+                end
+            end
+        end
+    end
+    return R
+end
+
 "Scratch the Kronecker contraction needs, or `nothing` for the generic product path."
 function reduced_term_scratch(::Type{T}, A::KroneckerOperator) where {T}
     m1, k1 = size(A.A1)
     # The transpose of the factor itself, not of a copy, so a later `update!` to `A`'s values is
     # seen. It is held because `transpose` allocates its wrapper and this runs once per column
     # pair of the second factor.
+    m2, k2 = size(A.A2)
+    # Only the order `add_reduced_term!` will take gets its buffers; the other arm's are empty,
+    # so the tuple's type does not depend on the sizes while its storage does.
+    over_first = k1 <= k2
     return (
-        Matrix{T}(undef, size(A.A2, 1), m1), Vector{T}(undef, m1),
-        Matrix{T}(undef, m1, k1), Matrix{T}(undef, k1, k1), transpose(A.A1),
+        Matrix{T}(undef, m2, m1), Vector{T}(undef, over_first ? 0 : m1),
+        Matrix{T}(undef, over_first ? 0 : m1, over_first ? 0 : k1),
+        Matrix{T}(undef, over_first ? 0 : k1, over_first ? 0 : k1), transpose(A.A1),
+        Vector{T}(undef, over_first ? m2 : 0),
+        Matrix{T}(undef, over_first ? m2 : 0, over_first ? k2 : 0),
+        Matrix{T}(undef, over_first ? k2 : 0, over_first ? k2 : 0), transpose(A.A2),
     )
+end
+
+"""
+    kron_cross_pair(Ai, Aj) -> Bool
+
+Whether the two blocks are Kronecker products laid over the same row structure, so that
+[`kron_cross_term!`](@ref) can serve their cross term.
+
+Both factors must agree in rows: the identity it rests on reads the weight vector as an
+`m₁ × m₂` grid, which both blocks have to index the same way.
+"""
+kron_cross_pair(Ai, Aj) = false
+kron_cross_pair(Ai::KroneckerOperator, Aj::KroneckerOperator) =
+    size(Ai.A1, 1) == size(Aj.A1, 1) && size(Ai.A2, 1) == size(Aj.A2, 1)
+
+"""
+    kron_cross_term!(R, T, Ai, Aj, w, D, scaled, gram, v, offi, offj) -> R
+
+Write `Dᵢ Aᵢᵀ diag(w) Aⱼ Dⱼ` and its transpose into `R`, as one matrix product per pair of
+columns of the two first factors.
+
+For `Aᵢ = B₁ ⊗ B₂` and `Aⱼ = F₁ ⊗ F₂`, column `(p-1)k + q` of a Kronecker product pairs column
+`p` of the first factor with column `q` of the second, and row `(c-1)m₂ + d` pairs row `c` with
+row `d`. Summing the entry definition over the first factor's rows leaves
+
+    (B₁[:,p] ⊗ B₂)ᵀ diag(w) (F₁[:,r] ⊗ F₂)  =  B₂ᵀ diag(v) F₂,
+        v[d] = Σ_c B₁[c,p] · F₁[c,r] · w[(c-1)m₂ + d]
+
+so each pair `(p, r)` of first-factor columns costs one product of the second factors against a
+weight vector of length `m₂`, in place of one product per column of the narrower block. `v` goes
+negative whenever the two first factors disagree in sign, so the weight cannot be folded into a
+row scaling of either operand as a square root.
+
+`scaled` holds `diag(v) F₂ Dⱼ` and `gram` the product; `v` is borrowed from the caller's
+`m`-length buffer.
+"""
+function kron_cross_term!(
+        R, ::Type{T}, Ai::KroneckerOperator, Aj::KroneckerOperator, w, D,
+        scaled, gram, v, offi, offj
+    ) where {T}
+    B1, B2 = Ai.A1, Ai.A2
+    F1, F2 = Aj.A1, Aj.A2
+    m1, p1 = size(B1)
+    m2, q1 = size(B2)
+    p2, q2 = size(F1, 2), size(F2, 2)
+    Z = view(scaled, 1:m2, 1:q2)
+    G = view(gram, 1:q1, 1:q2)
+    vv = view(v, 1:m2)
+    B2t = transpose(B2)
+    for p in 1:p1, r in 1:p2
+        fill!(vv, zero(T))
+        for c in 1:m1
+            a = B1[c, p] * F1[c, r]
+            iszero(a) && continue
+            base = (c - 1) * m2
+            for d in 1:m2
+                vv[d] += a * w[base + d]
+            end
+        end
+        # `Dⱼ` scales the columns of the product, so it folds into `Z` here rather than costing
+        # a second pass over `G`.
+        for s in 1:q2
+            dq = D[offj + (r - 1) * q2 + s - 1]
+            for d in 1:m2
+                Z[d, s] = vv[d] * F2[d, s] * dq
+            end
+        end
+        mul!(G, B2t, Z)
+        for s in 1:q2
+            q = offj + (r - 1) * q2 + s - 1
+            for i in 1:q1
+                pp = offi + (p - 1) * q1 + i - 1
+                val = D[pp] * G[i, s]
+                R[pp, q] += val
+                R[q, pp] += val
+            end
+        end
+    end
+    return R
+end
+
+"""
+    kron_cross_scratch(T, blocks) -> (scaled, gram)
+
+Buffers for [`kron_cross_term!`](@ref), sized to the largest qualifying pair in a join.
+
+Both are empty when no pair qualifies, which is the case the column form serves.
+"""
+function kron_cross_scratch(::Type{T}, blocks::Tuple) where {T}
+    rows = cols = inner = 0
+    for i in 1:length(blocks), j in (i + 1):length(blocks)
+        Ai, Aj = blocks[i], blocks[j]
+        kron_cross_pair(Ai, Aj) || continue
+        rows = max(rows, size(Aj.A2, 1))
+        cols = max(cols, size(Aj.A2, 2))
+        inner = max(inner, size(Ai.A2, 2))
+    end
+    return (Matrix{T}(undef, rows, cols), Matrix{T}(undef, inner, cols))
 end

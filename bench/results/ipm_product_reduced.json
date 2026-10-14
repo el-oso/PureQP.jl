@@ -1,0 +1,53 @@
+{
+  "host": "neuromancer",
+  "julia": "1.13.1",
+  "blas_threads": 1,
+  "cpu": "znver5",
+  "tool": "Chairmarks, seconds=1.0, median reported",
+  "note": "clock unpinned on neuromancer; indicative, not a gate",
+  "seed": 2026,
+  "cases": [
+    {
+      "name": "k1=6 k2=6 kb=60",
+      "n": 42,
+      "m": 192,
+      "backend": "ProductReduced",
+      "iterations": 40,
+      "status": "PRIMAL_INFEASIBLE",
+      "rel_kkt_error": 3.671649288295311e9,
+      "solve_seconds": 0.0017944750000000002,
+      "factorize_seconds": 3.151e-5,
+      "refactor_weights_seconds": 2.3635e-5,
+      "hoist_saving_seconds": 7.875000000000002e-6,
+      "allocated_per_solve": 0
+    },
+    {
+      "name": "k1=8 k2=8 kb=120",
+      "n": 72,
+      "m": 368,
+      "backend": "ProductReduced",
+      "iterations": 42,
+      "status": "PRIMAL_INFEASIBLE",
+      "rel_kkt_error": 1.2990854415970785e10,
+      "solve_seconds": 0.0046487135,
+      "factorize_seconds": 9.654200000000001e-5,
+      "refactor_weights_seconds": 7.154500000000001e-5,
+      "hoist_saving_seconds": 2.4997000000000005e-5,
+      "allocated_per_solve": 0
+    },
+    {
+      "name": "k1=10 k2=10 kb=200",
+      "n": 110,
+      "m": 600,
+      "backend": "ProductReduced",
+      "iterations": 43,
+      "status": "PRIMAL_INFEASIBLE",
+      "rel_kkt_error": 1.062931553548949e10,
+      "solve_seconds": 0.0119831075,
+      "factorize_seconds": 0.00030228000000000004,
+      "refactor_weights_seconds": 0.00020434600000000003,
+      "hoist_saving_seconds": 9.793400000000001e-5,
+      "allocated_per_solve": 0
+    }
+  ]
+}
