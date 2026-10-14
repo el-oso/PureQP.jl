@@ -120,35 +120,31 @@ testing for unboundedness looks for, and MOI's `test_linear_DUAL_INFEASIBLE` is 
 this reason. The dual active-set iteration has a direction of unbounded descent available to it
 when this happens; recognizing it would turn a timeout into an answer.
 
-## Operator splitting has no direct backend for a structured operand
+## Operator splitting reaches no direct backend for a compressing representation
 
-`select_backend` for an `ADMMSelection` ends at `dense_rung`, which declines an operand
-reporting `holds_structure`, and then at `indirect_rung`. So a `StackedOperator` `A` reaches
-conjugate gradients under `OperatorSplitting` even when every one of its blocks is readable,
-while the same problem as a dense matrix reaches `cholesky`. A forced `linsys = :dense` or
-`:kkt` does reach a factorization, since a stack is materializable; only the ladder's own choice
-differs. The interior-point method has no such gap: its `indirect_rung` returns
-`ProductReduced`, a factorization.
+`structured_rung` serves an operand answering `worth_assembling`, which a `StackedOperator`
+does, so a stack reaches `ProductReduced` under `OperatorSplitting` rather than conjugate
+gradients. A representation holding quadratically less than the matrix it stands for answers
+false and still reaches conjugate gradients: a `KroneckerOperator`, a `RowCoupled`, a
+`BlockDiagonal`. Two reasons stand behind that, and either alone would be enough:
 
-A direct backend is the better one for this operand. `bench/admm_structured_operand.jl` measures
-a stack of joins at `n = 400`: named `linsys = :dense` takes 50 iterations, lands `1.5e-15` from
-the dense answer and spends 2 ms solving against 22.8 ms of setup, where the ladder's conjugate
-gradients take 100 iterations, land `8.5e-5` away and spend 16 ms solving against 17.6 ms of
-setup. The factorization wins on accuracy, iterations and total time at every size measured.
+  - the `n` products that assemble the matrix, and the `n²` holding it, buy back solves that
+    were already cheap against such a representation. `bench/admm_structured_rung.jl` measures
+    1.14x on a Kronecker pair at `n = 360`, where assembling takes 5.61 ms of a 7.32 ms solve;
+  - every rung an operand can reach adds a backend to `select_backend`'s return union, and the
+    entry points taking these representations sit at the width where the workspace's `LS`
+    parameter stops being inferrable — `Base.Compiler.MAX_TYPEUNION_LENGTH`, which
+    `PureQPBase/src/types.jl` states. Serving them here costs the `--trim` guarantee for
+    `solve_lowrank`, `solve_kronecker`, `solve_lowrank_scaled`, `setup_kronecker` and
+    `solve_block`.
 
-A rung returning `ProductReduced` would make the ladder choose one. Two things block it, and
-both must be answered first:
+The first reason has a measured exception the second overrides: the same benchmark gives 14.38x
+on a Kronecker pair at `n = 48`, where the `n²` matrix is small enough that assembling it costs
+tens of microseconds. Serving the small case alone would need the union narrowed first, so that
+is where to start if those pairs are worth taking.
 
-  - it costs the `--trim` guarantee. Eight of the 43 signatures in
-    `PureOSQP/test/trim_tests.jl` stop being trim-compatible, because one more backend reachable
-    from `:auto` widens the inferred workspace union past `Base.Compiler.MAX_TYPEUNION_LENGTH`
-    (`PureQPBase/src/types.jl` states this constraint);
-  - `PureQPBase/test/selection_tests.jl` asserts, by name, that no ladder forms a matrix for a
-    pair that holds structure. `ProductReduced` holds the `n²` reduced matrix, so the rung
-    contradicts that guarantee rather than extending it.
-
-This is also where a block-pair `add_reduced_term!` for a join would begin to pay
-(`docs/design/horizontal-operators.md`).
+A block-pair `add_reduced_term!` for a join is what makes the assembled arm worth its
+factorization here (`docs/design/horizontal-operators.md`).
 
 ## Operator splitting does not reach the tolerance at cond(P) = 1e12
 

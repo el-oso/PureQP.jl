@@ -977,14 +977,74 @@
       "script": "ipm_vs_others.jl"
     },
     {
+      "blas_threads": 1.0,
+      "bytes": 5821,
+      "julia_version": "1.13.1",
+      "keys": [
+        "algorithm",
+        "blas_threads",
+        "file",
+        "host",
+        "julia",
+        "m",
+        "n",
+        "note",
+        "reference",
+        "reps",
+        "rows"
+      ],
+      "name": "activeset_truncation",
+      "package": "shared",
+      "results": "bench/results/activeset_truncation.json",
+      "script": "activeset_truncation.jl"
+    },
+    {
       "blas_threads": null,
-      "bytes": 1321,
+      "bytes": 1344,
       "julia_version": null,
       "keys": [],
       "name": "admm_structured_operand",
       "package": "shared",
       "results": "bench/results/admm_structured_operand.json",
       "script": "admm_structured_operand.jl"
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 3583,
+      "julia_version": "1.13.1",
+      "keys": [
+        "blas_threads",
+        "cases",
+        "cpu",
+        "host",
+        "julia",
+        "note",
+        "seed",
+        "tool"
+      ],
+      "name": "admm_structured_rung",
+      "package": "shared",
+      "results": "bench/results/admm_structured_rung.json",
+      "script": "admm_structured_rung.jl"
+    },
+    {
+      "blas_threads": 1.0,
+      "bytes": 13697,
+      "julia_version": "1.13.1",
+      "keys": [
+        "blas_threads",
+        "families",
+        "host",
+        "julia",
+        "max_iter",
+        "note",
+        "seed",
+        "tool"
+      ],
+      "name": "admm_wall_time",
+      "package": "shared",
+      "results": "bench/results/admm_wall_time.json",
+      "script": "admm_wall_time.jl"
     },
     {
       "blas_threads": null,
@@ -1032,56 +1092,23 @@
       "script": "illconditioned_shootout.jl"
     },
     {
-      "blas_threads": null,
-      "bytes": 1505731,
-      "julia_version": null,
+      "blas_threads": 1.0,
+      "bytes": 1517,
+      "julia_version": "1.13.1",
       "keys": [
-        "cells",
-        "meta"
+        "blas_threads",
+        "cases",
+        "cpu",
+        "host",
+        "julia",
+        "note",
+        "seed",
+        "tool"
       ],
-      "name": "lmp_baseline",
+      "name": "ipm_product_reduced",
       "package": "shared",
-      "results": "bench/results/lmp_baseline.json",
-      "script": null
-    },
-    {
-      "blas_threads": null,
-      "bytes": 2368179,
-      "julia_version": null,
-      "keys": [
-        "cells",
-        "meta"
-      ],
-      "name": "lmp_matrix",
-      "package": "shared",
-      "results": "bench/results/lmp_matrix.json",
-      "script": "lmp_matrix.jl"
-    },
-    {
-      "blas_threads": null,
-      "bytes": 2306118,
-      "julia_version": null,
-      "keys": [
-        "cells",
-        "meta"
-      ],
-      "name": "lmp_matrix_fixed",
-      "package": "shared",
-      "results": "bench/results/lmp_matrix_fixed.json",
-      "script": null
-    },
-    {
-      "blas_threads": null,
-      "bytes": 1505748,
-      "julia_version": null,
-      "keys": [
-        "cells",
-        "meta"
-      ],
-      "name": "lmp_step1_fill",
-      "package": "shared",
-      "results": "bench/results/lmp_step1_fill.json",
-      "script": null
+      "results": "bench/results/ipm_product_reduced.json",
+      "script": "ipm_product_reduced.jl"
     },
     {
       "blas_threads": null,

@@ -385,9 +385,9 @@ reduction. Every form below solves on all three algorithms.
 | `kron(M₁, …, M_k)` | [`PureQPBase.KroneckerOperator`](@ref) | `kronecker` | `product_reduced` | `rows` |
 | `LinearMaps.UniformScalingMap(c, n)` | a `Diagonal` of a `FillArrays.Fill` | `cholesky` | `bunchkaufman` | `rows` |
 | `cat(M₁, M₂; dims = (1, 2))` | [`PureQPBase.BlockDiagonal`](@ref) | `indirect` | `product_reduced` | `rows` |
-| `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
+| `vcat(M₁, M₂)` | [`PureQPBase.StackedOperator`](@ref) | `product_reduced` | `product_reduced` | `rows` |
 | `hcat(M₁, M₂)` | [`PureQPBase.JoinedOperator`](@ref) | `cholesky` | `bunchkaufman` | `rows` |
-| `hvcat((2, 2), M₁, …, M₄)` | a `StackedOperator` of `JoinedOperator`s | `indirect` | `product_reduced` | `rows` |
+| `hvcat((2, 2), M₁, …, M₄)` | a `StackedOperator` of `JoinedOperator`s | `product_reduced` | `product_reduced` | `rows` |
 | `FillMap(c, (m, n))` | a `FillArrays.Fill` | `cholesky` | `bunchkaufman` | `rows` |
 | `M₁ + M₂` | [`PureQPBase.SumOperator`](@ref) | `indirect` | `product_reduced` | `rows` |
 | `M₁ * M₂` | [`PureQPBase.ComposedOperator`](@ref) | `indirect` | `product_reduced` | `rows` |

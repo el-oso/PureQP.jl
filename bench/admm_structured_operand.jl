@@ -4,16 +4,15 @@
 #     julia --project=bench bench/admm_structured_operand.jl [out.json]
 #
 # `A` is a stack of joins, the shape a `vcat` of `hcat`s of linear maps arrives as. It reports
-# `holds_structure`, so `select_backend` declines the dense terminal and ends at conjugate
-# gradients, while the same operator as a dense matrix reaches `cholesky`. Naming
-# `linsys = :dense` reaches the factorization anyway, since a stack is materializable, so the
-# three columns separate the ladder's choice from what the representation can support:
+# `holds_structure`, so `select_backend` declines the dense terminal, which would flatten the
+# representation, and reaches the rung that assembles the reduced matrix from products with it;
+# the same operator as a dense matrix reaches `cholesky`. Naming `linsys = :dense` reaches the
+# factorization anyway, since a stack is materializable, so the three columns separate the
+# ladder's choice from what the representation can support:
 #
 #     dense       `Matrix(A)`, the backend and the accuracy reference
 #     forced      the operator with `linsys = :dense`
 #     ladder      the operator with the ladder's own choice
-#
-# BACKLOG.md records why no rung makes the ladder's choice a direct one.
 using PureQPBase, PureOSQP, LinearAlgebra, Krylov, Random, Printf, JSON
 using PureQPBase: JoinedOperator, StackedOperator, Fill
 
