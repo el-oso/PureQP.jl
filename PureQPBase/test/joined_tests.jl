@@ -114,14 +114,14 @@ end
     @test prob.D ≈ probd.D
     @test prob.E ≈ probd.E
 
-    # A stack of joins holds structure, as any stack does, and reaches the rung below the ADMM
-    # terminal: conjugate gradients.
+    # A stack of joins holds structure, as any stack does, so the terminals that read entries
+    # decline it and the rung below them assembles the reduced matrix from products.
     S = PureQPBase.StackedOperator(J, PureQPBase.JoinedOperator(Fill(1.0, 5, 9), randn(5, 6)))
     @test PureQPBase.holds_structure(S)
     @test Matrix(S) == [Matrix(J); ones(5, 9) S.blocks[2].blocks[2]]
     ls25, us25 = -rand(m + 5), rand(m + 5)
     _, _, lss = backend_for(P, q, S, ls25, us25; factorize = false)
-    @test backend_name(lss) === :indirect
+    @test backend_name(lss) === :product_reduced
 end
 
 @testitem "a stack checks its blocks' entries, never the rows they stand for" begin

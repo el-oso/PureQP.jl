@@ -1,0 +1,131 @@
+{
+  "host": "neuromancer",
+  "julia": "1.13.1",
+  "blas_threads": 1,
+  "cpu": "znver5",
+  "tool": "Chairmarks, samples=5, median reported, factorization included",
+  "note": "clock unpinned on neuromancer; indicative, not a gate",
+  "seed": 2026,
+  "cases": [
+    {
+      "name": "stack k=6 kb=60",
+      "n": 42,
+      "m": 192,
+      "stored": 2632,
+      "compress": 3.0638297872340425,
+      "assembled": {
+        "backend": "product_reduced",
+        "iterations": 175,
+        "status": "SOLVED",
+        "factorize_seconds": 7.3508e-5,
+        "iterate_seconds": 0.00041114900000000003,
+        "total_seconds": 0.00048465700000000005
+      },
+      "products": {
+        "backend": "indirect",
+        "iterations": 675,
+        "status": "SOLVED",
+        "factorize_seconds": 5.6516000000000006e-5,
+        "iterate_seconds": 0.003916434,
+        "total_seconds": 0.00397295
+      },
+      "gain": 8.197446854166968
+    },
+    {
+      "name": "stack k=10 kb=200",
+      "n": 110,
+      "m": 600,
+      "stored": 22304,
+      "compress": 2.9591104734576756,
+      "assembled": {
+        "backend": "product_reduced",
+        "iterations": 225,
+        "status": "SOLVED",
+        "factorize_seconds": 0.000397604,
+        "iterate_seconds": 0.001736988,
+        "total_seconds": 0.0021345920000000003
+      },
+      "products": {
+        "backend": "indirect",
+        "iterations": 775,
+        "status": "SOLVED",
+        "factorize_seconds": 0.000453077,
+        "iterate_seconds": 0.017033265000000002,
+        "total_seconds": 0.017486342000000002
+      },
+      "gain": 8.191889597637394
+    },
+    {
+      "name": "kron 8x6",
+      "n": 48,
+      "m": 48,
+      "stored": 100,
+      "compress": 23.04,
+      "assembled": {
+        "backend": "product_reduced",
+        "iterations": 25,
+        "status": "SOLVED",
+        "factorize_seconds": 3.5236e-5,
+        "iterate_seconds": 2.2573000000000002e-5,
+        "total_seconds": 5.7809e-5
+      },
+      "products": {
+        "backend": "indirect",
+        "iterations": 350,
+        "status": "SOLVED",
+        "factorize_seconds": 1.2844000000000001e-5,
+        "iterate_seconds": 0.0008186010000000001,
+        "total_seconds": 0.0008314450000000001
+      },
+      "gain": 14.382622083066652
+    },
+    {
+      "name": "kron 14x12",
+      "n": 168,
+      "m": 168,
+      "stored": 340,
+      "compress": 83.01176470588236,
+      "assembled": {
+        "backend": "product_reduced",
+        "iterations": 150,
+        "status": "SOLVED",
+        "factorize_seconds": 0.00071119,
+        "iterate_seconds": 0.000468927,
+        "total_seconds": 0.001180117
+      },
+      "products": {
+        "backend": "indirect",
+        "iterations": 150,
+        "status": "SOLVED",
+        "factorize_seconds": 0.000152315,
+        "iterate_seconds": 0.001578552,
+        "total_seconds": 0.001730867
+      },
+      "gain": 1.4666910145349994
+    },
+    {
+      "name": "kron 20x18",
+      "n": 360,
+      "m": 360,
+      "stored": 724,
+      "compress": 179.00552486187846,
+      "assembled": {
+        "backend": "product_reduced",
+        "iterations": 175,
+        "status": "SOLVED",
+        "factorize_seconds": 0.005609531,
+        "iterate_seconds": 0.001709797,
+        "total_seconds": 0.007319328
+      },
+      "products": {
+        "backend": "indirect",
+        "iterations": 175,
+        "status": "SOLVED",
+        "factorize_seconds": 0.0006841690000000001,
+        "iterate_seconds": 0.0076345580000000005,
+        "total_seconds": 0.008318727000000001
+      },
+      "gain": 1.1365424530776598
+    }
+  ]
+}

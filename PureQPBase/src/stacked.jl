@@ -76,6 +76,12 @@ Base.size(A::StackedOperator) = (A.rowstart[end] - 1, A.cols)
 # in a representation that has lost which rows belong to which block.
 holds_structure(::StackedOperator) = true
 
+# A stack holds every row of every block, so what it stores is of the same order as the matrix it
+# stands for, and the reduced matrix assembled from it is worth the one factorization that serves
+# every solve. The blocks' own representations are read through their reduced terms, so a
+# compressing block loses nothing by being stacked.
+worth_assembling(::StackedOperator) = true
+
 # Each block checks its own entries in its own way, so a Kronecker block checks its factors.
 # Without this the generic method walks every `(i, j)` of the stack through `getindex`, which
 # reaches the blocks one entry at a time and costs more than the rest of `setup` put together.

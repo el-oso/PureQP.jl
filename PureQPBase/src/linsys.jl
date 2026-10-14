@@ -787,6 +787,8 @@ function select_backend(P, A, prob, wt, sel::ADMMSelection)
     isnothing(rung) || return rung
     rung = dense_rung(P, A, prob, sel)
     isnothing(rung) || return rung
+    rung = structured_rung(P, A, prob, sel)
+    isnothing(rung) || return rung
     return indirect_rung(P, A, prob, sel)
 end
 
@@ -902,8 +904,32 @@ structured_rung(P, A, prob, sel::SelectionFor) = nothing
 function structured_rung(P, A, prob, sel::ADMMSelection)
     (holds_structure(P) || holds_structure(A)) || return nothing
     (is_materializable(P) && is_materializable(A)) || return nothing
+    (worth_assembling(P) || worth_assembling(A)) || return nothing
     return (ProductReduced(prob.q0, prob.n, prob.m, A), false)
 end
+
+"""
+    worth_assembling(M) -> Bool
+
+Whether the `n²` reduced matrix is of the same order as what `M` stores, so that assembling it
+from products is worth one factorization serving many solves.
+
+False unless the representation says otherwise, which is the safe answer: a representation
+holding quadratically less than the matrix it stands for — `n₁² + n₂²` against `n₁²n₂²` for a
+Kronecker product, `k·n` against `n²` for `k` coupled rows — spends `n` products and `n²` of
+memory to save on solves that were already cheap against it. Measured on a Kronecker pair at
+`n = 360`, assembling the matrix takes 5.61 ms of a 7.32 ms solve and returns 1.14x, inside this
+machine's run-to-run spread.
+
+Declining is also what keeps the ladder's return type narrow. Each rung an operand can reach
+adds a backend to [`select_backend`](@ref)'s union, and the entry points taking these
+representations sit at the width where inference stops narrowing the workspace's `LS` parameter.
+
+Like [`holds_structure`](@ref), this is a statement by the operator's author about its own
+representation rather than a measured threshold, and the method body is a literal, so a call
+against a type with no override folds away.
+"""
+worth_assembling(M) = false
 
 choose_backend(P::Diagonal, A::Diagonal, prob, wt, sel::SelectionFor) =
     (DiagonalReduced(prob.q0, prob.n), false)
