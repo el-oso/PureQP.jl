@@ -351,7 +351,7 @@ function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob::Problem{T}, sel:
     (is_materializable(P) && is_materializable(A)) || return nothing
     (holds_structure(P) || holds_structure(A)) && return nothing
     T <: LinearAlgebra.BlasFloat && return (FullKKT(prob.q0, prob.n, prob.m), false)
-    return (ReducedCholesky(prob.q0, prob.n, prob.m), false)
+    return (ReducedCholesky(prob.q0, prob.n, prob.m; keep_factor = keeps_factor(sel)), false)
 end
 
 dense_rung(P, A, prob, sel::IPMSelection) = nothing
@@ -398,7 +398,7 @@ supply them.
 """
 function indirect_rung(P, A, prob, sel::IPMSelection)
     products_only(P) && products_only(A) && refuse_ipm_no_products()
-    return (ProductReduced(prob.q0, prob.n, prob.m, A), false)
+    return (ProductReduced(prob.q0, prob.n, prob.m, A; keep_factor = keeps_factor(sel)), false)
 end
 
 "Whether `M` answers neither entries nor products, which leaves nothing to assemble from."
