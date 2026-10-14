@@ -1721,7 +1721,10 @@ function add_reduced_term!(
         R::AbstractMatrix{T}, ::Type{T}, A, weights::AbstractVector,
         D::AbstractVector, n::Integer, m::Integer, scratch, ej, av, col
     ) where {T}
-    At = scratch[1]
+    # The adjoint comes from the operand this call was handed, not from `scratch`: a wrapper held
+    # across calls would still name the operand the backend was built with, which `update!` may
+    # since have replaced. Taking it here allocates nothing.
+    At = adjoint(A)
     for j in 1:n
         fill!(ej, zero(T))
         ej[j] = one(T)
@@ -1745,7 +1748,9 @@ The generic path holds the adjoint: `adjoint` allocates its wrapper, and a facto
 built one per call would not be allocation-free. The vectors it also needs are the backend's
 own, handed over at the call.
 """
-reduced_term_scratch(::Type{T}, A) where {T} = (adjoint(A),)
+# Nothing derived from `A` is held: `add_reduced_term!` takes its adjoint from the operand it is
+# handed, so a replaced operand cannot leave a wrapper naming the old one behind.
+reduced_term_scratch(::Type{T}, A) where {T} = ()
 
 """
     ProductReduced(proto::AbstractVector, n, m, A, Val(keep_factor) = Val(false))

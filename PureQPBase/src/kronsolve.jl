@@ -326,7 +326,11 @@ function add_reduced_term!(
     # them. The two orders are the same arithmetic; `k₁ = 1` against `k₂ = 449` is 1 pair and a
     # `449 × 449` gemm one way, 101025 pairs and a `1 × 1` gemm the other.
     k1 <= k2 && return kron_reduced_over_first!(R, T, A, weights, D, scratch)
-    Omega, t, S, blk, A1t = scratch
+    # The transposes come from the operand this call was handed, not from `scratch`: a wrapper
+    # held across calls would still name the operand the backend was built with, which
+    # `update!` may since have replaced. Taking it here allocates nothing.
+    Omega, t, S, blk = scratch[1], scratch[2], scratch[3], scratch[4]
+    A1t = transpose(A.A1)
     # `Ω[κ₂, κ₁] = w[(κ₁-1)m₂ + κ₂]`, the layout `A`'s row index already has.
     for c in 1:m1, r in 1:m2
         Omega[r, c] = weights[(c - 1) * m2 + r]
@@ -389,7 +393,8 @@ function kron_reduced_over_first!(
     m1, k1 = size(A1)
     m2, k2 = size(A2)
     Omega = scratch[1]
-    t2, S2, blk2, A2t = scratch[6], scratch[7], scratch[8], scratch[9]
+    t2, S2, blk2 = scratch[5], scratch[6], scratch[7]
+    A2t = transpose(A2)
     for c in 1:m1, r in 1:m2
         Omega[r, c] = weights[(c - 1) * m2 + r]
     end
@@ -431,20 +436,21 @@ end
 "Scratch the Kronecker contraction needs, or `nothing` for the generic product path."
 function reduced_term_scratch(::Type{T}, A::KroneckerOperator) where {T}
     m1, k1 = size(A.A1)
-    # The transpose of the factor itself, not of a copy, so a later `update!` to `A`'s values is
-    # seen. It is held because `transpose` allocates its wrapper and this runs once per column
-    # pair of the second factor.
     m2, k2 = size(A.A2)
+    # Buffers only. Nothing derived from `A` is held: `add_reduced_term!` takes each factor's
+    # transpose from the operand it is handed, so a replaced operand cannot leave a wrapper
+    # naming the old one behind.
+    #
     # Only the order `add_reduced_term!` will take gets its buffers; the other arm's are empty,
     # so the tuple's type does not depend on the sizes while its storage does.
     over_first = k1 <= k2
     return (
         Matrix{T}(undef, m2, m1), Vector{T}(undef, over_first ? 0 : m1),
         Matrix{T}(undef, over_first ? 0 : m1, over_first ? 0 : k1),
-        Matrix{T}(undef, over_first ? 0 : k1, over_first ? 0 : k1), transpose(A.A1),
+        Matrix{T}(undef, over_first ? 0 : k1, over_first ? 0 : k1),
         Vector{T}(undef, over_first ? m2 : 0),
         Matrix{T}(undef, over_first ? m2 : 0, over_first ? k2 : 0),
-        Matrix{T}(undef, over_first ? k2 : 0, over_first ? k2 : 0), transpose(A.A2),
+        Matrix{T}(undef, over_first ? k2 : 0, over_first ? k2 : 0),
     )
 end
 

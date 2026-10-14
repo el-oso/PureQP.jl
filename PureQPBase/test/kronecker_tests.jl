@@ -199,11 +199,11 @@ end
     over_first = PureQPBase.reduced_term_scratch(
         Float64, PureQPBase.KroneckerOperator(randn(2, 1), randn(6, 5))
     )
-    @test length(over_first[6]) == 6     # the `A₁`-order buffer is live
+    @test length(over_first[5]) == 6     # the `A₁`-order buffer is live
     @test isempty(over_first[2])         # the `A₂`-order buffer is not
     over_second = PureQPBase.reduced_term_scratch(
         Float64, PureQPBase.KroneckerOperator(randn(7, 5), randn(6, 4))
     )
     @test length(over_second[2]) == 7    # and the other way round
-    @test isempty(over_second[6])
+    @test isempty(over_second[5])
 end
