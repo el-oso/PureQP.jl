@@ -318,4 +318,12 @@ end
 
 @verify IndirectCG trim_compat = true
 
+# The bare name above checks method existence for every parameter; a declared return type
+# resolves only for concrete parameters, so the instantiation `indirect_backend` builds is
+# checked too.
+@verify IndirectCG{
+    Float64, Vector{Float64}, CgWorkspace{Float64, Float64, Vector{Float64}},
+    PureQPBase.JacobiPreconditioner{Vector{Float64}},
+} trim_compat = true
+
 end # module PureQPBaseKrylovExt

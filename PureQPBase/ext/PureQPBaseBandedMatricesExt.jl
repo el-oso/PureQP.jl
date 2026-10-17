@@ -215,4 +215,12 @@ end
 
 @verify BandedReduced trim_compat = true
 
+# The bare name above checks method existence for every parameter; a declared return type
+# resolves only for concrete parameters, so the instantiation `banded_backend` builds is
+# checked too.
+@verify BandedReduced{
+    Float64, BandedMatrix{Float64, Matrix{Float64}, Base.OneTo{Int}},
+    Cholesky{Float64, BandedMatrix{Float64, Matrix{Float64}, Base.OneTo{Int}}},
+} trim_compat = true
+
 end

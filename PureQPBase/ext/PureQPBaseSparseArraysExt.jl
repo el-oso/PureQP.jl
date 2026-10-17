@@ -817,6 +817,11 @@ end
 
 @verify SparseFormedInverse trim_compat = true
 
+# The bare name above checks method existence for every parameter; a declared return type
+# resolves only for concrete parameters, so the instantiation `formed_rung` builds is checked
+# too.
+@verify SparseFormedInverse{Float64, Matrix{Float64}} trim_compat = true
+
 
 """
     ReducedGram{T}
@@ -1437,6 +1442,13 @@ end
 # points cover the dense path.
 @verify SparseCholmod
 @verify SparseKKT
+
+# The bare names above check method existence for every parameter; a declared return type
+# resolves only for concrete parameters, so the instantiation each factory builds is checked
+# too. `ldl_backend` and `ldl_kkt_backend` have no method while this extension precompiles, so
+# both factories reach CHOLMOD and the factor is its own.
+@verify SparseCholmod{Float64, Vector{Float64}, CHOLMOD.Factor{Float64, Int}}
+@verify SparseKKT{Float64, Vector{Float64}, CHOLMOD.Factor{Float64, Int}}
 
 
 "Whether every stored entry of `P` lies on the diagonal, in one pass over its columns."

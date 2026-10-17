@@ -207,6 +207,30 @@ end
 # possible. An extension's backends load later and carry the same declaration at the end of
 # the extension. The `QPAlgorithm` and `QPWorkspace` contracts are declared here and asserted
 # by the packages that implement them, since this one defines no concrete subtype of either.
+
+# A contract's declared return types can only be checked for concrete type parameters, so a
+# sweep over a parametric backend can check method existence alone. One representative
+# instantiation of each carries the return-type check, and must precede the sweep for the sweep
+# to count the backend as verified; a backend added without one is named by the sweep's warning,
+# so the pairing cannot be forgotten silently.
+@verify ReducedCholesky{Float64, Matrix{Float64}, false} trim_compat = true
+@verify FullKKT{
+    Float64, Matrix{Float64}, Vector{Float64},
+    BunchKaufman{Float64, Matrix{Float64}, Vector{Int}},
+} trim_compat = true
+@verify DiagonalReduced{Float64, Vector{Float64}} trim_compat = true
+@verify TridiagonalReduced{
+    Float64, Vector{Float64}, LDLt{Float64, SymTridiagonal{Float64, Vector{Float64}}},
+} trim_compat = true
+@verify ProductReduced{Float64, Matrix{Float64}, Vector{Float64}, Tuple{}, false} trim_compat = true
+@verify DiagonalLowRank{
+    Float64, Vector{Float64}, Matrix{Float64}, Cholesky{Float64, Matrix{Float64}},
+} trim_compat = true
+@verify BlockReduced{Float64, Matrix{Float64}} trim_compat = true
+@verify KroneckerReduced{Float64, Matrix{Float64}, Vector{Float64}} trim_compat = true
+@verify JacobiPreconditioner{Vector{Float64}} trim_compat = true
+@verify KroneckerPreconditioner{Float64} trim_compat = true
+
 @verify LinearSystem subtypes = true trim_compat = true
 @verify Preconditioner subtypes = true trim_compat = true
 

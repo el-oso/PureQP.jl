@@ -26,7 +26,9 @@ the factorization.
 `@verify` checks at precompilation that a backend has the required methods and returns the right
 types.
 
-To add a backend, subtype `LinearSystem`, write the mandatory methods, and use `@verify`. The
+To add a backend, subtype `LinearSystem`, write the mandatory methods, and use `@verify`. A
+parametric backend needs a `@verify` at concrete type parameters, since a declared return type
+resolves only once the parameters are known; the sweep names any backend that has none. The
 backend is fixed when the workspace is built, so every per-iteration call dispatches
 statically.
 
@@ -96,8 +98,9 @@ functions allocate it does not. A LinearMaps product `B * C` allocates scratch p
 
 **We check every backend.** `PureQPBase/src/PureQPBase.jl` uses
 `@verify LinearSystem subtypes = true trim_compat = true`, and each solver package does the same
-for the workspace and algorithm it defines. The check runs during precompilation, for every
-subtype.
+for the workspace and algorithm it defines. The check runs during precompilation. A parametric
+subtype is checked at one representative instantiation, declared ahead of the sweep, because its
+declared return types resolve only for concrete parameters.
 
 **We list the entry points.** `PureOSQP/test/trim_tests.jl` validates concrete calls for every
 public path:

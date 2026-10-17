@@ -138,6 +138,20 @@ end
 # Every workspace and algorithm this package defines must satisfy its contract, asserted for
 # each subtype defined by the time the module finishes rather than type by type, so a new
 # type cannot acquire the guarantee only by someone remembering to ask for it.
+
+# A contract's declared return types can only be checked for concrete type parameters, so a
+# sweep over a parametric type can check method existence alone. One representative
+# instantiation of each carries the return-type check, and must precede the sweep for the sweep
+# to count the type as verified; a type added without one is named by the sweep's warning, so
+# the pairing cannot be forgotten silently.
+@verify typeof(ActiveSet()) trim_compat = true
+@verify typeof(
+    setup(
+        [4.0 1.0; 1.0 3.0], [-1.0, 1.0], [1.0 1.0; 1.0 -1.0], [-1.0, -1.0], [1.0, 1.0],
+        ActiveSet(),
+    )
+) trim_compat = true
+
 @verify QPWorkspace subtypes = true trim_compat = true
 @verify QPAlgorithm subtypes = true trim_compat = true
 

@@ -129,6 +129,20 @@ end
 # opt-in, so a new type acquires the guarantee only if whoever wrote it remembered to ask.
 # This sees every subtype defined by the time the module finishes, so forgetting is not
 # possible.
+
+# A contract's declared return types can only be checked for concrete type parameters, so a
+# sweep over a parametric type can check method existence alone. One representative
+# instantiation of each carries the return-type check, and must precede the sweep for the sweep
+# to count the type as verified; a type added without one is named by the sweep's warning, so
+# the pairing cannot be forgotten silently.
+@verify typeof(InteriorPoint()) trim_compat = true
+@verify typeof(
+    setup(
+        [4.0 1.0; 1.0 3.0], [-1.0, 1.0], [1.0 1.0; 1.0 -1.0], [-1.0, -1.0], [1.0, 1.0],
+        InteriorPoint(),
+    )
+) trim_compat = true
+
 @verify QPWorkspace subtypes = true trim_compat = true
 @verify QPAlgorithm subtypes = true trim_compat = true
 

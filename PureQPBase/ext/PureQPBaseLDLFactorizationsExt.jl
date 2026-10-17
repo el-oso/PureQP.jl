@@ -373,4 +373,16 @@ end
 @verify SparseLDL
 @verify LDLKKT
 
+# The bare names above check method existence for every parameter; a declared return type
+# resolves only for concrete parameters, so the instantiation each factory builds is checked
+# too.
+@verify SparseLDL{
+    Float64, Vector{Float64}, SparseExt.ReducedGram{Float64},
+    LDLFactorizations.LDLFactorization{Float64, Int, Int, Int},
+}
+@verify LDLKKT{
+    Float64, Vector{Float64}, SparseExt.KKTGram{Float64},
+    LDLFactorizations.LDLFactorization{Float64, Int, Int, Int},
+}
+
 end # module PureQPBaseLDLFactorizationsExt
