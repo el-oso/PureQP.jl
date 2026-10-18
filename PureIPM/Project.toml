@@ -1,6 +1,6 @@
 name = "PureIPM"
 uuid = "7796d3b0-b4f1-40ab-b599-32a1660dec1b"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["el-oso <15278831+el-oso@users.noreply.github.com>"]
 
 [workspace]
