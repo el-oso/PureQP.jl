@@ -9,35 +9,36 @@ renders.
 ## Against OSQP
 
 Dense random QPs, compared with libosqp 1.0, the C library OSQP itself ships. Reproduce with
-`julia --project=bench PureOSQP/bench/headtohead.jl`, or with `--project=bench/pureblas` to add the
-PureBLAS column; samples are in `PureOSQP/bench/results/headtohead.json`.
+`julia --project=bench PureOSQP/bench/headtohead.jl`; samples are in
+`PureOSQP/bench/results/headtohead.json`.
 
 Both solvers run with `eps_abs = eps_rel = 1e-6`, single-threaded BLAS, ρ adapted every 50
 iterations, and the duality-gap test (`check_dualgap`) turned off. Each solver checks the gap
 at a different point in the iteration, so with it on they stop at different iterations and the
 times would compare stopping rules instead of solvers. libosqp reads only sparse (CSC) matrices,
-so it is timed on its setup and solve calls from CSC arrays built beforehand. PureOSQP is timed
-with OpenBLAS and again with [PureBLAS](https://github.com/el-oso/PureBLAS.jl) at commit
-`ea79919`.
+so it is timed on its setup and solve calls from CSC arrays built beforehand.
 
-| n | m | PureOSQP | PureOSQP + PureBLAS | libosqp 1.0 | vs libosqp | vs libosqp (PureBLAS) | iterations | objective rel. Δ | max \|Δx\| |
-|---|---|---|---|---|---|---|---|---|---|
-| 10 | 20 | 0.036 ms | 0.031 ms | 0.065 ms | 1.80× | 2.09× | 100 | 1.1e-15 | 8.9e-16 |
-| 25 | 50 | 0.382 ms | 0.329 ms | 1.41 ms | 3.69× | 4.28× | 675 | 6.4e-16 | 6.9e-15 |
-| 50 | 100 | 1.10 ms | 1.02 ms | 5.08 ms | 4.60× | 4.98× | 900 | 7.5e-16 | 6.9e-15 |
-| 100 | 200 | 2.95 ms | 2.35 ms | 21.1 ms | 7.17× | 9.01× | 850 | 6.5e-16 | 8.8e-15 |
-| 200 | 400 | 14.6 ms | 12.8 ms | 129 ms | 8.87× | 10.08× | 1175 | 6.5e-16 | 1.3e-14 |
-| 400 | 800 | 41.2 ms | 40.0 ms | 723 ms | **17.57×** | 18.07× | 625 | 0.0 | 5.4e-14 |
-| 100 | 50 | 0.304 ms | 0.290 ms | 1.05 ms | 3.45× | 3.62× | 50 | 2.1e-15 | 1.3e-14 |
-| 200 | 100 | 1.05 ms | 1.01 ms | 6.99 ms | 6.64× | 6.92× | 50 | 1.2e-16 | 1.9e-14 |
-| 100 | 1000 | 98.2 ms | 97.3 ms | 691 ms | 7.04× | 7.11× | 7475 | 4.5e-11 | 4.0e-9 |
-| 200 | 2000 | 215 ms | 211 ms | 1329 ms | 6.18× | 6.31× | 3025 | 1.4e-16 | 3.3e-14 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "headtohead")
+benchtable(
+    d["results"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "PureOSQP" => r -> ms(r["t_openblas"]),
+        "libosqp 1.0" => r -> ms(r["t_osqp"]),
+        "vs libosqp" => r -> ratio(r["speedup"]),
+        "iterations" => r -> int(r["iter_pure"]),
+        "objective rel. Δ" => r -> sci(r["objdiff"]),
+        "max \\|Δx\\|" => r -> sci(r["dx_osqp"]),
+    ]
+)
+```
 
 Both solvers take the same number of iterations in every case, so the equilibration, the ρ
 schedule and the residual tests match libosqp step for step. The solutions agree to about
 `1e-14`. The one exception is the `100 × 1000` case, which runs 7475 iterations and agrees to
-`4e-9`. PureOSQP is faster in every case, and PureBLAS changes the time but not the iteration
-count.
+`4e-9`. PureOSQP is faster in every case.
 
 libosqp has no Julia wrapper, so `PureOSQP/bench/osqp_v1.jl` calls the library in `OSQP_jll` v100
 through `ccall`. The header that library ships describes both its single- and double-precision
@@ -49,37 +50,42 @@ loaded, and throws if a rebuilt library changes them.
 
 `P` and `A` stay fixed while `q`, `l` and `u` change every step, as in a receding-horizon
 control loop. Each case runs 20 solves. Reproduce with
-`julia --project=bench PureOSQP/bench/update_bench.jl`, or with `--project=bench/pureblas` to add the
-PureBLAS column; samples are in `PureOSQP/bench/results/update_bench.json`.
+`julia --project=bench PureOSQP/bench/update_bench.jl`; samples are in
+`PureOSQP/bench/results/update_bench.json`.
 
 libosqp runs the same loop through its own update call, `osqp_update_data_vec`, which keeps
 the factorization. Both solvers use `eps_abs = eps_rel = 1e-6` with `check_dualgap` off, and
 the script checks that their objectives agree to `1e-4` at every step.
 
-| n | m | `update!` | fresh `setup` each step | saved | libosqp 1.0 | vs libosqp | `update!` + PureBLAS | vs | factorizations |
-|---|---|---|---|---|---|---|---|---|---|
-| 10 | 20 | 0.96 ms | 1.37 ms | 1.42× | 1.74 ms | 1.81× | 0.74 ms | 1.29× | 8 |
-| 25 | 50 | 2.56 ms | 5.30 ms | 2.07× | 10.2 ms | 4.00× | 2.18 ms | 1.17× | 14 |
-| 50 | 100 | 12.7 ms | 19.4 ms | 1.53× | 60.1 ms | 4.72× | 11.8 ms | 1.08× | 7 |
-| 100 | 200 | 75.0 ms | 69.1 ms | **0.92×** | 524 ms | 6.98× | 68.5 ms | 1.09× | 3 |
-| 200 | 400 | 311 ms | 323 ms | 1.04× | 2603 ms | 8.36× | 289 ms | 1.08× | 1 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "update_bench")
+benchtable(
+    d["results"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "`update!`" => r -> ms(r["t_update"]),
+        "fresh `setup` each step" => r -> ms(r["t_fresh"]),
+        "saved" => r -> ratio(num(r["t_fresh"]) / num(r["t_update"])),
+        "libosqp 1.0" => r -> ms(r["t_osqp"]),
+        "vs libosqp" => r -> ratio(num(r["t_osqp"]) / num(r["t_update"])),
+        "factorizations" => r -> int(r["refactorizations"]),
+    ]
+)
+```
 
 "Factorizations" counts PureOSQP's factorizations over all 20 steps: one from `setup`, plus
 one for each step where a row changed between equality and inequality.
 
-**PureOSQP's `update!` is 1.8× to 8.4× faster than libosqp's update loop.** The gap grows with
-size, as it does for single solves above.
+**PureOSQP's `update!` is several times faster than libosqp's update loop**, and the margin
+grows with size, as it does for single solves above.
 
-**`update!` saves little over calling `setup` again**, because `setup` is already fast (see
-[Sparse A](@ref "Sparse A")). At `n = 100` it is slightly slower. The two loops also start
-from different points (`update!` keeps the previous solution), so they take different
-numbers of iterations. `update!` helps most when each solve is short, so that setup is a
-large share of it. It is also the way to keep that previous solution as the starting point.
-
-**With PureBLAS this loop is 1.08× to 1.29× faster.** It refactorizes more often per iteration
-than a single solve does, so the factorization routines matter more here. PureBLAS is faster
-than OpenBLAS at `potrf` and slower at `potri`, which is why its margin here does not follow
-the factorization count.
+**What `update!` saves over calling `setup` again varies with the case**, because `setup` is
+already fast (see [Sparse A](@ref "Sparse A")). At the two largest sizes it is slightly
+slower. The two loops also start from different points (`update!` keeps the previous
+solution), so they take different numbers of iterations. `update!` helps most when each solve
+is short, so that setup is a large share of it. It is also the way to keep that previous
+solution as the starting point.
 
 The factorization count is often more than 1. Equilibration rescales the bounds, and a row
 whose scaled gap `ũ - l̃` falls below `RHO_TOL` is treated as an equality, which changes its
@@ -96,21 +102,53 @@ Reproduce with `julia --project=bench bench/warm_start.jl`; samples are in
 in the cold time and excluded from the warm ones, which is the split a caller re-solving a
 sequence pays.
 
-| perturbation to `q` | median | iterations | vs cold |
-|---|---|---|---|
-| none | 0.096 ms | — | **429×** |
-| `1e-4` | 0.119 ms | 1–3 | **347×** |
-| `1e-3` | 0.219 ms | 2–5 | 188× |
-| `1e-2` | 0.643 ms | 9–35 | 64× |
-| `5e-2` | 2.71 ms | 77–136 | 15× |
-| `1e-1` | 6.20 ms | 161–252 | 6.6× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "puredaqp_warm_start")
+# The sweep also runs any problem read from a directory of CSVs, named by its path. Only the
+# generated case is reproducible from a checkout, so only that one is shown.
+c = first(x for x in d["cases"] if !occursin("/", string(x["name"])))
+cold = num(c["cold_ms"])
+# The unchanged re-solve is timed and weighed but its iteration count is not recorded, so that
+# cell is a dash.
+rows = Any[Dict(
+    "label" => "none", "median" => c["warm_same_ms"], "iters" => "—",
+    "vs" => cold / num(c["warm_same_ms"]),
+)]
+for s in c["steps"]
+    push!(
+        rows, Dict(
+            "label" => "`" * sci(s["q_perturbation"]) * "`",
+            "median" => s["median_ms"],
+            "iters" => int(s["min_iter"]) * "–" * int(s["max_iter"]),
+            "vs" => cold / num(s["median_ms"]),
+        )
+    )
+end
+benchtable(
+    rows, [
+        "perturbation to `q`" => r -> r["label"],
+        "median" => r -> msval(r["median"]),
+        "iterations" => r -> r["iters"],
+        "vs cold" => r -> ratio(r["vs"]),
+    ]
+)
+```
 
-A cold solve of the same problem takes 41.2 ms and 1338 iterations.
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "puredaqp_warm_start")
+c = first(x for x in d["cases"] if !occursin("/", string(x["name"])))
+Markdown.parse(
+    "A cold solve of the same problem takes " * msval(c["cold_ms"]) * " and " *
+        int(c["cold_iter"]) * " iterations."
+)
+```
 
 **The saving is the share of the active set that did not change.** The working set is a good
 guess exactly to that extent, so the iteration count grows with the perturbation while the cold
-count stays where it is. At the largest perturbation here the warm solve still takes a sixth of
-the cold time, and every one of the 40 draws across the sweep beat the cold solve.
+count stays where it is. At the largest perturbation here the warm solve still takes about a
+seventh of the cold time, and every one of the 40 draws across the sweep beat the cold solve.
 
 **A warm solve of the unchanged data allocates nothing** — 0 bytes.
 
@@ -138,27 +176,50 @@ measurement — otherwise a rerouting that silently failed would look like a cle
 Measured against PureBLAS at commit `ea79919`, which `PureOSQP/bench/results/pureblas_backend.json`
 records alongside the timings.
 
-| n | m | OpenBLAS | PureBLAS | ratio | iterations | \|Δx\| |
-|---|---|---|---|---|---|---|
-| 25 | 50 | 0.198 ms | 0.186 ms | 1.07× | 225 | 4.2e-15 |
-| 50 | 100 | 0.611 ms | 0.582 ms | 1.05× | 350 | 4.3e-15 |
-| 100 | 200 | 5.94 ms | 5.20 ms | 1.14× | 1500 | 8.7e-15 |
-| 200 | 400 | 9.44 ms | 8.12 ms | 1.16× | 650 | 1.0e-14 |
-| 100 | 50 | 0.346 ms | 0.333 ms | 1.04× | 50 | 8.4e-15 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "pureblas_backend")
+benchtable(
+    d["solve"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "OpenBLAS" => r -> ms(r["t_openblas"]),
+        "PureBLAS" => r -> ms(r["t_pureblas"]),
+        "ratio" => r -> ratio(r["ratio"]),
+        "iterations" => r -> int(r["iter_pureblas"]),
+        "\\|Δx\\|" => r -> sci(r["dx"]),
+    ]
+)
+```
 
 **Correctness is exact** — identical iteration counts and solutions agreeing to `1e-14`, so
 PureBLAS is a faithful drop-in — **and it is faster than OpenBLAS on every case**:
 
-| operation (n=200, m=400) | OpenBLAS | PureBLAS | ratio | runs |
-|---|---|---|---|---|
-| `gemv A*x` | 3.38 µs | 3.07 µs | 1.10× | every iteration |
-| `gemv Aᵀy` (transposed) | 3.91 µs | 2.53 µs | **1.55×** | every iteration |
-| `gemv At*y` (materialized transpose) | 3.79 µs | 3.00 µs | 1.26× | — |
-| `syrk WᵀW` | 313 µs | 233 µs | **1.34×** | on a ρ update |
-| `potrf` | 114 µs | 57.7 µs | **1.98×** | on a ρ update |
-| `potri` | 216 µs | 322 µs | **0.67×** | on a ρ update |
-| `symv R⁻¹b` | 1.58 µs | 1.35 µs | 1.17× | every iteration |
-| `trsv F\b` | 11.6 µs | 12.1 µs | 0.96× | — |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "pureblas_backend")
+# How often PureOSQP's inner loop reaches each operation. A dash marks one measured for
+# reference that the loop does not call.
+runs = Dict(
+    "gemv  A*x" => "every iteration",
+    "gemv  A'y (trans)" => "every iteration",
+    "gemv  At*y (dense)" => "—",
+    "syrk  W'W" => "on a ρ update",
+    "potrf" => "on a ρ update",
+    "potri" => "on a ρ update",
+    "symv  R⁻¹b" => "every iteration",
+    "trsv  F\\b" => "—",
+)
+benchtable(
+    d["ops"], [
+        "operation (n=200, m=400)" => r -> "`" * replace(strip(r["op"]), "  " => " ") * "`",
+        "OpenBLAS" => r -> us(r["t_openblas"]),
+        "PureBLAS" => r -> us(r["t_pureblas"]),
+        "ratio" => r -> ratio(num(r["t_openblas"]) / num(r["t_pureblas"])),
+        "runs" => r -> get(runs, r["op"], "—"),
+    ]
+)
+```
 
 PureOSQP's inner loop is Level-2-bound: it does a handful of `gemv` and one `symv` per
 iteration and touches `syrk`/`potrf`/`potri` only when ρ changes, so the whole-solve ratio
@@ -187,30 +248,35 @@ each: libosqp 1.0 for operator splitting, DAQP for the active-set method, Clarab
 interior-point one. Reproduce with `julia --project=bench PureOSQP/bench/solvers.jl`; samples
 are in `PureOSQP/bench/results/solvers.json`.
 
-| n | m | PureOSQP | libosqp 1.0 | PureDAQP | DAQP | PureIPM | Clarabel |
-|---|---|---|---|---|---|---|---|
-| 10 | 20 | 0.089 ms | 0.163 ms | 0.008 ms | **0.003 ms** | 0.066 ms | 0.121 ms |
-| 25 | 50 | 0.163 ms | 0.532 ms | 0.043 ms | **0.035 ms** | 0.296 ms | 0.631 ms |
-| 50 | 100 | 0.487 ms | 2.13 ms | **0.162 ms** | 0.207 ms | 1.14 ms | 2.87 ms |
-| 100 | 200 | 4.51 ms | 34.9 ms | **1.20 ms** | 1.87 ms | 5.06 ms | 17.0 ms |
-| 200 | 400 | 8.18 ms | 76.3 ms | **11.6 ms** | 16.0 ms | 28.9 ms | 108 ms |
-| 100 | 50 | 0.297 ms | 1.03 ms | **0.147 ms** | 0.356 ms | 1.08 ms | 6.02 ms |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "solvers")
+cols = Any["n" => r -> int(r["n"]), "m" => r -> int(r["m"])]
+for (key, header) in [
+        "PureOSQP" => "PureOSQP", "OSQP" => "libosqp 1.0", "PureDAQP" => "PureDAQP",
+        "DAQP" => "DAQP", "PureIPM" => "PureIPM", "Clarabel" => "Clarabel",
+    ]
+    push!(cols, header => r -> ms(get(r["times"], key, nothing)))
+end
+benchtable(d["results"], cols)
+```
 
 libosqp and Clarabel read sparse matrices, so each is timed from sparse copies built
 beforehand. Both DAQP implementations read dense ones, which is what they are built for.
 
 **An active-set method wins this shape.** These are dense problems with few rows active at
 the solution, which is what an active-set method is for: a few expensive steps, then it stops
-at the exact vertex. PureDAQP is the fastest solver here from `n = 50` up and beats the C
-implementation it follows by 1.28× to 2.42×. PureIPM beats Clarabel at every size, by 1.9× to
-5.6×.
+at the exact vertex. PureDAQP is the fastest solver here from `n = 50` up, and over those
+sizes it beats the C implementation it follows by 1.2× to 2.3×. PureIPM beats Clarabel at
+every size, by 1.8× to 5.6×.
 
 Below `n = 50` it does not, and the reason is per-iteration work rather than a fixed cost:
 setup is about a fifth of a solve at `n = 25`, and the remainder divides into iterations that
 each cost more than the C implementation's. The next table gives the whole picture.
 
 These are the figures for the default `working_set = :rows`, which trades 1.2×–1.5× for a
-rank test that holds on an ill-conditioned reduction; `:gram` is the faster setting, and
+rank test that reads the conditioning once rather than twice; `:gram` is the faster setting,
+and
 [choosing a working set for `ActiveSet`](@ref "Choosing a working set for `ActiveSet`") says
 when each is right.
 
@@ -234,16 +300,32 @@ plane: `libdaqp / PureDAQP`, so above `1.00` PureDAQP is faster. Reproduce with
 `bench/results/puredaqp_vs_libdaqp.json`. Single-threaded BLAS, `working_set = :rows`, both
 solvers given the same iteration limit.
 
-| n \ m/n | 0.5 | 1 | 2 | 4 | 8 |
-|---|---|---|---|---|---|
-| 25 | 0.89× | 0.65× | 0.61× | 0.93× | 0.93× |
-| 50 | 1.37× | 1.08× | 1.08× | 1.14× | 1.36× |
-| 100 | 2.26× | 1.79× | 1.63× | 1.49× | 1.78× |
-| 200 | 3.31× | 2.32× | 1.91× | 1.91× | 1.96× |
-| 400 | **4.00×** | 2.43× | 2.16× | 2.19× | 1.97× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "puredaqp_vs_libdaqp")
+ns = sort(unique(num(r["n"]) for r in d["rows"]))
+aspects = sort(unique(num(r["m_over_n"]) for r in d["rows"]))
+by_shape = Dict((num(r["n"]), num(r["m_over_n"])) => r for r in d["rows"])
+rows = [Dict("n" => n, "cells" => [get(by_shape, (n, a), nothing) for a in aspects]) for n in ns]
+cols = Any["n \\ m/n" => r -> int(r["n"])]
+for (j, a) in enumerate(aspects)
+    push!(
+        cols, (a == round(a) ? int(a) : string(a)) =>
+            r -> (c = r["cells"][j]; isnothing(c) ? "—" : ratio(c["speedup"]))
+    )
+end
+benchtable(rows, cols)
+```
 
-The two agree to between `4.2e-16` and `2.5e-14` in every cell, and the script checks that
-before recording a time.
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "puredaqp_vs_libdaqp")
+errs = [num(r["rel_err_vs_libdaqp"]) for r in d["rows"]]
+Markdown.parse(
+    "The two agree to between `" * sci(minimum(errs)) * "` and `" * sci(maximum(errs)) *
+        "` in every cell, and the script checks that before recording a time."
+)
+```
 
 **`n` decides this, not the aspect ratio.** Reading down a column is a clean progression;
 reading across a row is not. The crossover sits near `n = 50` whichever shape the problem
@@ -258,13 +340,21 @@ range than this one.
 representation spends per iteration, not a fixed cost, so changing the representation removes
 it:
 
-| n | m | `:rows` | `:gram` | libdaqp | `:rows` / C | `:gram` / C |
-|---|---|---|---|---|---|---|
-| 25 | 25 | 0.029 ms | 0.019 ms | 0.020 ms | 0.68× | **1.03×** |
-| 25 | 50 | 0.045 ms | 0.031 ms | 0.032 ms | 0.72× | **1.04×** |
-| 25 | 100 | 0.095 ms | 0.068 ms | 0.078 ms | 0.82× | **1.15×** |
-| 50 | 50 | 0.101 ms | 0.078 ms | 0.111 ms | 1.09× | **1.43×** |
-| 100 | 100 | 0.489 ms | 0.404 ms | 0.894 ms | 1.83× | **2.21×** |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "puredaqp_vs_libdaqp")
+benchtable(
+    d["working_sets"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "`:rows`" => r -> msval(r["rows_ms"]),
+        "`:gram`" => r -> msval(r["gram_ms"]),
+        "libdaqp" => r -> msval(r["libdaqp_ms"]),
+        "`:rows` / C" => r -> ratio(num(r["libdaqp_ms"]) / num(r["rows_ms"])),
+        "`:gram` / C" => r -> ratio(num(r["libdaqp_ms"]) / num(r["gram_ms"])),
+    ]
+)
+```
 
 ## Choosing a working set for the active-set method
 
@@ -277,12 +367,20 @@ for `ActiveSet`") says how to decide. Reproduce with
 
 **Well conditioned: `:gram` is faster.**
 
-| n | m | `:gram` | `:rows` | iterations | `:rows` cost |
-|---|---|---|---|---|---|
-| 25 | 50 | 0.041 ms | 0.059 ms | 47 / 47 | 1.45× |
-| 50 | 100 | 0.195 ms | 0.235 ms | 99 / 99 | 1.21× |
-| 100 | 200 | 1.059 ms | 1.242 ms | 214 / 214 | 1.17× |
-| 200 | 400 | 6.857 ms | 8.473 ms | 459 / 459 | 1.24× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "working_set_choice")
+benchtable(
+    [r for r in d["rows"] if r["case"] == "benign"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "`:gram`" => r -> msval(r["gram"]["ms"]),
+        "`:rows`" => r -> msval(r["rows"]["ms"]),
+        "iterations" => r -> int(r["gram"]["iter"]) * " / " * int(r["rows"]["iter"]),
+        "`:rows` cost" => r -> ratio(num(r["rows"]["ms"]) / num(r["gram"]["ms"])),
+    ]
+)
+```
 
 The iteration counts are equal row for row here, so on these problems the whole difference is
 what one iteration costs. The counts are not guaranteed to match — the pivots differ in their
@@ -301,22 +399,28 @@ Where that cost sits, measured at `k = 100`, `n = 200` against a whole iteration
 A deletion is repaired by rotations over the columns after it, so dropping the newest row is
 free and dropping the oldest costs the whole factor.
 
-**Ill conditioned: `:gram` cannot decide rank, and stops.**
+**What does not separate them on these problems: conditioning, or rows that are exact
+combinations of others.**
 
-| case | `:gram` | `:rows` |
-|---|---|---|
-| `cond(A R⁻¹) ≈ 1e17`, 30 variables, 200 rows | `NUMERICAL_ERROR` | `SOLVED`, violation 2.9e-12 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "working_set_choice")
+benchtable(
+    [r for r in d["rows"] if r["case"] != "benign"], [
+        "case" => r -> str(r["case"]),
+        "`:gram`" => r -> str(r["gram"]["status"]) * ", violation " * sci(r["gram"]["violation"]),
+        "`:rows`" => r -> str(r["rows"]["status"]) * ", violation " * sci(r["rows"]["violation"]),
+        "iterations" => r -> int(r["gram"]["iter"]) * " / " * int(r["rows"]["iter"]),
+    ]
+)
+```
 
-The problem is feasible and `:rows` solves it.
-
-**What does not separate them: rows that are exact combinations of others.**
-
-| case | `:gram` | `:rows` |
-|---|---|---|
-| 40 of 130 rows are combinations of the rest | `SOLVED`, violation 2.8e-17 | `SOLVED`, violation 3.5e-17 |
-
-Dependence that is exact is not the same difficulty as dependence blurred by rounding. Both
-forms carry the dependent row and walk the direction it opens.
+Both settings solve both cases. Dependence that is exact is not the same difficulty as
+dependence blurred by rounding, and both forms carry the dependent row and walk the direction
+it opens. The condition number at which the Gram pivot stops being able to tell a dependent
+row from an independent one is a property of the arithmetic rather than of these two problems;
+[choosing a working set for `ActiveSet`](@ref "Choosing a working set for `ActiveSet`") derives
+it and says what to do about it.
 
 ## Choosing a representation
 
@@ -330,11 +434,19 @@ The script checks that every run reaches `SOLVED` before it reports a time.
 diagonal plus a rank-one term, stored as `O(n)` numbers, compared with the `n×n` matrix it
 represents. `A` is dense in both, so the products with `A` cost `O(n²)` either way.
 
-| n | iterations (operator / dense) | operator | dense | speedup |
-|---|---|---|---|---|
-| 200 | 225 / 125 | 3.4 ms | 2.2 ms | 0.65× |
-| 500 | 150 / 125 | 18.6 ms | 20.0 ms | 1.08× |
-| 1000 | 175 / 175 | 85.2 ms | 128.8 ms | 1.51× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "representation_choice")
+benchtable(
+    [r for r in d["cases"] if r["case"] == "no_advantage"], [
+        "n" => r -> int(r["n"]),
+        "iterations (operator / dense)" => r -> int(r["operator_iter"]) * " / " * int(r["dense_iter"]),
+        "operator" => r -> ms(r["operator_seconds"]),
+        "dense" => r -> ms(r["dense_seconds"]),
+        "speedup" => r -> ratio(r["speedup"]),
+    ]
+)
+```
 
 The operator skips the factorization but solves a linear system with CG in every iteration. At
 `n = 200` that costs more than it saves. From `n = 500` the factorization's `O(n³)` cost grows
@@ -344,12 +456,22 @@ faster than the CG work, and the operator is faster.
 of `n/20`, so about a tenth of the entries are nonzero, which is too many for a sparse format to
 be the obvious choice. It is diagonally dominant, so conditioning plays no part here.
 
-| n | window | fill | iterations (operator / dense) | operator | dense | speedup | dense `A` |
-|---|---|---|---|---|---|---|---|
-| 500 | 25 | 9.9% | 200 / 75 | 12.2 ms | 15.1 ms | **1.23×** | 1.9 MiB |
-| 1000 | 50 | 9.8% | 100 / 100 | 21.9 ms | 109 ms | **5.01×** | 7.6 MiB |
-| 2000 | 100 | 9.8% | 100 / 100 | 227 ms | 737 ms | **3.24×** | 30.5 MiB |
-| 4000 | 200 | 9.8% | 100 / 75 | 904 ms | 4756 ms | **5.26×** | 122 MiB |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "representation_choice")
+benchtable(
+    [r for r in d["cases"] if r["case"] == "asymptotic_win"], [
+        "n" => r -> int(r["n"]),
+        "window" => r -> int(r["bandwidth"]),
+        "fill" => r -> sigfig(num(r["fill_percent"]), 2) * "%",
+        "iterations (operator / dense)" => r -> int(r["operator_iter"]) * " / " * int(r["dense_iter"]),
+        "operator" => r -> ms(r["operator_seconds"]),
+        "dense" => r -> ms(r["dense_seconds"]),
+        "speedup" => r -> "**" * ratio(r["speedup"]) * "**",
+        "dense `A`" => r -> sigfig(num(r["dense_mib"])) * " MiB",
+    ]
+)
+```
 
 Compared with the first case, what changed is neither size nor sparsity. It is that applying the
 operator costs less than multiplying by its dense form. Once the dense matrix no longer fits in
@@ -359,10 +481,21 @@ cache, its product is limited by memory speed, so the operator's lead holds as `
 Kronecker operator with `κ = 1e12` is two factors with `κ = 1e6` each. Its backend
 eigendecomposes the two factors and never forms the product.
 
-| n | κ(A) | iterations | `kronecker` | dense | speedup | CG on the same problem |
-|---|---|---|---|---|---|---|
-| 400 | 1e12 | 625 / 625 | 2.3 ms | 27.9 ms | **12.1×** | `SOLVED` in 625 iterations |
-| 1600 | 1e12 | 1100 / 1100 | 21.8 ms | 1566 ms | **71.8×** | `SOLVED` in 850 iterations |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "representation_choice")
+benchtable(
+    [r for r in d["cases"] if r["case"] == "direct_not_cg"], [
+        "n" => r -> int(r["n"]),
+        "κ(A)" => r -> sci(r["cond_A"]),
+        "iterations" => r -> int(r["kronecker_iter"]) * " / " * int(r["dense_iter"]),
+        "`kronecker`" => r -> ms(r["kronecker_seconds"]),
+        "dense" => r -> ms(r["dense_seconds"]),
+        "speedup" => r -> "**" * ratio(r["speedup"]) * "**",
+        "CG on the same problem" => r -> "`" * str(r["cg_status"]) * "` in " * int(r["cg_iter"]) * " iterations",
+    ]
+)
+```
 
 The Kronecker backend and the dense path reach the same objective, and the script checks this
 before reporting a time. The matrix-free backend also solves both problems and reaches the same
@@ -378,23 +511,37 @@ number of iterations and the difference is the cost of the products. `n = 150`, 
 Reproduce with `julia --project=bench PureOSQP/bench/matrix_types.jl`; samples are in
 `PureOSQP/bench/results/matrix_types.json`.
 
-| problem | as `Matrix` | structured | speedup | iterations |
-|---|---|---|---|---|
-| dense `P` (vs `Symmetric`) | 30.6 ms | 35.8 ms | 0.85× | 4375 |
-| diagonal `P` (vs `Diagonal`) | 4.67 ms | 4.32 ms | 1.08× | 550 |
-| tridiagonal `P` (vs `SymTridiagonal`) | 19.0 ms | 18.1 ms | 1.05× | 2550 |
-| `A` as a `SubArray` | 6.88 ms | 6.77 ms | 1.02× | 900 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "matrix_types")
+# The type each problem is compared against is the script's choice of structured form, which the
+# samples record by problem rather than by type name.
+against = Dict(
+    "dense P" => "dense `P` (vs `Symmetric`)",
+    "diagonal P" => "diagonal `P` (vs `Diagonal`)",
+    "tridiagonal P" => "tridiagonal `P` (vs `SymTridiagonal`)",
+    "A as a view" => "`A` as a `SubArray`",
+)
+benchtable(
+    d["structured"], [
+        "problem" => r -> against[r["problem"]],
+        "as `Matrix`" => r -> ms(r["t_matrix"]),
+        "structured" => r -> ms(r["t_structured"]),
+        "speedup" => r -> ratio(r["ratio"]),
+        "iterations" => r -> int(r["iters"]),
+    ]
+)
+```
 
-**A structured `P` helps only a little here.** Equilibration reads only the entries a band
-type can hold, which makes that step 2.3× faster on a `Diagonal` `P` and 2.2× on a
-`SymTridiagonal`. The whole solve gains less, because equilibration is a small part of it.
-Every iteration also multiplies by `A` twice, and with `m = 2n` and `A` dense in every row
-above, that is four times the work of the `P` product.
+**A structured `P` barely moves the solve here.** Equilibration reads only the entries a band
+type can hold, but equilibration is a small part of a solve. Every iteration also multiplies by
+`A` twice, and with `m = 2n` and `A` dense in every row above, that is four times the work of
+the `P` product.
 
 What the table does show is that any `AbstractMatrix` works, the caller's matrices are never
 copied or changed, and a type with a cheaper `mul!` gets it. With a dense `A`, the structured
-type is not a speedup. [Structured backends](@ref) covers the cases where the structure changes
-which linear system is solved, which is where the large gains are.
+type is close to a wash. [Structured backends](@ref) covers the cases where the structure
+changes which linear system is solved, which is where the large gains are.
 
 ## Structured backends
 
@@ -412,14 +559,24 @@ Each row below is one problem solved twice, once in the structured types and onc
 Reproduce with `julia --project=bench PureOSQP/bench/structured_backends.jl`; samples are written to
 `PureOSQP/bench/results/structured_backends.json`.
 
-| `P`, `A` | n | bw(`R`) | backend | setup | dense setup | setup× | total | dense total | total× |
-|---|---|---|---|---|---|---|---|---|---|
-| `Diagonal`, `Diagonal` | 400 | 0 | `diagonal` | 49.6 µs | 5.37 ms | **108×** | 0.08 ms | 7.03 ms | **83×** |
-| `SymTridiagonal`, `Diagonal` | 400 | 1 | `tridiagonal` | 65.1 µs | 5.40 ms | **83×** | 0.23 ms | 12.1 ms | **52×** |
-| `SymTridiagonal`, `Tridiagonal` | 400 | 2 | `banded` | 114 µs | 5.37 ms | **47×** | 0.62 ms | 11.3 ms | **18×** |
-| `Diagonal`, `Diagonal` | 2000 | 0 | `diagonal` | 230 µs | 393 ms | **1710×** | 0.40 ms | 488 ms | **1216×** |
-| `SymTridiagonal`, `Diagonal` | 2000 | 1 | `tridiagonal` | 306 µs | 389 ms | **1270×** | 1.15 ms | 831 ms | **725×** |
-| `SymTridiagonal`, `Tridiagonal` | 2000 | 2 | `banded` | 549 µs | 384 ms | **699×** | 3.08 ms | 778 ms | **252×** |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "structured_backends")
+benchtable(
+    [r for r in d["cases"] if num(r["n"]) in (400, 2000)], [
+        "`P`, `A`" => r -> "`" * replace(str(r["name"]), ", " => "`, `") * "`",
+        "n" => r -> int(r["n"]),
+        "bw(`R`)" => r -> int(r["bw"]),
+        "backend" => r -> "`" * str(r["backend"]) * "`",
+        "setup" => r -> us(r["setup"]),
+        "dense setup" => r -> ms(r["dense_setup"]),
+        "setup×" => r -> "**" * ratio(num(r["dense_setup"]) / num(r["setup"])) * "**",
+        "total" => r -> ms(r["total"]),
+        "dense total" => r -> ms(r["dense_total"]),
+        "total×" => r -> "**" * ratio(num(r["dense_total"]) / num(r["total"])) * "**",
+    ]
+)
+```
 
 The ratios grow with `n` because the two sides have different exponents, not because the
 constant is better: the dense path factors in `O(n³)` and applies in `O(n²)`, and these are
@@ -457,18 +614,32 @@ cost falls from `n³` to `Σnᵢ³` and the storage from `n²` to `Σnᵢ²`, so
 iterations. Reproduce with `julia --project=bench PureOSQP/bench/block_backend.jl`; samples are in
 `PureOSQP/bench/results/block_backend.json`. Single-threaded BLAS, `n = 240`.
 
-| `K` | block size | iterations | `block` | dense | speedup | matrix-free | block vs matrix-free | factor words | dense words | memory saved |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 2 | 120 | 50 | 3.69 ms | 4.39 ms | 1.19× | 5.75 ms | 1.56× | 14 520 | 28 920 | 2.0× |
-| 3 | 80 | 50 | 2.50 ms | 3.27 ms | 1.31× | 4.17 ms | 1.66× | 9 720 | 28 920 | 3.0× |
-| 4 | 60 | 50 | 1.92 ms | 2.70 ms | 1.41× | 3.27 ms | 1.70× | 7 320 | 28 920 | 4.0× |
-| 6 | 40 | 150 | 1.65 ms | 2.55 ms | 1.55× | 2.56 ms | 1.55× | 4 920 | 28 920 | 5.9× |
-| 8 | 30 | 100 | 1.23 ms | 2.06 ms | 1.68× | 2.18 ms | 1.77× | 3 720 | 28 920 | 7.8× |
-| 12 | 20 | 250 | 1.44 ms | 2.47 ms | 1.71× | 2.09 ms | 1.45× | 2 520 | 28 920 | 11.5× |
-| 20 | 12 | 100 | 0.84 ms | 2.34 ms | **2.80×** | 3.29 ms | 3.94× | 1 560 | 28 920 | **18.5×** |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "block_backend")
+rows = d["cases"]
+best_speedup = maximum(num(r["dense"]) / num(r["block"]) for r in rows)
+best_memory = maximum(num(r["dense_words"]) / num(r["words"]) for r in rows)
+emph(v, best) = (s = ratio(v); v ≈ best ? "**" * s * "**" : s)
+benchtable(
+    rows, [
+        "`K`" => r -> int(r["K"]),
+        "block size" => r -> int(r["block_size"]),
+        "iterations" => r -> int(r["iter"]),
+        "`block`" => r -> ms(r["block"]),
+        "dense" => r -> ms(r["dense"]),
+        "speedup" => r -> emph(num(r["dense"]) / num(r["block"]), best_speedup),
+        "matrix-free" => r -> ms(r["indirect"]),
+        "block vs matrix-free" => r -> ratio(num(r["indirect"]) / num(r["block"])),
+        "factor words" => r -> int(r["words"]),
+        "dense words" => r -> int(r["dense_words"]),
+        "memory saved" => r -> emph(num(r["dense_words"]) / num(r["words"]), best_memory),
+    ]
+)
+```
 
 **The block backend is the fastest of the three at every split.** Its lead over the dense path
-grows from 1.19× to 2.80× as the blocks get smaller. At `n = 240` a dense factorization is
+grows from 1.18× to 2.78× as the blocks get smaller. At `n = 240` a dense factorization is
 already cheap and each iteration's `symv` takes most of the time, so the time gain is smaller
 than the memory gain. The memory saved matches `n²/Σnᵢ²` and does not depend on the problem
 being small. The iteration count changes down the table because each `K` is a different
@@ -485,21 +656,27 @@ plus a rank-`k` correction, which Woodbury solves without forming it: two `gemv`
 with `julia --project=bench PureOSQP/bench/lowrank_backend.jl`; samples in
 `PureOSQP/bench/results/lowrank_backend.json`, single-threaded BLAS.
 
-| n | k | iters | setup | dense setup | total | dense total | total× |
-|---|---|---|---|---|---|---|---|
-| 500 | 1 | 75 | 80.3 µs | 9.31 ms | 0.24 ms | 19.2 ms | **81×** |
-| 500 | 2 | 75 | 88.5 µs | 9.34 ms | 0.26 ms | 19.3 ms | **75×** |
-| 500 | 6 | 100 | 138 µs | 9.34 ms | 0.58 ms | 14.3 ms | **25×** |
-| 500 | 16 | 125 | 282 µs | 9.34 ms | 0.79 ms | 15.5 ms | **20×** |
-| 1000 | 1 | 75 | 154 µs | 57.7 ms | 0.45 ms | 119 ms | **267×** |
-| 1000 | 6 | 100 | 270 µs | 56.4 ms | 1.11 ms | 79.1 ms | **71×** |
-| 1000 | 16 | 150 | 557 µs | 55.8 ms | 1.64 ms | 98.2 ms | **60×** |
-| 2000 | 1 | 75 | 304 µs | 391 ms | 0.87 ms | 806 ms | **923×** |
-| 2000 | 6 | 100 | 533 µs | 385 ms | 2.16 ms | 559 ms | **259×** |
-| 2000 | 16 | 175 | 1.11 ms | 392 ms | 3.71 ms | 691 ms | **186×** |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "lowrank_backend")
+benchtable(
+    d["cases"], [
+        "n" => r -> int(r["n"]),
+        "k" => r -> int(r["k"]),
+        "iters" => r -> int(r["iter"]),
+        "setup" => r -> us(r["setup"]),
+        "dense setup" => r -> ms(r["dense_setup"]),
+        "total" => r -> ms(r["total"]),
+        "dense total" => r -> ms(r["dense_total"]),
+        "total×" => r -> "**" * ratio(num(r["dense_total"]) / num(r["total"])) * "**",
+    ]
+)
+```
 
-The ratio grows with `n` at fixed `k` and shrinks as `k` climbs, which is what `O(nk)` against
-`O(n²)` predicts. The solver drops this backend once `10k > n`, which sits below the measured
+The ratio grows with `n` at fixed `k`, and broadly shrinks as `k` climbs, which is what `O(nk)`
+against `O(n²)` predicts. It is not monotonic in `k`: the rows do not share an iteration count,
+so a row that took twice the iterations carries that into both of its times. The solver drops
+this backend once `10k > n`, which sits below the measured
 crossing, so the limit holds at any BLAS thread count — see the gate discussion in
 `PureOSQP/bench/results/gate_crossover_lowrank.json`. Each row is a different problem, so read across
 a row rather than down a column.
@@ -511,19 +688,26 @@ PureOSQP is measured twice: given dense copies, and given the sparse matrices, w
 SparseArrays extension reads only the stored entries. libosqp gets the sparse matrices. The
 results come from the same script as the table above.
 
-| n | m | density | PureOSQP, dense copies | PureOSQP, sparse | libosqp 1.0 | best vs libosqp |
-|---|---|---|---|---|---|---|
-| 200 | 400 | 1% | 7.18 ms | 2.52 ms | 4.85 ms | 1.92× |
-| 200 | 400 | 5% | 11.5 ms | 6.03 ms | 24.3 ms | 4.03× |
-| 200 | 400 | 20% | 11.6 ms | 14.7 ms | 37.3 ms | 3.22× |
-| 400 | 800 | 1% | 38.7 ms | 10.2 ms | 38.9 ms | 3.80× |
-| 400 | 800 | 5% | 56.2 ms | 25.7 ms | 111 ms | 4.33× |
-| 400 | 800 | 20% | 139 ms | 172 ms | 394 ms | 2.82× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "matrix_types")
+benchtable(
+    d["sparse"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "density" => r -> sigfig(num(r["density"]) * 100, 2) * "%",
+        "PureOSQP, dense copies" => r -> ms(r["t_densified"]),
+        "PureOSQP, sparse" => r -> ms(r["t_sparse"]),
+        "libosqp 1.0" => r -> ms(r["t_osqp"]),
+        "best vs libosqp" => r -> ratio(r["ratio"]),
+    ]
+)
+```
 
 Dense and sparse storage take the same number of iterations in every row; the script checks
 this.
 
-**PureOSQP is faster in every row.** The smallest margin, 1.92×, is on the smallest and
+**PureOSQP is faster in every row.** The smallest margin, 2.15×, is on the smallest and
 sparsest problem, where libosqp's factorization has the least to do.
 
 **Which storage to pass depends on density.** At 1% and 5%, pass the sparse matrices: the
@@ -543,32 +727,48 @@ every row, and the script stops if their objectives differ by more than `1e-6`.
 
 The two problem families below favor different approaches, so both are shown.
 
-**Banded**, as in a model-predictive control horizon. The reduced matrix keeps the band, so
-PureOSQP factors it with CHOLMOD. This is the kind of problem libosqp's sparse factorization of
-the full KKT system is designed for.
+**Banded**, as in a model-predictive control horizon. The reduced matrix keeps the band, which
+PureOSQP factors sparsely; the backend column names which one it chose at each size. This is
+the kind of problem libosqp's sparse factorization of the full KKT system is designed for.
 
-The `cholmod` figures below predate the change to how `SparseCholmod` reads its factor
-(commit `1609934`), which cut its `factorize!` cost — they have not been re-measured since, so
-treat PureOSQP's margin here as a lower bound rather than the current number.
-
-| n | m | nnz(A) | PureOSQP backend | PureOSQP | libosqp 1.0 | vs libosqp | iterations |
-|---|---|---|---|---|---|---|---|
-| 200 | 400 | 2775 | `cholmod` | 7.57 ms | 11.4 ms | 1.50× | 1400 |
-| 500 | 1000 | 6975 | `cholmod` | 15.3 ms | 23.2 ms | 1.52× | 1125 |
-| 1000 | 2000 | 13975 | `cholmod` | 57.9 ms | 89.8 ms | 1.55× | 2200 |
-| 2000 | 4000 | 27975 | `cholmod` | 48.2 ms | 71.1 ms | 1.47× | 825 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "sparse_headtohead")
+sparse_rows(family) = benchtable(
+    d[family], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "nnz(A)" => r -> int(r["nnz_A"]),
+        "PureOSQP backend" => r -> "`" * str(r["backend"]) * "`",
+        "PureOSQP" => r -> ms(r["t_pure"]),
+        "libosqp 1.0" => r -> ms(r["t_osqp"]),
+        "vs libosqp" => r -> ratio(r["ratio"]),
+        "iterations" => r -> int(r["iter_pure"]),
+    ]
+)
+sparse_rows("banded")
+```
 
 **Uniformly random sparsity**, with no structure a sparse factorization can use. The reduced
 matrix fills in, so PureOSQP builds it from the stored entries and factors it as a dense
 matrix.
 
-| n | m | nnz(A) | PureOSQP backend | PureOSQP | libosqp 1.0 | vs libosqp | iterations |
-|---|---|---|---|---|---|---|---|
-| 200 | 400 | 753 | `sparse_formed` | 1.81 ms | 2.35 ms | 1.30× | 225 |
-| 200 | 400 | 4014 | `sparse_formed` | 7.33 ms | 30.0 ms | 4.09× | 1100 |
-| 500 | 1000 | 4994 | `sparse_formed` | 27.0 ms | 129 ms | 4.77× | 1100 |
-| 1000 | 2000 | 9926 | `sparse_formed` | 103 ms | 421 ms | 4.09× | 850 |
-| 2000 | 4000 | 20104 | `sparse_formed` | 664 ms | 2667 ms | 4.02× | 800 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "sparse_headtohead")
+benchtable(
+    d["random"], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "nnz(A)" => r -> int(r["nnz_A"]),
+        "PureOSQP backend" => r -> "`" * str(r["backend"]) * "`",
+        "PureOSQP" => r -> ms(r["t_pure"]),
+        "libosqp 1.0" => r -> ms(r["t_osqp"]),
+        "vs libosqp" => r -> ratio(r["ratio"]),
+        "iterations" => r -> int(r["iter_pure"]),
+    ]
+)
+```
 
 The margin is smaller on the banded family (1.5× to 1.6×) than on most of the random one (up
 to 4.8×). A banded problem suits libosqp's sparse factorization well. A random sparse problem
@@ -594,38 +794,44 @@ cost of the work, not the number of iterations. libosqp is timed on `osqp_setup`
 `osqp_solve` from CSC arrays built beforehand. Measured on Julia 1.13.0, single-threaded BLAS,
 pinned to core 15, on a workstation with an unpinned clock.
 
-| class | n | m | PureOSQP backend | PureOSQP | libosqp 1.0 | vs libosqp | per iteration | setup |
-|---|---|---|---|---|---|---|---|---|
-| Random QP | 50 | 500 | `sparse_formed` | 4.94 ms | 9.47 ms | **1.92×** | 1.80× | 3.68× |
-| Eq QP | 200 | 100 | `sparse_formed` | 2.37 ms | 4.13 ms | **1.74×** | 5.44× | 1.16× |
-| SVM | 808 | 1600 | `ldlfactorizations` | 3.63 ms | 5.82 ms | **1.61×** | 1.70× | 0.98× |
-| Portfolio | 505 | 506 | `ldl_kkt` | 3.52 ms | 4.31 ms | **1.22×** | 1.25× | 1.01× |
-| Control | 320 | 540 | `sparse_formed` | 6.18 ms | 7.44 ms | **1.20×** | 1.69× | 0.30× |
-| Lasso | 816 | 816 | `ldlfactorizations` | 1.51 ms | 1.65 ms | **1.09×** | 1.23× | 0.95× |
-| Huber | 1806 | 1800 | `ldlfactorizations` | 3.47 ms | 3.77 ms | **1.08×** | 1.17× | 0.88× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "osqp_suite")
+benchtable(
+    sort(collect(d["cases"]); by = r -> -num(r["ratio"])), [
+        "class" => r -> str(r["name"]),
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "PureOSQP backend" => r -> "`" * str(r["backend"]) * "`",
+        "PureOSQP" => r -> ms(r["t_pure"]),
+        "libosqp 1.0" => r -> ms(r["t_osqp"]),
+        "vs libosqp" => r -> "**" * ratio(r["ratio"]) * "**",
+        "iterations" => r -> int(r["iter_pure"]),
+    ]
+)
+```
+`vs libosqp` is libosqp's time divided by PureOSQP's. The two take the same number of
+iterations in every class, so it is also the ratio per iteration. The objectives agree to
+`1e-13` or better in six classes and to `1e-9` in the seventh. Random QP and Eq QP read
+`sparse_formed`: their reduced matrix is accumulated from the stored entries of `P` and `A`
+rather than formed with a dense product, the same arithmetic without the `m×n` buffer.
 
-The last two columns are libosqp's time divided by PureOSQP's, for the iterations and for
-setup. The objectives agree to `1e-13` or better in six classes and to `1e-9` in the seventh.
-Random QP and Eq QP read `sparse_formed`: their reduced matrix is now accumulated from the
-stored entries of `P` and `A` rather than formed with a dense product, the same arithmetic
-without the `m×n` buffer. The other five classes keep the backend they had.
-
-**PureOSQP is faster in all seven classes, by 1.08× to 1.92×.** These problems have the block
+**PureOSQP is faster in all seven classes, by 1.05× to 1.95×.** These problems have the block
 and band structure real problems tend to have. The random sparse families elsewhere on this
 page have none, which is the hardest case for any sparse factorization.
 
-**Each iteration is faster in every class, and setup is where libosqp does well.** libosqp's
-setup is faster in five classes, so the classes with the smallest overall lead are the ones where
-PureOSQP's faster iterations make up for a slower setup.
+The split between setup and iteration is where the classes differ, and the saved samples record
+only the whole solve, so the paragraphs below name the setup costs without a table behind them.
 
 Every figure is a median over ten seconds of samples. The two solvers run in the order
 PureOSQP, libosqp, libosqp, PureOSQP, and the median is taken over both turns together, so a
 slow drift during a row affects both solvers equally.
 
-**Control's setup is 3.4× slower on purpose.** PureOSQP forms the reduced matrix `R` and
-inverts it, which costs `O(n³)` once and makes each iteration a single `symv`. That makes the
-iterations 1.69× faster over 325 of them. A sparse `LDLᵀ` of the reduced matrix or of the KKT
-system matches libosqp's setup but makes the iterations slower, so the dense path is kept.
+**Control's setup is the slower half on purpose.** PureOSQP forms the reduced matrix `R` and
+inverts it, which costs `O(n³)` once and makes each iteration a single `symv`. The faster
+iterations more than pay for it over the hundreds the class takes. A sparse `LDLᵀ` of the
+reduced matrix or of the KKT system matches libosqp's setup but makes the iterations slower, so
+the dense path is kept.
 
 Most of that setup is the inverse, not forming `R`: `potrf` costs `n³/3` and the `potri` after
 it another `2n³/3`. Keeping the factor and applying it with two `trsv` calls costs as much but
@@ -711,16 +917,26 @@ These are not committed benchmarks to reproduce and compare against: the figures
 to core 15 with BLAS at one thread, on a workstation with an unpinned clock, so the times are
 indicative rather than a claim about relative speed.
 
-| class | n | m | ADMM iter | ADMM time | IPM iter | IPM time | Clarabel iter | Clarabel time | `x`, IPM vs Clarabel |
-|---|---|---|---|---|---|---|---|---|---|
-| Random QP | 6 | 60 | 200 | 67.1 µs | 9 | 103.7 µs | 9 | 128.5 µs | 2.4e-8 |
-| Eq QP | 20 | 10 | 50 | 34.0 µs | 2 | 45.1 µs | 6 | 94.4 µs | 8.2e-11 |
-| Portfolio | 101 | 102 | 125 | 238.7 µs | 10 | 321.8 µs | 11 | 530.8 µs | 2.1e-5 |
-| Lasso | 204 | 204 | 100 | 293.7 µs | 6 | 270.5 µs | 9 | 771.6 µs | 1.0e-6 |
-| SVM | 202 | 400 | 375 | 957.3 µs | 9 | 468.2 µs | 8 | 661.0 µs | 3.0e-9 |
-| Huber | 602 | 600 | 125 | 1070.1 µs | 9 | 1145.5 µs | 10 | 1943.9 µs | 1.8e-5 |
-| Control | 64 | 108 | 50 | 131.1 µs | 7 | 311.0 µs | 8 | 573.3 µs | 8.4e-9 |
-
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureIPM", "ipm_vs_clarabel")
+# The samples record each solver's time in milliseconds; this table reads in microseconds.
+usms(x) = (t = num(x); isfinite(t) ? sigfig(t * 1000) * " µs" : "—")
+benchtable(
+    d["results"], [
+        "class" => r -> str(r["name"]),
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "ADMM iter" => r -> int(r["admm"]["iter"]),
+        "ADMM time" => r -> usms(r["admm"]["time_ms"]),
+        "IPM iter" => r -> int(r["ipm"]["iter"]),
+        "IPM time" => r -> usms(r["ipm"]["time_ms"]),
+        "Clarabel iter" => r -> int(r["clarabel"]["iter"]),
+        "Clarabel time" => r -> usms(r["clarabel"]["time_ms"]),
+        "`x`, IPM vs Clarabel" => r -> sci(r["dx_ipm_clarabel"]),
+    ]
+)
+```
 The last column is the largest component of `x` where the interior-point solution and
 Clarabel's differ, relative to the largest component of `x`. It is `8.2e-11` on Eq QP, the
 class with the fewest active rows, and `1.8e-5`–`2.1e-5` on Huber and Portfolio, the two with
@@ -754,25 +970,43 @@ and interleaved A-B-B-A; the crate is a separate process timing `DefaultSolver::
 uncertainty than a difference within either language. `setup` is the share of that solver's own
 total spent before it starts iterating.
 
-| class | n | m | IPM it | IPM | setup | .jl it | Clarabel.jl | setup | .rs faer | .rs qdldl | faer/qdldl |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| Random QP | 60 | 600 | 12 | 3.55 ms | 29% | 11 | 4.75 ms | 46% | 5.70 ms | 5.59 ms | 1.02× |
-| Random QP | 200 | 2000 | 15 | 81.0 ms | 33% | 14 | 90.59 ms | 43% | 123.63 ms | 118.67 ms | 1.04× |
-| Eq QP | 200 | 100 | 1 | 2.79 ms | 44% | 6 | 11.35 ms | 24% | 12.43 ms | 15.67 ms | **0.79×** |
-| Eq QP | 800 | 400 | 1 | 71.87 ms | 33% | 5 | 384.44 ms | 7% | 225.52 ms | 444.65 ms | **0.51×** |
-| Portfolio | 1010 | 1011 | 13 | 6.65 ms | 17% | 11 | 10.20 ms | 31% | 13.23 ms | 13.02 ms | 1.02× |
-| Portfolio | 4040 | 4041 | 15 | 117.4 ms | 12% | 13 | 134.75 ms | 8% | 178.24 ms | 171.69 ms | 1.04× |
-| Lasso | 1020 | 1020 | 7 | 2.22 ms | 36% | 7 | 4.06 ms | 36% | 4.62 ms | 4.23 ms | 1.09× |
-| Lasso | 3060 | 3060 | 8 | 25.02 ms | 62% | 9 | 31.75 ms | 50% | 38.08 ms | 35.82 ms | 1.06× |
-| SVM | 1010 | 2000 | 11 | 3.36 ms | 20% | 10 | 4.20 ms | 30% | 4.78 ms | 4.35 ms | 1.10× |
-| SVM | 3030 | 6000 | 11 | 28.69 ms | 51% | 10 | **27.81 ms** | 54% | 32.41 ms | 30.65 ms | 1.06× |
-| Huber | 3010 | 3000 | 8 | 7.42 ms | 28% | 9 | 9.74 ms | 27% | 11.42 ms | 10.60 ms | 1.08× |
-| Control | 320 | 540 | 8 | 4.61 ms | 25% | 10 | 8.64 ms | 16% | 10.55 ms | 10.37 ms | 1.02× |
-| Control | 800 | 1350 | 9 | 40.08 ms | 20% | 9 | 65.71 ms | 13% | 100.07 ms | 77.74 ms | 1.29× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureIPM", "clarabel_rs_compare_large")
+msus(x) = (t = num(x); isfinite(t) ? sigfig(t / 1000) * " ms" : "—")
+pct(part, whole) = (f = num(part) / num(whole); isfinite(f) ? int(round(f * 100)) * "%" : "—")
+emph(s, cond) = cond ? "**" * s * "**" : s
+benchtable(
+    d["results"], [
+        "class" => r -> str(r["name"]),
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "IPM it" => r -> int(r["ipm"]["iter"]),
+        "IPM" => r -> msus(r["ipm"]["median_us"]),
+        "setup" => r -> pct(r["ipm"]["setup_median_us"], r["ipm"]["median_us"]),
+        ".jl it" => r -> int(r["clarabel_jl"]["iter"]),
+        "Clarabel.jl" => r -> emph(
+            msus(r["clarabel_jl"]["median_us"]),
+            num(r["clarabel_jl"]["median_us"]) < num(r["ipm"]["median_us"]),
+        ),
+        "setup " => r -> pct(r["clarabel_jl"]["setup_median_us"], r["clarabel_jl"]["median_us"]),
+        ".rs faer" => r -> msus(r["clarabel_rs_by_ldl"]["faer"]["min_us"]),
+        ".rs qdldl" => r -> msus(r["clarabel_rs_by_ldl"]["qdldl"]["min_us"]),
+        "faer/qdldl" => r -> (
+            v = num(r["clarabel_rs_by_ldl"]["faer"]["min_us"]) / num(r["clarabel_rs_by_ldl"]["qdldl"]["min_us"]);
+            emph(ratio(v), v < 1)
+        ),
+    ]
+)
+```
 
 All four solvers reach the same answer: the largest component of `x` where `InteriorPoint` and
 any of the others differ is `1.3e-5` on the loosest class and below `1e-7` on nine of the
 thirteen.
+
+The `IPM` and `Clarabel.jl` columns are medians over their samples; the two `.rs` columns are
+minima, because the Rust binary reports a minimum over its repetitions and nothing else. A
+minimum flatters the side that reports it, so read the `.rs` times as a floor.
 
 **faer needs fill before its factorization is worth anything.** faer is simplicial below a
 flops/nnz(L) ratio of 40 and supernodal above it, and a supernodal factorization blocks its
@@ -824,28 +1058,50 @@ vectors. Keeping about five nonzeros per row of `A` and growing the problem
 (`PureOSQP/bench/indirect_backend.jl`, `eps_abs = eps_rel = 1e-6`, single-threaded BLAS; samples in
 `PureOSQP/bench/results/indirect_backend.json`):
 
-| n | m | density | direct | matrix-free | speedup | direct memory | matrix-free memory | iterations (direct / matrix-free) |
-|---|---|---|---|---|---|---|---|---|
-| 200 | 400 | 2.5% | 5.07 ms | 44.1 ms | 0.11× | 0.5 MiB | 0.19 MiB | 1050 / 6200 |
-| 500 | 1000 | 1% | 27.3 ms | 34.5 ms | 0.79× | 2.4 MiB | 0.49 MiB | 1100 / 1275 |
-| 1000 | 2000 | 0.5% | 104 ms | 86.7 ms | **1.20×** | 8.5 MiB | 0.97 MiB | 850 / 1500 |
-| 2000 | 4000 | 0.25% | 699 ms | 249 ms | **2.81×** | 32.4 MiB | 1.97 MiB | 800 / 1900 |
-| 3000 | 6000 | 0.17% | 2143 ms | 367 ms | **5.85×** | 71.5 MiB | 3.01 MiB | 1025 / 1250 |
-| 4000 | 8000 | 0.125% | 3998 ms | 655 ms | **6.10×** | 125.7 MiB | 3.89 MiB | 875 / 1700 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "indirect_backend")
+mib(x) = sigfig(num(x) / 1024^2) * " MiB"
+emph(v) = (s = ratio(v); v > 1 ? "**" * s * "**" : s)
+indirect_rows(family) = benchtable(
+    d[family], [
+        "n" => r -> int(r["n"]),
+        "m" => r -> int(r["m"]),
+        "density" => r -> sigfig(num(r["density"]) * 100, 2) * "%",
+        "direct" => r -> ms(r["t_direct"]),
+        "matrix-free" => r -> ms(r["t_indirect"]),
+        "speedup" => r -> emph(num(r["speedup"])),
+        "direct memory" => r -> mib(r["bytes_direct"]),
+        "matrix-free memory" => r -> mib(r["bytes_indirect"]),
+        "iterations (direct / matrix-free)" => r ->
+            int(r["iter_direct"]) * " / " * int(r["iter_indirect"]),
+    ]
+)
+indirect_rows("by_size")
+```
 
 The matrix-free backend becomes faster between `n = 500` and `n = 1000`. It also uses less
-memory at every size, from 3× less at `n = 200` to 32× less at `n = 4000`, because the direct
+memory at every size, from 2.6× less at `n = 200` to 50× less at `n = 4000`, because the direct
 backend stores an `n×n` inverse and the matrix-free one stores vectors. For large problems,
 memory can decide whether the direct backend fits at all.
 
 At a fixed size, density decides. At `n = 1000, m = 2000`:
 
-| density | direct | matrix-free | speedup | iterations (direct / matrix-free) |
-|---|---|---|---|---|
-| 0.2% | 72.0 ms | 22.7 ms | **3.17×** | 550 / 775 |
-| 0.5% | 101 ms | 85.1 ms | **1.19×** | 850 / 1500 |
-| 1% | 105 ms | 260 ms | 0.40× | 875 / 1975 |
-| 2% | 140 ms | 1168 ms | 0.12× | 1025 / 4300 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "indirect_backend")
+emph(v) = (s = ratio(v); v > 1 ? "**" * s * "**" : s)
+benchtable(
+    d["by_density"], [
+        "density" => r -> sigfig(num(r["density"]) * 100, 2) * "%",
+        "direct" => r -> ms(r["t_direct"]),
+        "matrix-free" => r -> ms(r["t_indirect"]),
+        "speedup" => r -> emph(num(r["speedup"])),
+        "iterations (direct / matrix-free)" => r ->
+            int(r["iter_direct"]) * " / " * int(r["iter_indirect"]),
+    ]
+)
+```
 
 Both backends get slower as `nnz` grows, but the matrix-free one slows much faster. It pays
 for every CG iteration, and it also needs more ADMM iterations, while the direct backend pays
@@ -875,12 +1131,24 @@ The operator is `P = Diagonal(d) + α v vᵀ`, written three ways:
   protocol and is wrapped in [`PureQPBase.ProductOperator`](@ref) to reach the same backend.
 - **matrix**: the same operator stored as an `n×n` `Matrix`.
 
-| n | BLAS threads | protocol setup | linearmap setup | matrix setup | matrix / protocol | protocol step | linearmap step | matrix step |
-|---|---|---|---|---|---|---|---|---|
-| 500 | 1 | 229 µs | 79 µs | 7.27 ms | **32×** | 403 µs | 580 µs | 47 µs |
-| 1000 | 1 | 900 µs | 283 µs | 51.6 ms | **57×** | 1491 µs | 2119 µs | 181 µs |
-| 500 | 8 | 231 µs | 81 µs | 4.65 ms | **20×** | 402 µs | 535 µs | 41 µs |
-| 1000 | 8 | 909 µs | 285 µs | 23.3 ms | **26×** | 961 µs | 1300 µs | 98 µs |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "operator_protocol")
+benchtable(
+    d["cases"], [
+        "n" => r -> int(r["n"]),
+        "BLAS threads" => r -> int(r["blas_threads"]),
+        "protocol setup" => r -> us(r["protocol_setup"]),
+        "linearmap setup" => r -> us(r["linearmap_setup"]),
+        "matrix setup" => r -> ms(r["matrix_setup"]),
+        "matrix / protocol" => r ->
+            "**" * ratio(num(r["matrix_setup"]) / num(r["protocol_setup"])) * "**",
+        "protocol step" => r -> us(r["protocol_step"]),
+        "linearmap step" => r -> us(r["linearmap_step"]),
+        "matrix step" => r -> us(r["matrix_step"]),
+    ]
+)
+```
 
 **Compared with the matrix, setup is 20× to 57× faster and each step is 8× to 10× slower.**
 Setup has no `O(n³)` factorization to do. Each step runs a CG solve through the operator, where
@@ -916,36 +1184,33 @@ At `n = 300`, with `κ(P) = κ(A)` swept up to `1e12`. Reproduce with
 solution and its iterations and objective can be compared. Where it stops at `MAX_ITER`, its time
 is just the cost of 20 000 iterations and its objective is not a solution.
 
-| κ | shape | backend | status | iterations | objective | words | time |
-|---|---|---|---|---|---|---|---|
-| 1e4 | dense | `cholesky` | SOLVED | 225 | 300.97 | 45 150 | 9.7 ms |
-| 1e4 | dense | `bunchkaufman` | SOLVED | 225 | 300.97 | 180 300 | 27.8 ms |
-| 1e4 | dense | `indirect` | SOLVED | 775 | 300.97 | 0 | 95.1 ms |
-| 1e4 | blocks | `block` | SOLVED | 175 | 164.60 | 7 650 | **3.4 ms** |
-| 1e4 | blocks | `cholesky` | SOLVED | 175 | 164.60 | 45 150 | 8.3 ms |
-| 1e4 | blocks | `indirect` | SOLVED | 400 | 164.60 | 0 | 21.8 ms |
-| 1e8 | dense | `cholesky` | SOLVED | 500 | 298.49 | 45 150 | 15.5 ms |
-| 1e8 | dense | `indirect` | MAX_ITER | 20 000 | 323.89 | 0 | 8004 ms |
-| 1e8 | blocks | `block` | SOLVED | 1 200 | 440.33 | 7 650 | **8.8 ms** |
-| 1e10 | dense | `cholesky` | **MAX_ITER** | 20 000 | 344.72 | 45 150 | 354 ms |
-| 1e10 | blocks | `block` | **SOLVED** | 13 975 | 616.87 | 7 650 | **72.4 ms** |
-| 1e10 | blocks | `cholesky` | SOLVED | 14 025 | 616.87 | 45 150 | 105.9 ms |
-| 1e12 | dense | `cholesky` | MAX_ITER | 20 000 | 1552.3 | 45 150 | 353 ms |
-| 1e12 | blocks | `block` | MAX_ITER | 20 000 | 1180.3 | 7 650 | 104.2 ms |
-
-**Where ADMM stops converging.** The dense problem solves up to `κ = 1e8` and fails from
-`1e10`. Between those, it reaches `SOLVED` at `1e9` in 5 900 iterations and
-`SOLVED_INACCURATE` at `3e9`. The iteration count grows quickly before that point: 225 at
-`1e4`, 500 at `1e8`, 5 900 at `1e9`. A looser tolerance does not help: at `κ = 1e12` the dense
-problem does not converge at `eps = 1e-3` in 50 000 iterations.
-
-**The block problem converges at a higher `κ`.** At `κ = 1e10` the block problem converges and
-the dense one does not. They are different problems, not one problem written two ways, so this
-does not show that structure fixes conditioning. It shows that a problem that splits into six
-50×50 systems is still solvable at a `κ` where one 300×300 system is not. The block backend is
-also the fastest direct backend at every `κ` where it converges, and uses a sixth of the
-storage.
-
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "illconditioned")
+fastest = Dict{Any, Float64}()
+for r in d["cases"]
+    key = (r["kappa"], r["shape"])
+    t = num(r["seconds"])
+    if isfinite(t) && (!haskey(fastest, key) || t < fastest[key])
+        fastest[key] = t
+    end
+end
+benchtable(
+    d["cases"], [
+        "κ" => r -> sci(r["kappa"]),
+        "shape" => r -> str(r["shape"]),
+        "backend" => r -> "`" * str(r["backend"]) * "`",
+        "status" => r -> str(r["status"]),
+        "iterations" => r -> int(r["iter"]),
+        "objective" => r -> sigfig(num(r["obj_val"]), 5),
+        "words" => r -> int(r["words"]),
+        "time" => r -> (
+            s = ms(r["seconds"]);
+            num(r["seconds"]) ≈ get(fastest, (r["kappa"], r["shape"]), NaN) ? "**" * s * "**" : s
+        ),
+    ]
+)
+```
 **The matrix-free backend only works at the lowest `κ`.** At `κ = 1e4` it reaches the same
 objectives as the direct backends, but it needs 2.3× to 3.4× more iterations and is slower
 than the `cholesky` and `block` backends. From `κ = 1e8` it does not converge. The reduced matrix it works with has condition
@@ -971,30 +1236,51 @@ not determined well enough for the error column to mean anything.
 
 **Kronecker structure, `cond(A) = 1e8`**
 
-| solver | time | error in `x` | iterations | violation |
-|---|---|---|---|---|
-| PureDAQP | **1.26 ms** | **1.7e-15** | 49 | 5.6e-17 |
-| DAQP (C) | 1.49 ms | 2.0e-15 | — | 1.4e-16 |
-| PureOSQP | 37.8 ms | 8.3e-6 | 1000 | 6.5e-8 |
-| PureIPM | 51.9 ms | 7.0e-5 | 9 | 0 |
-| COSMO | 85.0 ms | 9.3e-6 | 225 | 1.1e-6 |
-| QPALM | 129 ms | 2.9e-6 | 51 | 2.5e-8 |
-| PureOSQP `:kronecker` | 226 ms | 7.3e-5 | 1775 | 1.4e-6 |
-| OSQP (libosqp) | 280 ms | 8.3e-6 | 1000 | 6.5e-8 |
-| Clarabel | 507 ms | 9.5e-7 | 13 | 0 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "illconditioned_shootout")
+family(name) = only(f for f in d["families"] if f["family"] == name)
+# A solver that reports no iteration count records -1 rather than a count.
+iters(r) = (v = num(get(r, "iter", nothing)); isfinite(v) && v > 0 ? int(v) : "—")
+shootout(name) = (
+    rows = sort(collect(family(name)["rows"]); by = r -> num(r["time_s"]));
+    best_time = minimum(num(r["time_s"]) for r in rows);
+    best_err = minimum(num(r["relerr"]) for r in rows);
+    emph(s, cond) = cond ? "**" * s * "**" : s;
+    benchtable(
+        rows, [
+            "solver" => r -> str(r["solver"]),
+            "time" => r -> emph(ms(r["time_s"]), num(r["time_s"]) ≈ best_time),
+            "error in `x`" => r -> emph(sci(r["relerr"]), num(r["relerr"]) ≈ best_err),
+            "iterations" => iters,
+            "violation" => r -> sci(r["violation"]),
+        ]
+    )
+)
+shootout("Kronecker")
+```
 
 **Unstructured, `cond(A) = 1e8`**
 
-| solver | time | error in `x` | iterations | violation |
-|---|---|---|---|---|
-| PureDAQP | **3.27 ms** | **7.1e-12** | 43 | 2.2e-16 |
-| DAQP (C) | 22.4 ms | 2.4e-11 | — | 1.0e-15 |
-| PureIPM | 61.3 ms | 8.1e-2 | 9 | 0 |
-| QPALM | 102 ms | 2.3e-5 | 37 | 4.4e-9 |
-| PureOSQP | 193 ms | 2.2e-2 | 6125 | 1.1e-9 |
-| Clarabel | 448 ms | 6.3e-2 | 10 | 0 |
-| COSMO | 1270 ms | 2.1e-2 | 2720 | 4.5e-7 |
-| OSQP (libosqp) | 2066 ms | 2.2e-2 | 5850 | 1.1e-9 |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "illconditioned_shootout")
+family(name) = only(f for f in d["families"] if f["family"] == name)
+iters(r) = (v = num(get(r, "iter", nothing)); isfinite(v) && v > 0 ? int(v) : "—")
+rows = sort(collect(family("Dense control")["rows"]); by = r -> num(r["time_s"]))
+best_time = minimum(num(r["time_s"]) for r in rows)
+best_err = minimum(num(r["relerr"]) for r in rows)
+emph(s, cond) = cond ? "**" * s * "**" : s
+benchtable(
+    rows, [
+        "solver" => r -> str(r["solver"]),
+        "time" => r -> emph(ms(r["time_s"]), num(r["time_s"]) ≈ best_time),
+        "error in `x`" => r -> emph(sci(r["relerr"]), num(r["relerr"]) ≈ best_err),
+        "iterations" => iters,
+        "violation" => r -> sci(r["violation"]),
+    ]
+)
+```
 
 Every solver returns a feasible point; the verdict comes from the returned `x`, not from the
 status the solver reports. The iteration count is not recorded for DAQP.
@@ -1024,29 +1310,51 @@ structures pay and when.
 Reproduce with `julia --project=bench PureOSQP/bench/primdual_integral.jl`; samples in
 `PureOSQP/bench/results/primdual_integral.json`, single-threaded BLAS, `eps_abs = eps_rel = 1e-9`.
 
-| problem | iterations | trapezoid | log-mean | log/trap | overhead |
-|---|---|---|---|---|---|
-| well conditioned | 75 | 6.84e-6 | 1.68e-6 | 0.246 | 0.29% |
-| moderate | 175 | 4.64e-6 | 3.14e-6 | 0.677 | 0.09% |
-| ill conditioned | 50 000 | 1.98e-5 | 1.52e-5 | 0.768 | 0.19% |
-| larger | 150 | 8.72e-4 | 5.23e-4 | 0.600 | 0.72% |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "primdual_integral")
+num3(x) = (v = num(x); isfinite(v) ? sigfig(v, 3) : "—")
+benchtable(
+    d["cases"], [
+        "problem" => r -> str(r["case"]),
+        "iterations" => r -> int(r["iter"]),
+        "trapezoid" => r -> sci(r["trapezoid"]),
+        "log-mean" => r -> sci(r["logmean"]),
+        "log/trap" => r -> num3(r["ratio"]),
+        "overhead" => r -> sigfig(num(r["overhead_percent"]), 2) * "%",
+    ]
+)
+```
 
 The same problem, sampled at five intervals:
 
-| sample every | iterations | trapezoid | log-mean | log/trap |
-|---|---|---|---|---|
-| 25 iterations | 75 | 7.11e-6 | 1.76e-6 | 0.247 |
-| 10 | 60 | 3.20e-6 | 1.50e-6 | 0.470 |
-| 5 | 55 | 1.96e-6 | 1.32e-6 | 0.674 |
-| 2 | 52 | 1.96e-6 | 1.72e-6 | 0.876 |
-| 1 | 51 | 2.28e-6 | 2.11e-6 | **0.927** |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "primdual_integral")
+rows = d["sampling"]
+tightest = maximum(num(r["ratio"]) for r in rows)
+benchtable(
+    rows, [
+        "sample every" => r -> int(r["check_termination"]),
+        "iterations" => r -> int(r["iter"]),
+        "trapezoid" => r -> sci(r["trapezoid"]),
+        "log-mean" => r -> sci(r["logmean"]),
+        "log/trap" => r -> (
+            s = sigfig(num(r["ratio"]), 3);
+            num(r["ratio"]) ≈ tightest ? "**" * s * "**" : s
+        ),
+    ]
+)
+```
 
 Both estimates converge on about `2.1e-6`. `check_termination` sets the sampling interval and
 also decides where the solve stops, so the iteration count moves down the column too: this is
 a trend, not a controlled single-variable sweep.
 
-Measuring costs under 1% and does not change what it measures — the benchmark asserts the
-iteration count and objective are identical with profiling on and off before reporting a time.
+Measuring costs under 1% either way — the `overhead` column straddles zero, so the cost is
+below what this timing can resolve — and it does not change what it measures: the benchmark
+asserts the iteration count and objective are identical with profiling on and off before
+reporting a time.
 
 **Neither number is reproducible.** Both integrate against wall-clock time, so they cannot be
 compared across machines, or between runs on a machine whose clock is not pinned. No test
@@ -1060,16 +1368,29 @@ the relative KKT error has fallen by `adaptive_rho_fraction` since the last look
 with `julia --project=bench PureOSQP/bench/rho_schedule.jl`; samples in
 `PureOSQP/bench/results/rho_schedule.json`, single-threaded BLAS.
 
-| class | `:disabled` | `:iterations` | `:kkt_error` | refactorizations |
-|---|---|---|---|---|
-| Random QP | 5200 | 1225 | 1225 | 1 / 2 / 2 |
-| Eq QP | 50 | 50 | 50 | 1 / 1 / 1 |
-| Portfolio | 2750 | 600 | 600 | 1 / 2 / 2 |
-| Lasso | 450 | 125 | 125 | 1 / 2 / 2 |
-| SVM | 1825 | 325 | 325 | 1 / 2 / 2 |
-| Huber | 175 | 125 | 125 | 1 / 2 / 2 |
-| Control | 450 | 450 | 450 | 1 / 1 / 1 |
-| **total** | **10 900** | **2 900** | **2 900** | |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "rho_schedule")
+# The totals the samples carry, as a final row; it has no refactorization count of its own.
+total = Dict(
+    "class" => "**total**",
+    "iter_disabled" => d["totals"]["disabled"],
+    "iter_iterations" => d["totals"]["iterations"],
+    "iter_kkt_error" => d["totals"]["kkt_error"],
+)
+bold(r, s) = str(r["class"]) == "**total**" ? "**" * s * "**" : s
+benchtable(
+    vcat(collect(d["cases"]), Any[total]), [
+        "class" => r -> str(r["class"]),
+        "`:disabled`" => r -> bold(r, int(r["iter_disabled"])),
+        "`:iterations`" => r -> bold(r, int(r["iter_iterations"])),
+        "`:kkt_error`" => r -> bold(r, int(r["iter_kkt_error"])),
+        "refactorizations" => r -> haskey(r, "refac_disabled") ? join(
+            (int(r[k]) for k in ("refac_disabled", "refac_iterations", "refac_kkt_error")), " / "
+        ) : "",
+    ]
+)
+```
 
 Adapting is worth **3.8×** across the corpus. The two triggers are indistinguishable: same
 iterations and same refactorizations on every class.
@@ -1089,13 +1410,23 @@ Reproduce with `julia --project=bench PureOSQP/bench/structured_vs_osqp.jl`; sam
 `PureOSQP/bench/results/structured_vs_osqp.json`. Single-threaded BLAS, the same settings on all three,
 and libosqp timed from CSC arrays built beforehand.
 
-| structure | nnz(`A`) | iterations | libosqp 1.0 (sparse) | PureOSQP (sparse) | PureOSQP (structured) | sparse vs libosqp | structured vs sparse |
-|---|---|---|---|---|---|---|---|
-| Kronecker | 100% | 250 | 120 ms | 54.6 ms | 1.06 ms | 2.19× | **51.6×** |
-| tridiagonal | 0.2% | 75 | 0.58 ms | 0.47 ms | 0.19 ms | 1.26× | **2.49×** |
-| low-rank | 0.7% | 75 | 0.53 ms | 0.51 ms | 0.22 ms | 1.04× | **2.29×** |
-| block-diagonal | 12.5% | 175 | 2.55 ms | 2.24 ms | 1.34 ms | 1.14× | **1.67×** |
-| banded | 0.5% | 75 | 0.66 ms | 0.66 ms | 0.86 ms | 1.00× | 0.77× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("PureOSQP", "structured_vs_osqp")
+emph(v) = (s = ratio(v); v > 1 ? "**" * s * "**" : s)
+benchtable(
+    d["cases"], [
+        "structure" => r -> str(r["case"]),
+        "nnz(`A`)" => r -> sigfig(num(r["density_percent"]), 2) * "%",
+        "iterations" => r -> int(r["iter"]),
+        "libosqp 1.0 (sparse)" => r -> ms(r["osqp_seconds"]),
+        "PureOSQP (sparse)" => r -> ms(r["sparse_seconds"]),
+        "PureOSQP (structured)" => r -> ms(r["structured_seconds"]),
+        "sparse vs libosqp" => r -> ratio(r["sparse_vs_osqp"]),
+        "structured vs sparse" => r -> emph(num(r["structured_vs_sparse"])),
+    ]
+)
+```
 
 The script checks that all three agree before it reports a row: the same status, the same
 number of iterations, and objectives within `1e-9`.
@@ -1112,8 +1443,13 @@ the dense path, not the sparse one, which is why it is used here.
 
 ## What was measured, and when
 
-Every table above is transcribed by hand from a saved run. This section is not: it is
-rendered at documentation-build time from `bench/results/index.json`, which
+Every table above is rendered at documentation-build time from the saved samples named in its
+own section, through the helpers in `docs/benchtables.jl`, so no figure on this page is
+transcribed. Three small tables are the exception, and say what they are: the working set's
+`add_row!` and `remove_row!` costs, and the OSQP suite's sparsity ratios and setup-phase split,
+none of which the scripts record.
+
+This section is rendered the same way, from `bench/results/index.json`, which
 `bench/consolidate.jl` writes by reading each package's cache. A benchmark that has never
 been run, or whose samples came from a different Julia than the rest, shows up here.
 
@@ -1162,14 +1498,25 @@ test item per algorithm package also read; the test items pin the backend each p
 compare the problems against the fingerprint recorded in the JSON, so a table built from problems
 that have since changed is a failing test.
 
-| algorithm | path | n | backend | its | matrix backend | its | setup× | solve× | memory× |
-|---|---|---|---|---|---|---|---|---|---|
-| PureOSQP | CG | 576 | `indirect` | 25 | `cholesky` | 25 | 6.1× | 7.6× | 35× |
-| PureOSQP | direct | 576 | `kronecker` | 25 | `cholesky` | 25 | **122×** | **12×** | 35× |
-| PureIPM | CG | 144 | `indirect` | 5 | `bunchkaufman` | 5 | 8.2× | **32×** | 21× |
-| PureIPM | direct | 576 | `product_reduced` | 5 | `bunchkaufman` | 5 | 53× | 2.5× | 8.4× |
-| PureDAQP | direct, QR | 256 | `rows` | 107 | `rows` | 107 | 1.4× | 1.4× | 1.3× |
-| PureDAQP | direct, LDLᵀ | 256 | `gram` | 107 | `gram` | 107 | 1.3× | 3.1× | 1.4× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "unmaterialized_paths")
+emph(v, cut) = (s = ratio(v); v >= cut ? "**" * s * "**" : s)
+benchtable(
+    d["paths"], [
+        "algorithm" => r -> str(r["algorithm"]),
+        "path" => r -> str(r["path"]),
+        "n" => r -> int(r["n"]),
+        "backend" => r -> "`" * str(r["backend"]) * "`",
+        "its" => r -> int(r["iters"]),
+        "matrix backend" => r -> "`" * str(r["dense_backend"]) * "`",
+        "its " => r -> int(r["dense_iters"]),
+        "setup×" => r -> emph(num(r["setup_ratio"]), 100),
+        "solve×" => r -> emph(num(r["solve_ratio"]), 10),
+        "memory×" => r -> ratio(r["bytes_ratio"]),
+    ]
+)
+```
 
 The iteration counts match across the two columns on every row, so the ratios are the
 representation and nothing else.
@@ -1210,16 +1557,22 @@ Both columns compute the same matrix and agree with it to `7.5e-16` or better on
 Reproduce with `julia --project=bench bench/composition_reduction.jl`; samples go to
 `bench/results/composition_reduction.json`.
 
-| outer part | m | k | n | parts | products | ratio |
-|---|---|---|---|---|---|---|
-| dense | 400 | 50 | 100 | 0.125 ms | 0.278 ms | **2.22×** |
-| dense | 800 | 50 | 200 | 0.280 ms | 1.133 ms | **4.04×** |
-| dense | 1600 | 80 | 200 | 1.278 ms | 3.572 ms | **2.80×** |
-| dense | 3200 | 100 | 300 | 5.180 ms | 15.800 ms | **3.05×** |
-| Kronecker | 64 | 36 | 20 | 0.005 ms | 0.007 ms | 1.39× |
-| Kronecker | 144 | 64 | 40 | 0.021 ms | 0.026 ms | 1.26× |
-| Kronecker | 256 | 100 | 60 | 0.059 ms | 0.077 ms | 1.31× |
-| Kronecker | 400 | 196 | 100 | 0.283 ms | 0.313 ms | 1.10× |
+```@eval
+include(joinpath(@__DIR__, "..", "benchtables.jl"))
+d = cache("shared", "composition_reduction")
+emph(v) = (s = ratio(v); v >= 2 ? "**" * s * "**" : s)
+benchtable(
+    d["composed"], [
+        "outer part" => r -> str(r["kind"]),
+        "m" => r -> int(r["m"]),
+        "k" => r -> int(r["k"]),
+        "n" => r -> int(r["n"]),
+        "parts" => r -> msval(r["parts_ms"]),
+        "products" => r -> msval(r["products_ms"]),
+        "ratio" => r -> emph(num(r["ratio"])),
+    ]
+)
+```
 
 A dense outer part costs `mk` per application, so removing `2n` of them is most of the work and the
 ratio sits between 2.2× and 4.0×. A Kronecker outer part is already cheap to apply — that is what
