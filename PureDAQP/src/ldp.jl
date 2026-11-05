@@ -346,11 +346,16 @@ function full_set_step!(
     end
     alpha, blocking = blocking_step(ws, p, zero_tol)
     if iszero(blocking)
-        # Nothing blocks, so this direction proves the problem infeasible -- and the proof
-        # includes `r`, which is not in the working set and so is not in `p[1:k]`. Recording
-        # it past the live prefix is what lets `certifiable` rebuild the whole ray: without
-        # its `∓1` the direction does not satisfy `Aᵀy = 0`, the check against the caller's
-        # rows fails, and a sound proof is reported as a numerical breakdown instead.
+        # Nothing blocks, and here that settles it, where on the singular branch it does not:
+        # the rate the dual objective rises along this direction is the violation `r` was
+        # chosen for, which pricing has just measured above `primal_tol`. The two are the same
+        # number because `p` combines rows that sit at their targets, so what the combination
+        # places `r` at is `tₐᵀp`. [`dependency_residual`](@ref) is the same reading.
+        #
+        # The proof includes `r`, which is not in the working set and so is not in `p[1:k]`.
+        # Recording it past the live prefix is what lets `certifiable` rebuild the whole ray:
+        # without its `∓1` the direction does not satisfy `Aᵀy = 0`, the check against the
+        # caller's rows fails, and a sound proof is reported as a numerical breakdown instead.
         ws.active[k + 1] = r
         ws.p[k + 1] = side == SIDE_UPPER ? -one(T) : one(T)
         ws.certrow[1] = k + 1
@@ -374,12 +379,55 @@ full_set_step!(
 ) where {T} = (activate!(ws, r, side); true)
 
 """
-    singular_step!(ws, singular, zero_tol) -> Bool
+    dependency_residual(ws, p, singular) -> T
 
-Walk the null direction of a singular working set and drop the first row that blocks.
-`false` when nothing blocks, which is what makes the problem infeasible.
+How far the dependent row's own target sits from what its dependency implies, in the units
+[`entering_row`](@ref) prices in.
+
+`p` is a null direction of the active rows, `Mₐᵀp = 0`, carrying `±1` at the dependent slot,
+so `tₐᵀp` is the rate at which the dual objective rises along it. The targets and the rows
+are all it reads: the current multipliers do not enter, and neither does the primal point.
+
+Two readings of the same number, and the pair is what makes it the right one to compare
+against `primal_tol`. A direction along which the dual objective is flat proves nothing, so
+`tₐᵀp` is zero exactly when the dependency is consistent and the dependent row is implied by
+the rows it depends on. It is also the violation that row shows once those rows sit at their
+targets, which is the number pricing reads: a row dropped because this residual is within
+`primal_tol` prices below `primal_tol` too, and cannot enter again.
+
+The two readings are the same number in exact arithmetic, and the same number computed two
+ways in floating point: this one from the factorization's coefficients, pricing's from
+`u = Mₐᵀμ`, agreeing to about `1e-5` relative on an ill-conditioned set. A `primal_tol` that
+falls between them admits a drop that the next pricing pass undoes, and the pass makes no
+further progress.
 """
-function singular_step!(ws::LDPWorkspace{T}, singular::Int, zero_tol::T) where {T}
+function dependency_residual(ws::LDPWorkspace{T}, p::AbstractVector{T}, singular::Integer) where {T}
+    slope = zero(T)
+    for i in eachindex(p)
+        slope += p[i] * target(ws, ws.active[i])
+    end
+    return abs(slope) * ws.scale[ws.active[singular]]
+end
+
+"""
+    singular_step!(ws, singular, zero_tol, primal_tol) -> Bool
+
+Walk the null direction of a singular working set and drop a row: the first one that blocks,
+or the dependent row itself when the dependency is consistent and nothing blocks. `false`
+when nothing blocks and the direction proves the problem infeasible.
+
+Nothing blocks whenever the dependency moves no multiplier that is bounded in sign — a
+dependency among the equality rows always does, since those are free in sign — and that
+alone settles nothing. What settles it is [`dependency_residual`](@ref): a direction the
+dual objective does not rise along is no proof of infeasibility, and the dependent row it
+belongs to is implied by the rows it depends on, so the set holds it twice and dropping it
+is the move. Reporting infeasibility there fails on problems that have an answer, and a
+rank-deficient set of consistent equality rows is one of them: the reset holds every equality
+row, so the first pass meets the dependency with no inequality row in it to drop.
+"""
+function singular_step!(
+        ws::LDPWorkspace{T}, singular::Int, zero_tol::T, primal_tol::T
+    ) where {T}
     p = view(ws.p, 1:nactive(ws.W))
     null_direction!(p, ws.W, singular)
     # `singular_direction!` puts `+1` at the dependent row. Signed multipliers make the two
@@ -393,7 +441,10 @@ function singular_step!(ws::LDPWorkspace{T}, singular::Int, zero_tol::T) where {
             p[i] = -p[i]
         end
     end
-    return step_and_drop!(ws, p, zero_tol)
+    step_and_drop!(ws, p, zero_tol) && return true
+    dependency_residual(ws, p, singular) > primal_tol && return false
+    deactivate!(ws, singular)
+    return true
 end
 
 """
@@ -451,6 +502,13 @@ end
 
 Step from `ws.mu` toward the multipliers just solved for, dropping the first row whose own
 reaches zero. `false` when nothing blocks the step.
+
+The step blocks on whichever floor is lower, `zero_tol` or the one
+[`working_set_multipliers!`](@ref) rejected the sign against. The two have to agree: a
+multiplier wrong in sign by more than [`multiplier_noise`](@ref) moves this direction by at
+least that much, so a higher floor would leave a rejected set with no row to drop, and the
+run would report a numerical breakdown on a problem it can solve. `multiplier_noise` is
+below `zero_tol` on any well-conditioned working set, which is where the two part company.
 """
 function step_toward_multipliers!(ws::LDPWorkspace{T}, zero_tol::T) where {T}
     k = nactive(ws.W)
@@ -459,7 +517,7 @@ function step_toward_multipliers!(ws::LDPWorkspace{T}, zero_tol::T) where {T}
     @inbounds @simd for i in 1:k
         p[i] = mus[i] - mu[i]
     end
-    return step_and_drop!(ws, p, zero_tol)
+    return step_and_drop!(ws, p, min(zero_tol, multiplier_noise(ws, view(mus, 1:k))))
 end
 
 """
@@ -554,12 +612,27 @@ function solve_ldp!(ws::LDPWorkspace{T}, alg::ActiveSet{T}, max_iter::Int) where
     scan = 1
     # Any ray a previous pass left behind describes a working set this one no longer holds.
     ws.certrow[1] = 0
+    # The row the singular branch last dropped as implied by the rows it depends on, and how
+    # many it has dropped that way.
+    implied_drop, implied_drops = 0, 0
     for iter in 1:max_iter
         # Every step reads `nactive(ws.W)` for itself: dropping and adding a row both change it, so
         # the working set's size does not survive an iteration.
         singular = first_dependent(ws.W, zero_tol)
         if !iszero(singular)
-            singular_step!(ws, singular, zero_tol) || return (LDP_INFEASIBLE, iter)
+            dependent = ws.active[singular]
+            singular_step!(ws, singular, zero_tol, primal_tol) || return (LDP_INFEASIBLE, iter)
+            # The dependent row leaves only where the step found it implied by the rows it
+            # depends on, which is a row pricing reads below `primal_tol` and so cannot bring
+            # back. A row that comes back and is dropped again says the two readings of that
+            # one number straddle the tolerance ([`dependency_residual`](@ref)), and the pass
+            # has no move left that converges. Each row can be dropped this way once, so a
+            # count past `m` catches a cycle through several rows as well as a repeat of one.
+            if iszero(ws.slot[dependent])
+                (dependent == implied_drop || implied_drops >= m) && return (LDP_CYCLED, iter)
+                implied_drop = dependent
+                implied_drops += 1
+            end
             continue
         end
         if !working_set_multipliers!(ws)

@@ -39,6 +39,10 @@
     for (Pk, Ak, qk, lk, uk, alg) in (
             (P, A, q, l, u, ActiveSet()),
             (Psing, A, q, l, u, ActiveSet(; eps_prox = 1.0e-5)),
+            # The Gram working set factors AᵀA rather than the active rows, so the reduction
+            # and the least-distance workspace are different types and the iteration compiles
+            # a second time.
+            (P, A, q, l, u, ActiveSet(; working_set = :gram)),
             (Pkron, Akron, qkron, lkron, ukron, ActiveSet()),
         )
         ws = setup(Pk, qk, Ak, lk, uk, alg)
@@ -78,7 +82,7 @@
                 (PureDAQP.activate!, (LW, Int, Int8)),
                 (PureDAQP.deactivate!, (LW, Int)),
                 (PureDAQP.step_and_drop!, (LW, V, Float64)),
-                (PureDAQP.singular_step!, (LW, Int, Float64)),
+                (PureDAQP.singular_step!, (LW, Int, Float64, Float64)),
                 (PureDAQP.step_toward_multipliers!, (LW, Float64)),
                 (PureDAQP.multipliers!, (V, RD)),
                 (PureDAQP.primal!, (V, RD, V)),

@@ -136,3 +136,90 @@ end
     PureDAQP.add_row!(W, [1.0, 0.0])
     @test PureDAQP.first_dependent(W, zero_tol) == 2
 end
+
+@testitem "a multiplier the sign test rejects can block the step toward it" begin
+    using PureDAQP, LinearAlgebra
+    using PureDAQP: nactive, activate!, set_targets!, multiplier_noise, musign,
+        step_toward_multipliers!, SIDE_UPPER
+
+    # The dual-feasibility test rejects a multiplier whose sign is wrong by more than
+    # `multiplier_noise`, which scales with the working set's conditioning and with the
+    # multipliers themselves and is far below `zero_tol` on a well-conditioned set. The step
+    # that acts on that rejection has to admit the same rows, or the loop has a state it calls
+    # dual infeasible and no move out of it, and reports a numerical breakdown on a problem it
+    # can solve.
+    n, m = 3, 4
+    P = Matrix{Float64}(I, n, n)
+    q = zeros(n)
+    A = [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0; 1.0 1.0 1.0]
+    l, u = fill(-1.0, m), fill(1.0, m)
+    ws = setup(P, q, A, l, u, ActiveSet())
+    lw = ws.red.ws
+    set_targets!(ws.red, ws.prob.q0)
+    activate!(lw, 1, SIDE_UPPER)
+    activate!(lw, 2, SIDE_UPPER)
+    k = nactive(lw.W)
+    @test k == 2
+
+    # A multiplier wrong in sign by this much sits between the two tolerances: the sign test
+    # rejects it, and it is below `zero_tol`, so the step has to block on the lower floor.
+    delta = 1.0e-9
+    for i in 1:k
+        lw.mu[i] = 0.0
+        lw.mu_star[i] = -musign(lw, lw.active[i]) * delta
+    end
+    zero_tol = ws.algorithm.zero_tol
+    tol = multiplier_noise(lw, view(lw.mu_star, 1:k))
+    @test tol < delta < zero_tol
+
+    @test step_toward_multipliers!(lw, zero_tol)
+    @test nactive(lw.W) == k - 1
+end
+
+@testitem "a dependency that straddles the primal tolerance stops the pass" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+    using PureDAQP: first_dependent, null_direction!, dependency_residual, musign, nactive,
+        set_targets!, reset_working_set!, deactivate!, working_set_multipliers!, primal_point!,
+        price!, nreduced
+
+    # `singular_step!` reads how far a dependency's own target sits from what the rows it
+    # depends on imply, and drops the dependent row where that is within `primal_tol`.
+    # Pricing reads the same number from the primal point instead, and the two agree only to
+    # about `1e-5` relative on an ill-conditioned set. A `primal_tol` between them is a
+    # dependency the step calls implied and pricing calls violated, so the row leaves and
+    # comes back for as long as the pass runs. No pass may spend its iteration budget there.
+    for theta in (1.0e-6, 3.0e-8), wsk in (:rows, :gram)
+        m1 = [1.0, 0.0, 0.0]
+        m2 = [cos(theta), sin(theta), 0.0]
+        m3 = normalize(m1 .- m2)
+        A = Matrix(reduce(hcat, (m1, m2, m3))')
+        b = A * [0.3, -0.2, 0.1]
+        # The third row is dependent on the first two and inconsistent with them by this much.
+        b[3] += 2.0e-6
+        P, q = Matrix(1.0I, 3, 3), zeros(3)
+
+        # Both readings of that inconsistency, at the state the reset leaves.
+        w = setup(P, q, A, b, b, ActiveSet(; working_set = wsk, primal_tol = 1.0e-3))
+        lw = w.red.ws
+        set_targets!(w.red, w.prob.q0)
+        reset_working_set!(w.red)
+        singular = first_dependent(lw.W, w.algorithm.zero_tol)
+        iszero(singular) && continue
+        p = view(lw.p, 1:nactive(lw.W))
+        null_direction!(p, lw.W, singular)
+        musign(lw, lw.active[singular]) < 0 && (p .= .-p)
+        dependent = lw.active[singular]
+        from_targets = dependency_residual(lw, p, singular)
+        deactivate!(lw, singular)
+        working_set_multipliers!(lw)
+        primal_point!(lw)
+        price!(lw.price, lw.M, lw.u, 1:nreduced(lw.M))
+        s = w.red.scale[dependent]
+        priced = max(lw.price[dependent] * s - lw.hi[dependent] * s, lw.lo[dependent] * s - lw.price[dependent] * s)
+
+        lo, hi = minmax(priced, from_targets)
+        sol = solve(P, q, A, b, b, ActiveSet(; working_set = wsk, primal_tol = (lo + hi) / 2))
+        @test sol.status !== PureQPBase.MAX_ITER_REACHED
+        @test sol.iter < 10
+    end
+end

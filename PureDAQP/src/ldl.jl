@@ -107,8 +107,9 @@ singular branch instead of dividing by it.
 @noinline function throw_gram_full(k::Int, kmax::Int)
     throw(
         ArgumentError(
-            lazy"the Gram working set holds $kmax rows and a $(k + 1)th was added: the set " *
-                "carries one row more than there are variables and no path may exceed that"
+            # One `lazy` string and no concatenation: `*` on strings calls `string`, which
+            # builds the message eagerly and is not trim-safe.
+            lazy"the Gram working set holds $kmax rows and a $(k + 1)th was added: the set carries one row more than there are variables and no path may exceed that"
         )
     )
 end

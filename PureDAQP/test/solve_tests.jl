@@ -1104,3 +1104,42 @@ end
         @test updated.x ≈ direct.x rtol = 1.0e-6
     end
 end
+
+@testitem "an equality row implied by the others is dropped, not called infeasible" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # The reset holds every equality row, so a rank-deficient set of them makes the working
+    # set singular on the first pass. The direction that dependency opens moves only equality
+    # multipliers, which are free in sign and so never block a step, and no row leaves along
+    # it. Whether the direction proves anything is the targets' question: it is a proof of
+    # infeasibility exactly when the dependency contradicts them. Where it does not, the
+    # dependent row is implied by the rows it depends on and the solve carries on without it.
+    P, q = Matrix(1.0I, 2, 2), zeros(2)
+
+    for wsk in (:rows, :gram)
+        alg = ActiveSet(; working_set = wsk)
+        # A duplicated row, and one scaled by two, which the reduction normalizes to the same
+        # row from a different row norm.
+        for (A, b) in (
+                ([1.0 0.0; 1.0 0.0; 0.0 1.0], [1.0, 1.0, 2.0]),
+                ([1.0 0.0; 2.0 0.0; 0.0 1.0], [1.0, 2.0, 2.0]),
+            )
+            implied = PureDAQP.solve(P, q, A, b, b, alg)
+            @test implied.status === PureQPBase.SOLVED
+            @test implied.x ≈ [1.0, 2.0]
+
+            # The same dependency against targets it contradicts is infeasible, and provably
+            # so: the certificate is checked against the caller's own rows.
+            contradicted = PureDAQP.solve(P, q, A, [b[1], b[2] + 1.0, b[3]], [b[1], b[2] + 1.0, b[3]], alg)
+            @test contradicted.status === PureQPBase.PRIMAL_INFEASIBLE
+
+            # A re-solve resets the working set, so it meets the dependency again every time.
+            w = setup(P, q, A, b, b, alg)
+            for _ in 1:3
+                sol = solve!(w)
+                @test sol.status === PureQPBase.SOLVED
+                @test sol.x ≈ [1.0, 2.0]
+            end
+        end
+    end
+end
