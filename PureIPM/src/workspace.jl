@@ -345,17 +345,28 @@ end
 """
     dense_rung(P, A, prob, sel::IPMSelection) -> (LinearSystem, Bool) or nothing
 
-Where a materializable pair stops under the interior-point method: [`FullKKT`](@ref) when
-LAPACK serves the element type. The reduced matrix it avoids is refactorized every outer
-iteration for four solves, and its weights reach `1/δ_d`, so forming it squares a conditioning
-this method cannot afford to square. Other element types get [`ReducedCholesky`](@ref), since
-`bunchkaufman!` has no generic method; it holds the Cholesky factor rather than an inverse,
-which is [`keeps_factor`](@ref)'s answer for this algorithm.
+Where a materializable pair stops under the interior-point method: [`ReducedCholesky`](@ref) when
+`4m ≥ n`, which holds the Cholesky factor rather than an inverse ([`keeps_factor`](@ref)'s
+answer for this algorithm), and [`FullKKT`](@ref) below that when LAPACK serves the element type.
+
+The reduced matrix costs `mn²/2 + n³/3` multiply-adds to form and factor against `(n+m)³/3` for
+the augmented system. On dense random problems with `n` of 300 to 600 and `m/n` from `1/4` to
+`4`, the reduced form took between a third and a twelfth of the time, with the same iteration
+count and the same `x` to `1e-10`. Its weights reach `1/δ_d`, so forming it squares the
+conditioning of the rows; on the conditioning sweep of `bench/ipm_illconditioned.jl` up to
+`κ = 1e10`, and on dense forms of the low-rank families at `eps` of `1e-8` and `1e-10`, both
+reached the same status, iteration count and referee residual to within a factor of two. A
+pair too ill-conditioned for the reduced form reports `NUMERICAL_ERROR` once `max_reg_bumps`
+regularization bumps are spent; `linsys = :kkt` selects the augmented system.
+
+Other element types always get [`ReducedCholesky`](@ref), since `bunchkaufman!` has no generic
+method.
 """
 function dense_rung(P::AbstractMatrix, A::AbstractMatrix, prob::Problem{T}, sel::IPMSelection) where {T}
     (is_materializable(P) && is_materializable(A)) || return nothing
     (holds_structure(P) || holds_structure(A)) && return nothing
-    T <: LinearAlgebra.BlasFloat && return (FullKKT(prob.q0, prob.n, prob.m), false)
+    T <: LinearAlgebra.BlasFloat && 4 * prob.m < prob.n &&
+        return (FullKKT(prob.q0, prob.n, prob.m), false)
     return (ReducedCholesky(prob.q0, prob.n, prob.m, Val(keeps_factor(sel))), false)
 end
 

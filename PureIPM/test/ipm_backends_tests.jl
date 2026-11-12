@@ -63,7 +63,7 @@ end
     # The same numbers as a matrix are formed because the caller asked for that, and solve.
     for Pc in (P, Diagonal(zeros(n)))
         ws = setup(Pc, q, Matrix(A), l, u, InteriorPoint())
-        @test PureQPBase.backend_name(ws.linsys) === :bunchkaufman
+        @test PureQPBase.backend_name(ws.linsys) === :cholesky
         s = solve!(ws)
         @test s.status == SOLVED
         @test maximum(kkt_residuals(Matrix(Pc), q, Matrix(A), l, u, s.x, s.y)) < 1.0e-5
@@ -86,4 +86,24 @@ end
     e1 = [1.0; zeros(7)]
     g = ForwardDiff.derivative(t -> PureQPBase.solve(P, q .+ t .* e1, A, l, u, InteriorPoint()).obj_val, 0.0)
     @test g ≈ PureQPBase.solve(P, q, A, l, u, InteriorPoint()).x[1] atol = 1.0e-5
+end
+
+@testitem "a dense pair takes the reduced Cholesky from n/4 rows and the full KKT system below" begin
+    using PureIPM, PureQPBase, LinearAlgebra, Random
+    Random.seed!(37)
+    n = 40
+    X = randn(n, n)
+    P = Matrix(X'X / n + I)
+    for (m, backend) in ((9, :bunchkaufman), (10, :cholesky), (40, :cholesky), (160, :cholesky))
+        A = randn(m, n)
+        b = A * randn(n)
+        ws = setup(P, randn(n), A, b .- rand(m), b .+ rand(m), InteriorPoint())
+        @test PureQPBase.backend_name(ws.linsys) === backend
+        @test solve!(ws).status == SOLVED
+    end
+    # The augmented system is still one keyword away at any shape.
+    A = randn(80, n)
+    b = A * randn(n)
+    ws = setup(P, randn(n), A, b .- rand(80), b .+ rand(80), InteriorPoint(); linsys = :kkt)
+    @test PureQPBase.backend_name(ws.linsys) === :bunchkaufman
 end

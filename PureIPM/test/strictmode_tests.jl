@@ -49,7 +49,8 @@
     kronecker = (Diagonal(fill(2.0, 6)), randn(6), Ak, bk .- rand(12), bk .+ rand(12))
     # The interior-point ladder reaches these five of PureQPBase's own backends.
     cases = [
-        (dense, PureQPBase.FullKKT, (;)),
+        (dense, PureQPBase.ReducedCholesky, (;)),
+        (dense, PureQPBase.FullKKT, (; linsys = :kkt)),
         (diagonal, PureQPBase.DiagonalReduced, (;)),
         (tridiagonal, PureQPBase.TridiagonalReduced, (;)),
         (block, PureQPBase.BlockReduced, (;)),

@@ -169,7 +169,7 @@ is conjugate gradients, which needs Krylov.jl.
 | | dense | sparse | structured | unmaterialized |
 |---|---|---|---|---|
 | [`OperatorSplitting`](@ref) | `cholesky` | `cholmod`, `ldlfactorizations` or `sparse_formed`, by the pattern | the structured backend its conditions admit, else `indirect`: a type that holds its structure is never formed | `indirect` with `scaling = 0`; a direct backend when the type unwraps to a structured one ([What a composed map becomes](@ref)) |
-| [`InteriorPoint`](@ref) | the full KKT system, `bunchkaufman` | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; `linsys = :kronecker` and `:lowrank` are refused by name, and such a pair reaches `product_reduced` on `:auto` | `product_reduced`: the `n×n` reduced matrix assembled from `3n` products, so neither `P` nor `A` is formed. Conjugate gradients is the other path and takes `linsys = :indirect`, a caller-supplied preconditioner and `scaling = 0` |
+| [`InteriorPoint`](@ref) | the reduced Cholesky, `cholesky`, from `n/4` rows; the full KKT system, `bunchkaufman`, below that | the sparse KKT family, `cholmod` | `diagonal`, `tridiagonal`, `banded` or `block`; `linsys = :kronecker` and `:lowrank` are refused by name, and such a pair reaches `product_reduced` on `:auto` | `product_reduced`: the `n×n` reduced matrix assembled from `3n` products, so neither `P` nor `A` is formed. Conjugate gradients is the other path and takes `linsys = :indirect`, a caller-supplied preconditioner and `scaling = 0` |
 | [`ActiveSet`](@ref) | `A R⁻¹` formed once and stored | read into a dense matrix first | `Diagonal`, `BlockDiagonal` and `KroneckerOperator` are held as they are and `A R⁻¹` is not formed: implicit `A R⁻¹`, `R` in `P`'s form. Banded, tridiagonal and `RowCoupled` are read into a dense matrix first | `A`: implicit `A R⁻¹`, each row read as one adjoint product. `P`: refused, since `P` must have a Cholesky factor |
 
 Three things in that table are conditions on your problem, not choices.
@@ -1066,13 +1066,13 @@ and what it shows is whether the representation survived into the solve or was f
 
 | `P`, `A` as | OperatorSplitting | InteriorPoint | ActiveSet |
 |---|---|---|---|
-| dense | `cholesky`, 10.28 MiB | `bunchkaufman`, 26.12 MiB | `rows`, 17.86 MiB |
-| `Symmetric` | `cholesky`, 10.28 MiB | `bunchkaufman`, 26.12 MiB | `rows`, 17.86 MiB |
-| sparse | `sparse_formed`, 17.88 MiB | `bunchkaufman`, 31.19 MiB | `rows`, 28.04 MiB |
+| dense | `cholesky`, 10.28 MiB | `cholesky`, 10.35 MiB | `rows`, 17.86 MiB |
+| `Symmetric` | `cholesky`, 10.28 MiB | `cholesky`, 10.35 MiB | `rows`, 17.86 MiB |
+| sparse | `sparse_formed`, 17.88 MiB | `cholesky` | `rows`, 28.04 MiB |
 | structured | `indirect`, **0.24 MiB** | `product_reduced`, **2.84 MiB** | `rows`, **7.81 MiB** |
 | unmaterialized | `indirect`, **0.24 MiB** | `product_reduced`, **2.84 MiB** | `rows`, **7.81 MiB** |
 
-A structured pair costs `43×` less than the dense form under `OperatorSplitting` and `9.2×` less
+A structured pair costs `43×` less than the dense form under `OperatorSplitting` and `3.6×` less
 under `InteriorPoint`, because neither forms the `n × n` reduced matrix: the Kronecker factors
 reach the backend and the arithmetic is done on them. Declaring `Symmetric` costs exactly what
 dense costs, to the byte — it is free to say, and it halves the products in the iteration.
@@ -1084,6 +1084,8 @@ paths. And `ActiveSet` gains least from structure — `2.3×`, not `43×` — be
 factorization of the working set, which does not shrink when `A` stops being a matrix. The same
 reason bounds its timings at about `1.3×`.
 
-A sparse pair is larger than a dense one under every algorithm here, which is what this problem's
-density costs in sparse storage: `P` is 70% nonzero and `A` is 53%, so the index arrays are paid
-for almost every entry. [Sparse A](@ref) measures where sparse storage starts to pay.
+A sparse pair is larger than a dense one under `OperatorSplitting` and `ActiveSet`, which is what
+this problem's density costs in sparse storage: `P` is 70% nonzero and `A` is 53%, so the index
+arrays are paid for almost every entry. Under `InteriorPoint` the sparse candidates decline a
+pair this dense, so it reaches the same dense reduced Cholesky as the dense pair.
+[Sparse A](@ref) measures where sparse storage starts to pay.

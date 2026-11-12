@@ -7,6 +7,17 @@ what is true now; this file is where the history lives.
 
 ### Changed
 
+- **The interior-point method factors the reduced matrix for a dense pair with `4m ≥ n`.**
+  `dense_rung` returned `FullKKT` for every dense pair of BLAS floats. On random dense problems
+  with `n` of 300 to 600 and `m/n` from `1/4` to `4`, `ReducedCholesky` took 2.4 to 12.3 times
+  less time than the augmented system, with the same iteration count and `x` agreeing to `1e-10`
+  or better (`n = 600`, `m = 2400`: 131.6 ms against 1574.6 ms). On the `n = 300` conditioning
+  sweep to `κ = 1e10` and on dense forms of the `bench/structured_problems.jl` low-rank families
+  at `eps` of `1e-8` and `1e-10`, both reached the same status and iteration count, with referee
+  residuals within a factor of two. A pair the reduced form cannot factor ends `NUMERICAL_ERROR`
+  once `max_reg_bumps` regularization bumps are spent; `linsys = :kkt` selects the augmented
+  system, which stays the choice below `n/4` rows.
+
 - **The dense and Kronecker workspace aliases name every type parameter.** `@strict_function`
   skips a signature that is not a dispatch tuple, so an alias leaving a parameter free withdrew
   the allocation and type-stability guarantees from `PureDAQP`'s `warm_start!` and `cold_start!`

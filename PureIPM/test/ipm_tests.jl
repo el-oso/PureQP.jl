@@ -45,9 +45,10 @@
         for (name, P, q, A, l, u) in cases
             ws = setup(P, q, A, l, u, InteriorPoint(); linsys = backend)
             @test ws isa InteriorPointWorkspace
-            # Every pair here is dense or has a dense P, which the interior-point ladder
-            # serves with the full KKT factorization.
-            @test PureQPBase.backend_name(ws.linsys) === :bunchkaufman
+            # Every pair here is dense or has a dense P, which the interior-point ladder serves
+            # with the reduced Cholesky unless it has fewer than `n/4` rows.
+            expected = backend === :kkt || 4 * size(A, 1) < size(P, 2) ? :bunchkaufman : :cholesky
+            @test PureQPBase.backend_name(ws.linsys) === expected
             s = solve!(ws)
             @test s.status == SOLVED
             @test s.iter <= 20
@@ -93,8 +94,8 @@ end
         # rule takes when `A` is tall and no row of it spans the variables.
         ("sparse LP", spzeros(n, n), A, SPARSE_FACTOR_BACKENDS),
         # The sparse rungs need a sparse P, so these reach the dense terminal.
-        ("dense P, sparse A", Matrix(P), A, (:bunchkaufman,)),
-        ("dense LP", zeros(n, n), Matrix(A), (:bunchkaufman,)),
+        ("dense P, sparse A", Matrix(P), A, (:cholesky,)),
+        ("dense LP", zeros(n, n), Matrix(A), (:cholesky,)),
     ]
     for (name, Pc, Ac, backends) in cases
         ws = setup(Pc, q, Ac, l, u, InteriorPoint())

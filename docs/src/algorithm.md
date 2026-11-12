@@ -21,7 +21,7 @@ except where a section says otherwise. `ActiveSet` uses none of them.
 | | what is solved | what solves it by default |
 |---|---|---|
 | [`OperatorSplitting`](@ref) | one system per iteration, with a matrix that changes only when `ρ` does | the first candidate that serves the pair: a structured backend, a sparse factorization, or the dense reduced Cholesky (`ReducedCholesky`, which a dense `P` and `A` reach), with conjugate gradients last |
-| [`InteriorPoint`](@ref) | one system per solve, with a matrix refactored at every iteration | the same list without the candidates that need fixed weights; a dense `P` and `A` reach `FullKKT`, the dense augmented system factored with `bunchkaufman!` |
+| [`InteriorPoint`](@ref) | one system per solve, with a matrix refactored at every iteration | the same list without the candidates that need fixed weights; a dense `P` and `A` reach `ReducedCholesky` from `n/4` rows, and `FullKKT`, the dense augmented system factored with `bunchkaufman!`, below that |
 | [`ActiveSet`](@ref) | no system with a fixed shape: the Cholesky factor `R` of `P`, once, and a factorization of the working set | a triangular solve against `R`, and either a `QR` of the working set's rows or an `LDLᵀ` of their Gram matrix, chosen by `working_set` |
 
 `linsys` picks the first two by name and `:auto` takes the default above; [How a backend is

@@ -213,8 +213,13 @@ augmented factorization reaches `1e-15`; solving the reduced matrix through the 
 identity rather than densely does not change that, because the loss happens when the matrix is
 built (`PureIPM/bench/ipm_lowrank_terminal.jl`).
 
-That is also why the last dense candidate differs: `ReducedCholesky` for operator splitting,
-[`FullKKT`](@ref) for the interior-point method. The first reduces and the second does not.
+The last dense candidate is `ReducedCholesky` for operator splitting. For the interior-point
+method it is `ReducedCholesky` when `4m ≥ n` and [`FullKKT`](@ref) below that. On random dense
+problems with `n` of 300 to 600 and `m/n` from `1/4` to `4`, the reduced form took a third to a
+twelfth of the time and reached the same iteration count and `x` to `1e-10`. On the conditioning
+sweep to `κ = 1e10` and on dense forms of the low-rank families, both forms reached the same
+status and residual. A pair the reduced form cannot factor ends `NUMERICAL_ERROR` after the
+regularization bumps, and `linsys = :kkt` selects the augmented system.
 
 ## What the sparse candidates ask
 
