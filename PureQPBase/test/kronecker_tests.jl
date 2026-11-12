@@ -207,3 +207,72 @@ end
     @test length(over_second[2]) == 7    # and the other way round
     @test isempty(over_second[5])
 end
+
+@testitem "the weighted Gram product takes the syrk route only for non-negative weights" begin
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(29)
+
+    function check(T, m, k, t)
+        A = randn(T, m, k)
+        blk = zeros(T, k, k)
+        want = A' * (t .* A)
+        t0 = copy(t)
+        PureQPBase.weighted_gram!(blk, A, transpose(A), similar(A), copy(t))
+        return blk, want, t0
+    end
+
+    # Non-negative `t`: the result is symmetric in both triangles and matches the product.
+    for T in (Float64, Float32)
+        blk, want, _ = check(T, 40, 7, rand(T, 40) .+ T(0.1))
+        @test blk ≈ want rtol = 100 * eps(T)
+        @test blk == blk'
+    end
+    # A zero weight is a Gram matrix still.
+    t = rand(40); t[3] = 0.0
+    blk, want, _ = check(Float64, 40, 7, t)
+    @test blk ≈ want rtol = 1.0e-12
+
+    # A negative entry makes the product indefinite, which a square root cannot represent.
+    t = rand(40) .- 0.5
+    blk, want, _ = check(Float64, 40, 7, t)
+    @test blk ≈ want rtol = 1.0e-12
+    @test blk ≈ blk' rtol = 1.0e-12
+
+    # NaN is not non-negative, so it reaches the `gemm` and comes out NaN rather than as zero.
+    t = rand(40); t[5] = NaN
+    blk, _, _ = check(Float64, 40, 7, t)
+    @test all(isnan, blk)
+
+    # An element type BLAS does not serve takes the generic route.
+    blk, want, _ = check(BigFloat, 12, 4, rand(BigFloat, 12) .+ 1)
+    @test blk ≈ want rtol = 1.0e-30
+end
+
+@testitem "a Kronecker product with a one-column second factor multiplies through one gemv" begin
+    # The forward product only; the adjoint of such a product keeps the two-gemm form, whose cost is
+    # already close to a single gemv's.
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(43)
+
+    for (m1, k1, m2) in ((7, 5, 1), (7, 5, 2), (30, 11, 4), (1, 3, 6))
+        K = PureQPBase.KroneckerOperator(randn(m1, k1), randn(m2, 1))
+        Km = Matrix(K)
+        x, z = randn(k1), randn(m1 * m2)
+        y = zeros(m1 * m2)
+        mul!(y, K, x)
+        @test y ≈ Km * x rtol = 1.0e-13
+        v = zeros(k1)
+        mul!(v, K', z)
+        @test v ≈ Km' * z rtol = 1.0e-13
+        # Into a slice, as a block of a stack is, without touching its neighbors.
+        buf = fill(7.0, m1 * m2 + 6)
+        mul!(view(buf, 4:(3 + m1 * m2)), K, x)
+        @test buf[4:(3 + m1 * m2)] ≈ Km * x rtol = 1.0e-13
+        @test all(==(7.0), buf[1:3]) && all(==(7.0), buf[(m1 * m2 + 4):end])
+    end
+    # The product does not allocate once the operator exists.
+    K = PureQPBase.KroneckerOperator(randn(40, 9), randn(3, 1))
+    x, y = randn(9), zeros(120)
+    mul!(y, K, x)
+    @test (@allocated mul!(y, K, x)) == 0
+end

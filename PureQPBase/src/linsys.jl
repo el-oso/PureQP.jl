@@ -1787,18 +1787,31 @@ end
 function factorize!(ls::ProductReduced{T}, prob, wt)::Bool where {T}
     P, D, c, n = prob.P, prob.D, prob.c, prob.n
     R0, ej, col = ls.R0, ls.ej, ls.col
-    # `c·D P D + σI`, one product with `P` per column. Written to `R0` rather than straight
-    # into the factorization, so `refactor_weights!` can reuse it: the weights enter nowhere
-    # here, and `σ` reaches this method by contract whenever it changes.
-    for j in 1:n
-        fill!(ej, zero(T))
-        ej[j] = one(T)
-        mul!(col, P, ej)
-        dj = D[j]
-        for i in 1:n
-            R0[i, j] = c * D[i] * col[i] * dj
+    # `c·D P D + σI`. Written to `R0` rather than straight into the factorization, so
+    # `refactor_weights!` can reuse it: the weights enter nowhere here, and `σ` reaches this
+    # method by contract whenever it changes. A `P` whose entries can be read gives them row by
+    # row, `n²` reads in all and none of the products; any other `P` costs one product per column.
+    # `P` is symmetric, so a row is also the column it is written to.
+    if entries_cheap(P)
+        for j in 1:n
+            dense_row!(col, P, j)
+            cj = c * D[j]
+            for i in 1:n
+                R0[i, j] = cj * col[i] * D[i]
+            end
+            R0[j, j] += wt.sigma
         end
-        R0[j, j] += wt.sigma
+    else
+        for j in 1:n
+            fill!(ej, zero(T))
+            ej[j] = one(T)
+            mul!(col, P, ej)
+            dj = D[j]
+            for i in 1:n
+                R0[i, j] = c * D[i] * col[i] * dj
+            end
+            R0[j, j] += wt.sigma
+        end
     end
     return refactor_weights!(ls, prob, wt)
 end

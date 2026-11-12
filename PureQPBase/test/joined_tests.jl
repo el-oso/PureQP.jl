@@ -239,3 +239,50 @@ end
     @test size(first(scratch)) == (6, 3)
     @test size(last(scratch)) == (5, 3)
 end
+
+@testitem "a join contracts Kronecker pairs over different row grids in batches" begin
+    using PureQPBase, LinearAlgebra, Random
+    Random.seed!(41)
+
+    kron_of(m1, p, m2, q) = PureQPBase.KroneckerOperator(randn(m1, p), randn(m2, q))
+    function reduced(J)
+        n, m = size(J, 2), size(J, 1)
+        w = rand(m) .+ 0.1
+        D = rand(n) .+ 0.5
+        R = zeros(n, n)
+        PureQPBase.add_reduced_term!(
+            R, Float64, J, w, D, n, m, PureQPBase.reduced_term_scratch(Float64, J),
+            zeros(n), zeros(m), zeros(n)
+        )
+        Jm = Matrix(J)
+        return R, Diagonal(D) * Jm' * Diagonal(w) * Jm * Diagonal(D)
+    end
+
+    # Each pair has 12 or 24 rows on grids that do not nest. The wider block comes first in some
+    # and second in others, and the wide block's second factor has one column or several.
+    for (a, b) in (
+            (kron_of(2, 1, 6, 5), kron_of(3, 1, 4, 3)),
+            (kron_of(3, 2, 4, 3), kron_of(2, 2, 6, 2)),
+            (kron_of(2, 2, 6, 2), kron_of(3, 2, 4, 3)),
+            (kron_of(4, 3, 6, 1), kron_of(8, 2, 3, 2)),
+            (kron_of(8, 2, 3, 2), kron_of(4, 3, 6, 1)),
+            (kron_of(6, 4, 4, 1), kron_of(3, 5, 8, 1)),
+        )
+        @test PureQPBase.kron_batch_pair(a, b)
+        @test !PureQPBase.kron_cross_pair(a, b)
+        R, Rtrue = reduced(PureQPBase.JoinedOperator(a, b))
+        @test R ≈ Rtrue rtol = 1.0e-12
+        @test R ≈ R' rtol = 1.0e-12
+    end
+
+    # A pair on one row grid keeps its own contraction, and anything not Kronecker has no batch.
+    a, b = kron_of(2, 1, 6, 5), kron_of(2, 1, 6, 3)
+    @test !PureQPBase.kron_batch_pair(a, b)
+    @test !PureQPBase.kron_batch_pair(a, randn(12, 3))
+    @test all(isempty, PureQPBase.kron_batch_scratch(Float64, (a, b)))
+
+    # Three blocks: the buffers serve the largest batched pair and the others fit inside them.
+    J = PureQPBase.JoinedOperator(kron_of(2, 2, 6, 2), kron_of(3, 2, 4, 3), kron_of(4, 1, 3, 1))
+    R, Rtrue = reduced(J)
+    @test R ≈ Rtrue rtol = 1.0e-12
+end

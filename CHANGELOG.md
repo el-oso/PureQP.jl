@@ -18,6 +18,27 @@ what is true now; this file is where the history lives.
   once `max_reg_bumps` regularization bumps are spent; `linsys = :kkt` selects the augmented
   system, which stays the choice below `n/4` rows.
 
+- **`ProductReduced` reads a `P` with cheap entries row by row instead of through `n`
+  products.** The first factorization built `c·D P D + σI` from one product with `P` per column.
+  A `P` that is dense, `Symmetric` over dense, `Diagonal`, `BlockDiagonal`, a Kronecker product,
+  `Fill`, or a join or stack of those (`PureQPBase.entries_cheap`) now gives its rows to
+  `dense_row!`, `n²` reads and no products; sparse storage and operators that answer products
+  only keep the column form. On a `629`-variable problem with a dense `P`, the weight-independent
+  term takes 0.5 ms against about 15 ms. Setup plus the first 12-iteration solve, which pays it,
+  goes from 268.5 ms to 160.4 ms on one thread and from 164.5 ms to 85.7 ms on four, together
+  with the changes below; a repeated solve on a warm workspace never pays it.
+
+- **A join contracts Kronecker pairs over different row grids in batches, and a Kronecker
+  product with a one-column second factor multiplies through one `gemv`.** The cross term of
+  two Kronecker blocks whose row structures do not nest ran `2k` Kronecker products on one
+  thread; it is now two matrix products over all `k` columns. The `A`-term of the reduced matrix
+  for a `629`-variable, `2396`-row stacked operator drops from 14.6 ms to 8.8 ms per iteration on
+  one thread (the cross term 3.5 ms to 1.9 ms), and a 12-iteration solve from 229 ms to 147 ms.
+  The forward product of a Kronecker operator with a one-column second factor takes 37 µs against
+  174 µs. The Gram product of a Kronecker block with non-negative weights goes through `syrk`
+  rather than `gemm`: half the arithmetic, 6.0 ms against 12.4 ms for a `988×553` block on one
+  thread. Results agree with the dense product to `1e-15`.
+
 - **The dense and Kronecker workspace aliases name every type parameter.** `@strict_function`
   skips a signature that is not a dispatch tuple, so an alias leaving a parameter free withdrew
   the allocation and type-stability guarantees from `PureDAQP`'s `warm_start!` and `cold_start!`

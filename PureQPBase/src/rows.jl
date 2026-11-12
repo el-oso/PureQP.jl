@@ -25,6 +25,23 @@ function dense_row!(dest::AbstractVector, A::AbstractMatrix, i::Integer)
 end
 
 """
+    entries_cheap(A) -> Bool
+
+Whether reading every entry of `A` row by row with [`dense_row!`](@ref) costs about `size(A, 1) *
+size(A, 2)` plain reads. True for dense storage, diagonal and block-diagonal types, and the
+operators whose blocks are all so; false otherwise, including sparse storage, where an entry is a
+search, and anything that answers products only.
+"""
+entries_cheap(::Any) = false
+entries_cheap(::StridedMatrix) = true
+entries_cheap(::Diagonal) = true
+entries_cheap(::Symmetric{<:Any, <:StridedMatrix}) = true
+entries_cheap(::Hermitian{<:Any, <:StridedMatrix}) = true
+entries_cheap(::AbstractFill{<:Any, 2}) = true
+entries_cheap(A::BlockDiagonal) = all(entries_cheap, A.blocks)
+entries_cheap(K::KroneckerOperator) = entries_cheap(K.A1) && entries_cheap(K.A2)
+
+"""
     rows_operand(T, A) -> A, a row-readable form of it, or Matrix{T}
 
 What a consumer that reads `A` by rows should hold.

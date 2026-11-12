@@ -294,6 +294,47 @@ function LinearAlgebra.ldiv!(
 end
 
 """
+    weighted_gram!(blk, A, At, S, t) -> blk
+
+`blk = Aᵀ diag(t) A`, with `At = transpose(A)` and `S` an `A`-sized scratch.
+
+When every `t[r]` is non-negative and the element type is a BLAS float, the product is
+`(√t ⊙ A)ᵀ(√t ⊙ A)`: one `syrk`, which does half the arithmetic of the `gemm`, followed by a copy of
+the upper triangle into the lower one. `t` is overwritten by its square root on that path. A `t`
+with a negative or NaN entry is not a Gram matrix and takes the `gemm`, which is also the path
+for element types BLAS does not serve.
+"""
+function weighted_gram!(blk, A, At, S, t)
+    for c in axes(S, 2), r in axes(S, 1)
+        S[r, c] = t[r] * A[r, c]
+    end
+    mul!(blk, At, S)
+    return blk
+end
+
+function weighted_gram!(
+        blk::StridedMatrix{T}, A::StridedMatrix{T}, At, S::StridedMatrix{T}, t::StridedVector{T}
+    ) where {T <: LinearAlgebra.BlasFloat}
+    if !all(>=(zero(T)), t)
+        for c in axes(S, 2), r in axes(S, 1)
+            S[r, c] = t[r] * A[r, c]
+        end
+        return mul!(blk, At, S)
+    end
+    for r in eachindex(t)
+        t[r] = sqrt(t[r])
+    end
+    for c in axes(S, 2), r in axes(S, 1)
+        S[r, c] = t[r] * A[r, c]
+    end
+    LinearAlgebra.BLAS.syrk!('U', 'T', one(T), S, zero(T), blk)
+    for j in axes(blk, 2), i in (j + 1):size(blk, 1)
+        blk[i, j] = blk[j, i]
+    end
+    return blk
+end
+
+"""
     add_reduced_term!(R, T, A, weights, D, n, m, scratch) -> R
 
 Add `D Aᵀ diag(weights) A D` into `R`.
@@ -344,11 +385,7 @@ function add_reduced_term!(
             end
             t[c] = acc
         end
-        # `blk = A₁ᵀ diag(t) A₁`, one scaling pass and one `gemm`.
-        for c in 1:k1, r in 1:m1
-            S[r, c] = t[r] * A1[r, c]
-        end
-        mul!(blk, A1t, S)
+        weighted_gram!(blk, A1, A1t, S, t)
         for j1 in 1:k1
             q = (j1 - 1) * k2 + j2
             dq = D[q]
@@ -406,10 +443,7 @@ function kron_reduced_over_first!(
             end
             t2[r] = acc
         end
-        for c in 1:k2, r in 1:m2
-            S2[r, c] = t2[r] * A2[r, c]
-        end
-        mul!(blk2, A2t, S2)
+        weighted_gram!(blk2, A2, A2t, S2, t2)
         for j2 in 1:k2
             q = (j1 - 1) * k2 + j2
             dq = D[q]
@@ -531,6 +565,113 @@ function kron_cross_term!(
         end
     end
     return R
+end
+
+"""
+    kron_batch_pair(Ai, Aj) -> Bool
+
+Whether the two blocks are Kronecker products over different row grids, which
+[`kron_batch_cross!`](@ref) serves. Together with [`kron_cross_pair`](@ref) it covers every pair of
+Kronecker products.
+"""
+kron_batch_pair(Ai, Aj) = false
+kron_batch_pair(Ai::KroneckerOperator, Aj::KroneckerOperator) = !kron_cross_pair(Ai, Aj)
+
+"""
+    kron_batch_cross!(R, T, Aa, Ab, w, D, offa, offb, batch) -> R
+
+Add `Dₐ Aₐᵀ diag(w) A_b D_b` and its transpose into `R` for two Kronecker products over the same
+rows but different row grids, with `Aₐ` the wider of the pair.
+
+The columns of `diag(w) A_b` are formed together as `Z`, laid out on `Aₐ`'s row grid: with
+`Aₐ = F₁ ⊗ F₂`, a column of `Z` is an `m₂ × m₁` matrix `X`, and `Aₐᵀ x = vec(F₂ᵀ X F₁)`. All `k_b`
+columns go through `F₂ᵀ` as one product and through `F₁` as one more per column of `F₂`, so the
+work is two matrix products that BLAS can thread, against `2 k_b` Kronecker products that run on
+one thread. `batch` holds the buffers [`kron_batch_scratch`](@ref) sized.
+"""
+function kron_batch_cross!(
+        R, ::Type{T}, Aa::KroneckerOperator, Ab::KroneckerOperator, w, D, offa, offb, batch
+    ) where {T}
+    F1, F2 = Aa.A1, Aa.A2
+    ma1, ka1 = size(F1)
+    ma2, ka2 = size(F2)
+    B1, B2 = Ab.A1, Ab.A2
+    mb2, kb2 = size(B2)
+    kb = size(Ab, 2)
+    m = size(Ab, 1)
+    ncol = ma1 * kb
+    Zbuf, Tbuf, Ubuf, Ybuf = batch
+    Z = view(Zbuf, 1:ma2, 1:ncol)
+    T1 = view(Tbuf, 1:ka2, 1:ncol)
+    U = view(Ubuf, 1:ma1, 1:kb)
+    Y = view(Ybuf, 1:kb, 1:ka1)
+    for j in 1:kb
+        j1, j2 = fldmod1(j, kb2)
+        col0 = (j - 1) * ma1
+        # Row `r` of the join is row `(κ₁, κ₂)` of `Aₐ`'s grid and row `(β₁, β₂)` of `A_b`'s; both
+        # counters advance with `r`, which avoids a division per entry.
+        k1, k2, b1, b2 = 1, 0, 1, 0
+        for r in 1:m
+            k2 += 1
+            if k2 > ma2
+                k2 = 1
+                k1 += 1
+            end
+            b2 += 1
+            if b2 > mb2
+                b2 = 1
+                b1 += 1
+            end
+            Z[k2, col0 + k1] = w[r] * B1[b1, j1] * B2[b2, j2]
+        end
+    end
+    mul!(T1, F2', Z)
+    for i2 in 1:ka2
+        for j in 1:kb, k1 in 1:ma1
+            U[k1, j] = T1[i2, (j - 1) * ma1 + k1]
+        end
+        mul!(Y, transpose(U), F1)
+        for i1 in 1:ka1
+            pp = offa + (i1 - 1) * ka2 + i2 - 1
+            dp = D[pp]
+            for j in 1:kb
+                q = offb + j - 1
+                val = dp * Y[j, i1] * D[q]
+                R[pp, q] += val
+                R[q, pp] += val
+            end
+        end
+    end
+    return R
+end
+
+"""
+    kron_batch_scratch(T, blocks) -> (Z, T1, U, Y)
+
+Buffers for [`kron_batch_cross!`](@ref), each sized to the largest qualifying pair in a join and
+empty when no pair qualifies.
+"""
+function kron_batch_scratch(::Type{T}, blocks::Tuple) where {T}
+    zr = zc = tr = ur = uc = yr = yc = 0
+    for i in eachindex(blocks), j in (i + 1):lastindex(blocks)
+        Ai, Aj = blocks[i], blocks[j]
+        kron_batch_pair(Ai, Aj) || continue
+        Aa, Ab = size(Aj, 2) <= size(Ai, 2) ? (Ai, Aj) : (Aj, Ai)
+        ma1, ka1 = size(Aa.A1)
+        ma2, ka2 = size(Aa.A2)
+        kb = size(Ab, 2)
+        zr = max(zr, ma2)
+        zc = max(zc, ma1 * kb)
+        tr = max(tr, ka2)
+        ur = max(ur, ma1)
+        uc = max(uc, kb)
+        yr = max(yr, kb)
+        yc = max(yc, ka1)
+    end
+    return (
+        Matrix{T}(undef, zr, zc), Matrix{T}(undef, tr, zc),
+        Matrix{T}(undef, ur, uc), Matrix{T}(undef, yr, yc),
+    )
 end
 
 """

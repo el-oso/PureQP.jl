@@ -182,6 +182,7 @@ end
 
 # Readable exactly when every block is.
 is_materializable(A::JoinedOperator) = all(is_materializable, A.blocks)
+entries_cheap(A::JoinedOperator) = all(entries_cheap, A.blocks)
 
 # A join partitions the columns, so a dense backend reads it as it reads a matrix and the blocks
 # supply the entries. Stated here rather than left to the default: every operator declares this,
@@ -190,7 +191,10 @@ holds_structure(::JoinedOperator) = false
 
 "Scratch each block's own reduced term needs, in block order."
 reduced_term_scratch(::Type{T}, A::JoinedOperator) where {T} =
-    (map(Ai -> reduced_term_scratch(T, Ai), A.blocks), kron_cross_scratch(T, A.blocks))
+    (
+    map(Ai -> reduced_term_scratch(T, Ai), A.blocks),
+    (kron_cross_scratch(T, A.blocks)..., kron_batch_scratch(T, A.blocks)),
+)
 
 # Each block checks its own entries in its own way, so a Kronecker block checks its factors.
 function check_finite(M::JoinedOperator, rows::Integer, cols::Integer, name::String)
@@ -292,7 +296,13 @@ end
     # `kron_cross_scratch` sized the buffers from the same predicate, so a pair it admits has
     # room here.
     if kron_cross_pair(Ai, Aj)
-        kron_cross_term!(R, T, Ai, Aj, w, D, first(cross), last(cross), av, offi, offj)
+        kron_cross_term!(R, T, Ai, Aj, w, D, cross[1], cross[2], av, offi, offj)
+    elseif kron_batch_pair(Ai, Aj)
+        if size(Aj, 2) <= size(Ai, 2)
+            kron_batch_cross!(R, T, Ai, Aj, w, D, offi, offj, cross[3])
+        else
+            kron_batch_cross!(R, T, Aj, Ai, w, D, offj, offi, cross[3])
+        end
     else
         ki, kj = size(Ai, 2), size(Aj, 2)
         if kj <= ki

@@ -77,6 +77,7 @@ end
 # `O(m)` against two matrix products.
 function LinearAlgebra.mul!(y::AbstractVector, K::KroneckerOperator, x::AbstractVector)
     Base.require_one_based_indexing(y, x)
+    isone(size(K.A2, 2)) && return kron_column_mul!(y, K, x)
     flat_copy!(K.xmat, x)
     mul!(K.scratch1, K.A2, K.xmat)    # m₂×n₁
     mul!(K.ymat, K.scratch1, K.A1')   # m₂×m₁
@@ -104,6 +105,30 @@ function flat_copy!(dest, src)
         dest[i] = src[i]
     end
     return dest
+end
+
+"""
+    kron_column_mul!(y, K, x) -> y
+
+`y = K x` for `K = A₁ ⊗ a` with `a` a single column: `y` is `a (A₁x)ᵀ` read column by column, so one
+matrix–vector product and a scaled copy replace two matrix products against a one-row operand.
+
+The product `A₁x` is written into every `m₂`-th entry of `y`, where the first entry of each block
+of the result goes, and the blocks are then filled from the last to the first so that no entry
+is read after it has been overwritten.
+"""
+function kron_column_mul!(y, K::KroneckerOperator, x)
+    A1, a = K.A1, K.A2
+    m1, m2 = size(A1, 1), size(a, 1)
+    mul!(view(y, 1:m2:((m1 - 1) * m2 + 1)), A1, x)
+    for k in m1:-1:1
+        base = (k - 1) * m2
+        vk = y[base + 1]
+        for r in 1:m2
+            y[base + r] = a[r, 1] * vk
+        end
+    end
+    return y
 end
 
 function LinearAlgebra.mul!(

@@ -186,6 +186,7 @@ end
 
 # Readable exactly when every block is.
 is_materializable(A::StackedOperator) = all(is_materializable, A.blocks)
+entries_cheap(A::StackedOperator) = all(entries_cheap, A.blocks)
 
 """
     add_reduced_term!(R, T, A::StackedOperator, weights, D, n, m, scratch, ej, av, col) -> R
