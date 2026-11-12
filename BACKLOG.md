@@ -108,17 +108,27 @@ Measured against MOI's `test_linear_add_constraints`, whose data reaches `7e4`: 
 converges, `1e-4` solves it. `PureDAQP/test/moi_tests.jl` therefore sets `1e-4`.
 
 A caller has no guidance for this, and the failure is silent in the sense that the status is
-`ITERATION_LIMIT` rather than a refusal naming the cause. Either `eps_prox`'s default should
+`MAX_ITER_REACHED` rather than a refusal naming the cause. Either `eps_prox`'s default should
 scale with the data when `P` is semidefinite, or the refusal that currently names `eps_prox`
 should also say what magnitude the problem needs.
 
-## `ActiveSet` reports no dual-infeasibility certificate
+## `ActiveSet` reports `DUAL_INFEASIBLE` only for an exact direction
 
-An unbounded problem reaches `max_iter` and is reported as `ITERATION_LIMIT`. The status is
-honest — the method did not converge — but it is not `DUAL_INFEASIBLE`, which is what a caller
-testing for unboundedness looks for, and MOI's `test_linear_DUAL_INFEASIBLE` is excluded for
-this reason. The dual active-set iteration has a direction of unbounded descent available to it
-when this happens; recognizing it would turn a timeout into an answer.
+An unbounded problem whose last proximal step is a direction only to rounding, such as the
+bundle master problem of darnstrom/daqp#222, ends `MAX_ITER_REACHED` with the point reached.
+Measured against exact arithmetic, no rounding-level rule catches it without calling a bounded
+problem with a distant minimizer unbounded.
+
+## `ActiveSet` reads the row norms in a pass of its own
+
+The check that ends a `SOLVED` answer as `NUMERICAL_ERROR` when a row is violated holds each row
+to the rounding of its own product, which needs `‖aᵢ‖₂`. `setup` and `update!` of `P` or `A`
+read them in `row_norms!`, a pass over every row of `A` after the reduction has made the same
+pass. Measured on dense data it costs 14 to 17% of `setup` (0.16 ms of 0.93 ms at `n = 200`,
+`m = 800`; 1.0 ms of 7.3 ms at `n = 500`, `m = 2000`), and 1 to 4% on sparse `A`. Re-solves
+that change `q`, `l` or `u` do not pay it. If setup or `update!(A)` ever sits in a hot loop,
+the norms are available inside `build_reduction`, where each row of `A` is read before the
+triangular solve; storing them in `DAQPReduction` would remove the extra pass.
 
 ## Operator splitting reaches no direct backend for a compressing representation
 

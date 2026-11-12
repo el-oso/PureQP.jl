@@ -696,12 +696,40 @@ struct DAQPReduction{T <: Real, F, FT, WS, MR}
     # without copying it, but the wrapper itself is a heap allocation on Julia 1.13, once per
     # solve in a loop that has none otherwise.
     Rt::FT
-    bu::Vector{T}     # the caller's bounds, divided by the row norms
+    bu::Vector{T}     # the caller's bounds, divided by the row norms; absent ones are ±Inf
     bl::Vector{T}
     eps_prox::T
     ws::LDPWorkspace{T, WS, MR}
     scale::Vector{T}  # the row norm each row was divided by
 end
+
+"""
+    scaled_lower(b, s), scaled_upper(b, s) -> T
+
+The lower or upper bound `b` of a row divided by the row's norm `s`, or `∓Inf` or `+Inf` when
+the bound is absent.
+
+`PureQPBase` clamps an absent lower bound to `-INFTY(T)` and an absent upper bound to
+`INFTY(T)`. An absent bound has no size, so the row's norm does not scale it. A lower bound above
+`-INFTY(T)` and an upper bound below `INFTY(T)` are constraints and are scaled like the row,
+whatever their size.
+"""
+@inline function scaled_lower(b::T, s::T) where {T}
+    return is_lower_bound(b) ? b / s : T(-Inf)
+end
+
+@inline function scaled_upper(b::T, s::T) where {T}
+    return is_upper_bound(b) ? b / s : T(Inf)
+end
+
+"Whether the caller's lower bound `b` is a bound, and not the clamp of an absent one."
+@inline is_lower_bound(b::T) where {T} = b > -INFTY(T)
+
+"Whether the caller's upper bound `b` is a bound, and not the clamp of an absent one."
+@inline is_upper_bound(b::T) where {T} = b < INFTY(T)
+
+"Whether a row with these bounds is an equality: both are present and equal."
+@inline is_equality(l::T, u::T) where {T} = l == u && is_lower_bound(l) && is_upper_bound(u)
 
 """
     reduce_qp(P, A, bupper, blower, iseq; eps_prox) -> DAQPReduction
@@ -815,8 +843,8 @@ function build_reduction(
         @simd ivdep for i in 1:n
             Mt[i, j] = Mr[j, i] / sj
         end
-        bu[j] = bupper[j] / sj
-        bl[j] = blower[j] / sj
+        bu[j] = scaled_upper(bupper[j], sj)
+        bl[j] = scaled_lower(blower[j], sj)
     end
     return pack_reduction(R, DenseRows(Mt), bu, bl, iseq, scale, eps_prox, n, m, WS)
 end
@@ -876,8 +904,8 @@ function build_reduction(
             iszero(nrm) && (iseq[j] = false)
             s = nrm > 0 ? nrm : one(T)
             scale[j] = s
-            bu[j] = bupper[j] / s
-            bl[j] = blower[j] / s
+            bu[j] = scaled_upper(bupper[j], s)
+            bl[j] = scaled_lower(blower[j], s)
         end
     end
     return pack_reduction(R, M, bu, bl, iseq, scale, eps_prox, n, m, WS)
@@ -957,20 +985,41 @@ function rebuild_bounds!(red::DAQPReduction{T}, bupper::AbstractVector{T}, blowe
     iseq = red.ws.iseq
     moved = false
     for j in eachindex(red.bu)
-        red.bu[j] = bupper[j] / red.scale[j]
-        red.bl[j] = blower[j] / red.scale[j]
+        red.bu[j] = scaled_upper(bupper[j], red.scale[j])
+        red.bl[j] = scaled_lower(blower[j], red.scale[j])
         # Which rows are equalities is a property of the bounds, so it is rebuilt with them.
         # Left alone, a row whose bounds have just been separated keeps a multiplier free in
         # sign and never blocks a step, and the pass settles on a point that is not the
         # answer -- reported as one, because nothing about the run looks wrong.
-        eq = bupper[j] == blower[j]
+        eq = is_equality(blower[j], bupper[j])
         moved |= eq != iseq[j]
         iseq[j] = eq
     end
     # The cap applies here as it does at setup: bounds that make more than `n` rows equalities
     # would otherwise hand the reset more rows than the working set can hold.
     moved |= cap_equalities!(iseq, nvars(red.ws.M), length(red.bu))
+    drop_unbounded_rows!(red.ws, bupper, blower)
     return moved
+end
+
+"""
+    drop_unbounded_rows!(ws, bupper, blower) -> ws
+
+Take out of the working set every row that is held at an absent bound.
+
+A row held at an infinite bound has no finite target. The bound that a row is held at is the
+caller's upper bound for a row at the lower target, because the reduction swaps the two (see
+[`set_targets!`](@ref)).
+"""
+function drop_unbounded_rows!(
+        ws::LDPWorkspace{T}, bupper::AbstractVector{T}, blower::AbstractVector{T}
+    ) where {T}
+    for i in nactive(ws.W):-1:1
+        r = ws.active[i]
+        held = ws.side[r] == SIDE_LOWER ? is_upper_bound(bupper[r]) : is_lower_bound(blower[r])
+        held || deactivate!(ws, i)
+    end
+    return ws
 end
 
 """

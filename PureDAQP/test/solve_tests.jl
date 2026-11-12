@@ -1143,3 +1143,513 @@ end
         end
     end
 end
+
+@testitem "an unbounded problem under the proximal loop is reported dual infeasible" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # `min ½x₁² − x₂` subject to `x₁ + x₂ ≥ 1`: unbounded along `x₂`. `P` is singular, so the
+    # method runs only with `eps_prox > 0`, whose passes then move `x₂` by the same step for as
+    # long as they run and never settle.
+    P, q, A = [1.0 0.0; 0.0 0.0], [0.0, -1.0], reshape([1.0, 1.0], 1, 2)
+    l, u = [1.0], [Inf]
+    # Curvature `0.25` in `x₁`, with a cost term that moves it: each pass closes `1/5` of the
+    # distance to its minimizer at `eps_prox = 1`, so after 100 passes it still steps by `1e-10`
+    # of the step in `x₂`, not zero but below the part of the step that is read as rounding. The
+    # direction left once that part is dropped is exact.
+    for wsk in (:rows, :gram)
+        sol = solve([0.25 0.0; 0.0 0.0], [1.0, -1.0], A, l, u, ActiveSet(; working_set = wsk, eps_prox = 1.0))
+        @test sol.status === PureQPBase.DUAL_INFEASIBLE
+        @test sol.dual_inf_cert ≈ [0.0, 1.0] atol = 1.0e-8
+    end
+    for wsk in (:rows, :gram), eps_prox in (1.0e-4, 1.0e-2)
+        alg = ActiveSet(; working_set = wsk, eps_prox)
+        sol = solve(P, q, A, l, u, alg)
+        @test sol.status === PureQPBase.DUAL_INFEASIBLE
+        @test !has_solution(sol.status)
+        @test sol.obj_val == -Inf
+        # The certificate is a unit direction that descends, leaves the cost flat and keeps
+        # the constraint satisfied.
+        d = sol.dual_inf_cert
+        @test norm(d, Inf) ≈ 1
+        @test dot(q, d) < 0
+        @test norm(P * d, Inf) < 1.0e-6
+        @test (A * d)[1] > -1.0e-6
+        # The same through a linear program, which has no curvature to leave in the step.
+        lp = solve(zeros(2, 2), q, A, l, u, alg)
+        @test lp.status === PureQPBase.DUAL_INFEASIBLE
+    end
+
+    # A singular `P` whose problem is bounded is still solved: `x₁` does not appear in the
+    # cost, so the loop settles at once.
+    for wsk in (:rows, :gram)
+        sol = solve(zeros(2, 2), [0.0, 1.0], [0.0 1.0], [1.0], [Inf], ActiveSet(; working_set = wsk, eps_prox = 1.0e-4))
+        @test sol.status === PureQPBase.SOLVED
+        @test sol.x[2] ≈ 1.0 atol = 1.0e-6
+        @test isempty(sol.dual_inf_cert)
+    end
+end
+
+@testitem "an unbounded problem whose direction is exact only to rounding is not certified" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # The master problem of a bundle method, from the upstream reference solver's tracker
+    # (darnstrom/daqp#222). It is unbounded, and the last proximal step is a direction along
+    # which `Pd` is `1e-14` and the rows drift by `1e-9` against a step of `3e4`: a ray to
+    # rounding, not exactly. Only an exact ray is called a certificate, so the run ends on its
+    # pass limit with the point it reached.
+    n = 28
+    H = zeros(n, n); H[6:10, 6:10] = I(5)
+    f = zeros(n)
+    f[[5;21:28]] = [
+        151.27919502648433, -4.619938789665843, 0.24968822098988802,
+        1.4361270737496605, -0.5251791730307167, 0.5394847038306813,
+        -3.454965943031397, -3.8158174674229137, -3.496349942781965,
+    ]
+    A = zeros(8, n)
+    A[1, 1:3] = [1 1 -1]
+    A[2, [1, 4]] = [-1 1]
+    A[3, [1, 5]] = [-1 1]
+    A[4:8, 1] = [
+        -5.9713117389231485, 0.09977180033089894, -4.47153905349424,
+        6.565797623189027, 1.423514870996998,
+    ]
+    for i in 1:5
+        A[3 + i, [5 + i, 10 + i, 15 + i]] = [1 1 -1]
+    end
+    A[4:8, 21:28] = [
+        1.872567499533699 0.22920204929038507 1.4063026723533851 -3.133662408092967 1.2660702980107932 -2.127779966040754 0.7742710759881403 -0.33878819195539234;
+        -1.6098722046254275 -1.8439221129240346 -1.101305444588689 1.3341738537257875 0.6938841878618023 -0.740454917652404 0.4485469222371885 2.6581696253958027;
+        2.160377174613471 -1.5011729929172053 -1.4868191564357816 -0.18737943664088103 1.056193347920882 -2.4147534014903056 -1.1447990492040527 2.5144430112792855;
+        -1.1424871008774524 2.730150778780663 -2.5380957159480215 1.688711394142188 0.12060013445052191 0.03314777008331937 2.576926220378722 2.0630587340651836;
+        -0.4477084158289073 -0.5738442734668117 -0.5322187171431682 -0.20810993815524018 -2.934332901024774 1.1253763749147792 1.5706264550828064 3.033900521223415
+    ]
+    blower = zeros(n + 8); blower[6:10] .= -Inf; blower[29] = 1
+    bupper = fill(Inf, n + 8)
+    eqs = [2, 3, 11, 12, 13, 15, 16, 17, 18, 19, 20, 29, 30, 31, 32, 33, 34, 35, 36]
+    bupper[eqs] = blower[eqs]
+    Afull = vcat(Matrix(1.0I, n, n), A)
+    for wsk in (:rows, :gram), eps_prox in (1.0e-4, 1.0e-2)
+        sol = solve(H, f, Afull, blower, bupper, ActiveSet(; working_set = wsk, eps_prox))
+        @test sol.status === PureQPBase.MAX_ITER_REACHED
+        @test all(isfinite, sol.x)
+    end
+end
+
+@testitem "a row that moves toward a present bound stops a certificate, however small" begin
+    using PureQPBase, PureDAQP
+
+    alg = ActiveSet(; eps_prox = 1.0e-4)
+    # `min −x₂` subject to `1e-8·x₂ ≤ 1` is bounded, at `x₂ = 1e8`. The row moves by `1e-8` per
+    # unit of `x₂` toward its bound, so the step is not a recession direction and the run ends
+    # on its pass limit.
+    sol = solve(zeros(2, 2), [0.0, -1.0], [0.0 1.0e-8], [-Inf], [1.0], alg)
+    @test sol.status === PureQPBase.MAX_ITER_REACHED
+
+    # The same row on a variable the cost does not use leaves `x₂` unconstrained: the row does
+    # not move along the step, and the problem is unbounded.
+    sol = solve(zeros(2, 2), [0.0, -1.0], [1.0e-8 0.0], [-Inf], [1.0], alg)
+    @test sol.status === PureQPBase.DUAL_INFEASIBLE
+    @test sol.dual_inf_cert ≈ [0.0, 1.0] atol = 1.0e-6
+end
+
+@testitem "a kept solution follows the workspace across a certificate" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # `min ½x₁² − x₂ s.t. x₁ + x₂ ≥ l`: unbounded without the cap below, bounded with it.
+    P, q, A = [1.0 0.0; 0.0 0.0], [0.0, -1.0], [1.0 1.0]
+    for wsk in (:rows, :gram)
+        alg = ActiveSet(; working_set = wsk, eps_prox = 1.0e-4)
+        ws = setup(P, q, A, [1.0], [Inf], alg)
+        keep = copy(solve!(ws))
+        @test keep.status === PureQPBase.DUAL_INFEASIBLE
+        @test length(keep.dual_inf_cert) == 2
+
+        # Bounded: the cap `x₁ + x₂ ≤ 3` leaves the certificate empty.
+        update!(ws; u = [3.0])
+        @test copyto!(keep, solve!(ws)) === keep
+        @test keep.status === PureQPBase.SOLVED
+        @test isempty(keep.dual_inf_cert)
+        @test keep.x ≈ ws.sol.x
+
+        # And back, with the same certificate the workspace reports.
+        update!(ws; u = [Inf])
+        @test copyto!(keep, solve!(ws)) === keep
+        @test keep.status === PureQPBase.DUAL_INFEASIBLE
+        @test keep.dual_inf_cert == ws.sol.dual_inf_cert
+        @test keep.dual_inf_cert !== ws.sol.dual_inf_cert
+        @test norm(keep.dual_inf_cert, Inf) ≈ 1
+
+        # Refilling the workspace's own solution does not change what the workspace reports
+        # for the solves after it.
+        update!(ws; u = [3.0])
+        solve!(ws)
+        copyto!(ws.sol, keep)
+        @test solve!(ws).status === PureQPBase.SOLVED
+        @test isempty(ws.sol.dual_inf_cert)
+        update!(ws; u = [Inf])
+        @test solve!(ws).status === PureQPBase.DUAL_INFEASIBLE
+        @test length(ws.sol.dual_inf_cert) == 2
+    end
+end
+
+@testitem "a re-solve whose bounds free a row that the working set held is not called infeasible" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # A solve proves the problem infeasible, and the update removes the lower bound of `10`
+    # that made it so: the bounds that follow match a fresh solve. The second loop below holds
+    # rows at bounds that the update then removes, which would otherwise leave their targets at
+    # infinity.
+    P, q, A = Matrix(1.0I, 2, 2), [0.0, -1.0], [1.0 1.0; 1.0 1.0]
+    for wsk in (:rows, :gram), eps_prox in (0.0, 1.0e-4)
+        alg = ActiveSet(; working_set = wsk, eps_prox)
+        ws = setup(P, q, A, [10.0, -Inf], [Inf, 1.0], alg)
+        @test solve!(ws).status === PureQPBase.PRIMAL_INFEASIBLE
+        update!(ws; l = [-Inf, -Inf], u = [3.0, 5.0])
+        sol = solve!(ws)
+        fresh = solve(P, q, A, [-Inf, -Inf], [3.0, 5.0], alg)
+        @test sol.status === PureQPBase.SOLVED
+        @test sol.x ≈ fresh.x
+    end
+
+    # The same with a held upper bound removed.
+    for wsk in (:rows, :gram)
+        alg = ActiveSet(; working_set = wsk)
+        ws = setup(P, q, A, [-Inf, -Inf], [1.0, 0.5], alg)
+        sol = solve!(ws)
+        update!(ws; l = [2.0, -Inf], u = [Inf, Inf])
+        sol = solve!(ws)
+        fresh = solve(P, q, A, [2.0, -Inf], [Inf, Inf], alg)
+        @test sol.status === fresh.status
+        @test sol.x ≈ fresh.x
+    end
+end
+
+@testitem "a row's scale does not turn an infinite bound into a finite one" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # The reduction divides each row and its bounds by the row's norm. A bound that stands in for
+    # infinity has to stay infinite: divided by a norm of `1e152` it becomes `1e-122`, a bound the
+    # data resolves, and the unbounded problem below is then a thin slab with a minimizer.
+    for sc in (1.0, 1.0e20, 1.0e60, 1.0e100, 1.0e200), wsk in (:rows, :gram)
+        alg = ActiveSet(; working_set = wsk, eps_prox = 1.0e-4)
+        # `min ½x₁² − x₂` subject to `sc·(x₁ + x₂) ≥ 1`: unbounded along `x₂`.
+        sol = solve([1.0 0.0; 0.0 0.0], [0.0, -1.0], [sc sc], [1.0], [Inf], alg)
+        @test sol.status === PureQPBase.DUAL_INFEASIBLE
+
+        # The same row on a problem whose minimizer `x = (0, 1)` satisfies it.
+        sol = solve(Matrix(1.0I, 2, 2), [0.0, -1.0], [sc sc], [1.0], [Inf], alg)
+        @test sol.status === PureQPBase.SOLVED
+        @test sol.x ≈ [0.0, 1.0] atol = 1.0e-8
+    end
+end
+
+@testitem "a finite bound far above one is a bound, and only the clamped infinity is not" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # `PureQPBase` clamps a bound to `±1e30`, which is where "no bound" starts. A finite bound
+    # below that, however large, is a constraint the row carries.
+    P, q = Matrix(1.0I, 2, 2), [-3.0, 0.0]
+    for wsk in (:rows, :gram)
+        alg = ActiveSet(; working_set = wsk)
+        # `1e30·x₁ ≤ 1e28` and `1e30·x₁ ≤ 5e29` cap `x₁` at 0.01 and 0.5, short of its minimizer 3.
+        for (u, cap) in ((1.0e28, 0.01), (5.0e29, 0.5), (1.0e27, 1.0e-3))
+            sol = solve(P, q, [1.0e30 0.0], [-Inf], [u], alg)
+            @test sol.status === PureQPBase.SOLVED
+            @test sol.x ≈ [cap, 0.0] atol = 1.0e-9
+        end
+        # The same row with no upper bound does not constrain the minimizer.
+        sol = solve(P, q, [1.0e30 0.0], [-Inf], [Inf], alg)
+        @test sol.x ≈ [3.0, 0.0] atol = 1.0e-9
+        # And a bound at the clamp is no bound, whatever the row's scale.
+        sol = solve(P, q, [1.0e100 0.0], [-Inf], [1.0e100], alg)
+        @test sol.x ≈ [3.0, 0.0] atol = 1.0e-9
+    end
+end
+
+@testitem "a re-solve after an infeasibility proof starts from the equality rows" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # Duplicate rows with disjoint bounds are infeasible with both rows in the working set. The
+    # next bounds are finite and feasible, and the solve after them matches a fresh one whether
+    # it follows `update!`, `warm_start!`, or both.
+    P, q, A = Matrix(1.0I, 2, 2), [0.0, -1.0], [1.0 1.0; 1.0 1.0]
+    for wsk in (:rows, :gram), eps_prox in (0.0, 1.0e-4), order in (:update, :warm_then_update, :update_then_warm)
+        alg = ActiveSet(; working_set = wsk, eps_prox)
+        ws = setup(P, q, A, [10.0, -Inf], [Inf, 1.0], alg)
+        @test solve!(ws).status === PureQPBase.PRIMAL_INFEASIBLE
+        order === :warm_then_update && warm_start!(ws; x = zeros(2))
+        update!(ws; l = [2.0, -Inf], u = [Inf, 5.0])
+        order === :update_then_warm && warm_start!(ws; x = zeros(2))
+        sol = solve!(ws)
+        fresh = solve(P, q, A, [2.0, -Inf], [Inf, 5.0], alg)
+        @test sol.status === PureQPBase.SOLVED
+        @test sol.x ≈ fresh.x
+    end
+end
+
+@testitem "a bound at the clamp of the opposite side is a bound" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # `PureQPBase` clamps an absent lower bound to `-1e30` and an absent upper bound to `1e30`. A
+    # lower bound of `+1e30` or an upper bound of `-1e30` is on the other side of that clamp: it
+    # is a constraint, and an answer that is not finite is not one that satisfies it.
+    P, q = Matrix(1.0I, 2, 2), [-3.0, 0.0]
+    for wsk in (:rows, :gram)
+        alg = ActiveSet(; working_set = wsk)
+        sol = solve(P, q, [1.0 0.0], [1.0e30], [Inf], alg)
+        @test sol.status === PureQPBase.SOLVED
+        @test sol.x ≈ [1.0e30, 0.0] rtol = 1.0e-8
+        sol = solve(P, [3.0, 0.0], [1.0 0.0], [-Inf], [-1.0e30], alg)
+        @test sol.status === PureQPBase.SOLVED
+        @test sol.x ≈ [-1.0e30, 0.0] rtol = 1.0e-8
+    end
+end
+
+@testitem "an infeasibility proof reads a bound as present below the clamp" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # `x₁ ≥ 2` against `x₁ ≤ 1` on two copies of one row, with the bounds of the second at the
+    # size of `1e25` and of `1e27`, which the rest of the package reads as infinite beyond `1e26`.
+    P, q, A = Matrix(1.0I, 2, 2), [0.0, -1.0], [1.0 0.0; 1.0 0.0]
+    for wsk in (:rows, :gram), scale in (1.0e25, 1.0e27)
+        alg = ActiveSet(; working_set = wsk)
+        sol = solve(P, q, A, [2.0 * scale, -Inf], [Inf, scale], alg)
+        @test sol.status === PureQPBase.PRIMAL_INFEASIBLE
+    end
+end
+
+@testitem "a bounded problem is never reported unbounded, whatever its scale" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # Each problem below has a minimizer, far from the origin or from the cost's own scale. A
+    # tolerance cannot tell it from an unbounded one, so only a direction that satisfies the
+    # conditions exactly is called a certificate.
+    for wsk in (:rows, :gram), eps_prox in (1.0e-6, 1.0e-4, 1.0e-2)
+        alg = ActiveSet(; working_set = wsk, eps_prox)
+        # Curvature of `1e-9` along `x₂` puts the minimizer at `x₂ = 1e9`.
+        sol = solve([1.0 0.0; 0.0 1.0e-9], [0.0, -1.0], zeros(0, 2), Float64[], Float64[], alg)
+        @test sol.status !== PureQPBase.DUAL_INFEASIBLE
+        # An ordinary problem with a cost scaled down: the minimizer is `(1, 1)`.
+        sol = solve(1.0e-9 * Matrix(1.0I, 2, 2), -1.0e-9 * [1.0, 1.0], [1.0 1.0], [-Inf], [Inf], alg)
+        @test sol.status !== PureQPBase.DUAL_INFEASIBLE
+        # A row tilted `1e-8` toward the ray caps `x₂` at `1e8`.
+        sol = solve(zeros(2, 2), [0.0, -1.0], [1.0 0.0; 1.0 1.0e-8], [0.0, -Inf], [Inf, 1.0], alg)
+        @test sol.status !== PureQPBase.DUAL_INFEASIBLE
+    end
+end
+
+@testitem "a feasible problem is not called infeasible on a certificate that proves little" begin
+    using PureQPBase, PureDAQP, LinearAlgebra, Random
+
+    # A ray with a small `Aᵀy` and a negative support function proves only that no feasible point
+    # has `‖x‖∞` below `−support/‖Aᵀy‖₁`, and `PRIMAL_INFEASIBLE` is reported when that radius is
+    # at least `infeasibility_radius`, `primal_tol^(-1/2)` or about `8e3` by default. The first
+    # problem is feasible, but only at `‖x‖∞ = 5.2e9`, so `PRIMAL_INFEASIBLE` is correct within
+    # the radius, `NUMERICAL_ERROR` says it was not decided, and an answer of `SOLVED` must be a
+    # feasible point. The second is feasible at a point of size one.
+    P = [4.720969871801467 0.005417562178060769 1.67127981408794 0.1766169696594515; 0.005417562178060769 0.5804450153849753 -0.6541583893473041 -2.5916361450093013; 1.67127981408794 -0.6541583893473041 1.8371672644054773 4.53789763127223; 0.1766169696594515 -2.5916361450093013 4.53789763127223 17.778414401999722]
+    q = [-0.11926406748778533, -1.371592821149857, 0.10070548173207818, 0.8655579997426182]
+    A = [-15.228534303437053 -1.8450556238586897 1.1490303002885323 18.146895143764347; -1.3617195880150195 4.7710540938818236 -7.327336917644794 14.147902977478212; -1.156156957170025 -0.028379964292323506 -0.47382868960963714 0.6259886746162785; -0.5584602424093701 -0.21574884434747513 0.3518883248464013 1.9523748030681376; -13.979393329765673 8.843858939959484 56.34705276691109 -12.634475474206102; 0.043562106988349746 0.0010693107308317937 0.01785309160916039 -0.023586231478360885; 0.018292187497792867 -0.01670777726958397 0.012525311950601166 0.019169917420363187; -0.03799499800261318 -0.014678532778696303 0.02394082043636717 0.1328303628190553]
+    l = [41.20387074443814, -2.859117756107935, -2.1742879456464013, 6.658229497717323, -Inf, -0.1012363999528594, -Inf, -Inf]
+    u = [65.97071927691137, Inf, Inf, Inf, Inf, 0.03865704139647609, Inf, -0.13680507186291063]
+    for wsk in (:rows, :gram)
+        sol = solve(P, q, A, l, u, ActiveSet(; working_set = wsk))
+        @test sol.status in (PureQPBase.SOLVED, PureQPBase.PRIMAL_INFEASIBLE, PureQPBase.NUMERICAL_ERROR)
+        if sol.status === PureQPBase.SOLVED
+            Ax = A * sol.x
+            @test all(Ax .<= u .+ 1.0e-4 .* (1 .+ abs.(Ax))) && all(Ax .>= l .- 1.0e-4 .* (1 .+ abs.(Ax)))
+        end
+    end
+
+    # The construction of the pivot tests with the third equality row at `σ = 1e-8` from the span
+    # of the first two, below `zero_tol`: feasible by construction, and a row the method treats
+    # as dependent.
+    for wsk in (:rows, :gram)
+        wrong = 0
+        for seed in 1:100
+            rng = MersenneTwister(seed)
+            n = 8
+            a1 = normalize(randn(rng, n))
+            a2 = normalize(randn(rng, n))
+            Q = Matrix(qr(hcat(a1, a2)).Q)[:, 1:2]
+            w = randn(rng, n)
+            w -= Q * (Q' * w)
+            w = normalize(w)
+            a3 = normalize(randn(rng) * a1 + randn(rng) * a2) + 1.0e-8 * w
+            A = vcat(Matrix(hcat(a1, a2, a3)'), randn(rng, 6, n))
+            b = A * randn(rng, n)
+            l, u = copy(b), copy(b)
+            l[4:end] .-= 1
+            u[4:end] .+= 1
+            sol = solve(Matrix(1.0I, n, n), randn(rng, n), A, l, u, ActiveSet(; working_set = wsk))
+            wrong += sol.status === PureQPBase.PRIMAL_INFEASIBLE
+        end
+        @test wrong == 0
+    end
+end
+
+@testitem "a SOLVED answer satisfies the rows it was solved against" begin
+    using PureQPBase, PureDAQP
+
+    # A random problem with seven rows in six variables, feasible only at a point far from the
+    # origin. Both working sets end with the optimality test passed and a point that violates a
+    # row by far more than the tolerance, because the multipliers solve a system whose pivots are
+    # rounding.
+    P = [11.0 1.0 0.0 10.0 2.0 1.0; 1.0 12.0 4.0 3.0 -4.0 5.0; 0.0 4.0 8.0 4.0 -3.0 -5.0; 10.0 3.0 4.0 15.0 0.0 0.0; 2.0 -4.0 -3.0 0.0 8.0 -4.0; 1.0 5.0 -5.0 0.0 -4.0 18.0]
+    q = [-2.0, 0.0, 3.0, -2.0, -2.0, -2.0]
+    A = [0.0 -9.5367431640625e-7 2.86102294921875e-6 -1.0 1.0 -1.9073486328125e-6; -2.097152e6 -2.097152e6 3.145728e6 1.099511627776e12 0.0 -1.048575e6; 0.0 -3.0 3.0 -3.145728e6 -3.145728e6 -2.0; 0.0 2.097152e6 -3.145728e6 2.199023255552e12 3.298534883328e12 1.048576e6; -1.0 -2.0 -1.0 -3.145728e6 -1.048576e6 -2.0; 4.0 6.0 2.0 -4.194304e6 4.194304e6 4.0; 2.0 3.0 1.0 -2.097151e6 2.097152e6 2.0]
+    l = [3.000000814693451, -3.298532414689616e12, 9.427750812e6, -Inf, -Inf, 1.2582908e7, 6.291451e6]
+    u = [Inf, -3.298525817631384e12, Inf, -6.597066839598563e12, 1.887437e7, 1.2582908e7, 6.291451e6]
+    for wsk in (:rows, :gram)
+        sol = solve(P, q, A, l, u, ActiveSet(; working_set = wsk))
+        @test sol.status !== PureQPBase.SOLVED || sol.prim_res < 1.0e-6 * (1 + maximum(abs, A * sol.x))
+    end
+end
+
+@testitem "a certificate computed from rounding proves nothing" begin
+    using PureQPBase, PureDAQP
+
+    # Feasible, at a point of size 1.5, with three equality rows. The ray the loop ends on has a
+    # support function of `-5.6e-17`, one unit in the last place of the terms that cancel in it,
+    # and an `Aᵀy` of `1e-22`: a ratio that holds for rounding as well as for a proof.
+    P = [20.0 -3.0 -2.0 4.0 1.0 9.0 -7.0 -5.0 -7.0 13.0; -3.0 18.0 3.0 -5.0 -5.0 -2.0 -4.0 2.0 1.0 4.0; -2.0 3.0 26.0 -2.0 4.0 -6.0 14.0 -2.0 3.0 2.0; 4.0 -5.0 -2.0 14.0 -2.0 0.0 -10.0 -2.0 -7.0 0.0; 1.0 -5.0 4.0 -2.0 34.0 -5.0 17.0 -4.0 -1.0 -8.0; 9.0 -2.0 -6.0 0.0 -5.0 11.0 -3.0 -5.0 0.0 11.0; -7.0 -4.0 14.0 -10.0 17.0 -3.0 32.0 -5.0 5.0 -7.0; -5.0 2.0 -2.0 -2.0 -4.0 -5.0 -5.0 12.0 -3.0 -4.0; -7.0 1.0 3.0 -7.0 -1.0 0.0 5.0 -3.0 18.0 4.0; 13.0 4.0 2.0 0.0 -8.0 11.0 -7.0 -4.0 4.0 29.0]
+    q = [3.0, 2.0, -3.0, 1.0, 2.0, 1.0, 1.0, -3.0, -2.0, -1.0]
+    A = [-9.0 -2.86102294921875e-6 0.0 6.291456e6 -3.145728e6 6.291456e6 -3.0 9.0 -8.58306884765625e-6 -9.437184e6; 0.0 1.9073486328125e-6 4.0 -6.291456e6 6.291456e6 2.097152e6 6.0 4.0 -1.9073486328125e-6 2.097152e6; -1.9073486328125e-6 0.0 0.0 3.0 -1.0 0.0 -1.9073486328125e-6 2.86102294921875e-6 -1.8189894035458565e-12 -1.0; 0.0 -1.0 -2.097152e6 0.0 2.199023255552e12 2.199023255552e12 3.145728e6 0.0 2.0 -3.298534883328e12; -1.0 9.5367431640625e-7 0.0 -2.097152e6 3.145728e6 3.145728e6 1.0 -1.0 -9.5367431640625e-7 -2.097152e6; 9.5367431640625e-7 9.094947017729282e-13 9.5367431640625e-7 3.0 1.0 2.0 2.86102294921875e-6 -9.5367431640625e-7 0.0 0.0; 9.5367431640625e-7 -9.094947017729282e-13 0.0 2.0 -3.0 -2.9999999999990905 -9.5367431640625e-7 9.5367431640625e-7 9.094947017729282e-13 2.0; -3.0 0.0 2.0 -1.048576e6 2.097152e6 3.145728e6 2.0 5.0 -3.814697265625e-6 -2.097152e6; -5.7220458984375e-6 -3.637978807091713e-12 0.0 -4.0 2.0 -2.0 -3.814697265625e-6 -3.814697265625e-6 3.637978807091713e-12 -2.0; -2.0 -1.9073486328125e-6 -2.0 4.194304e6 -2.097152e6 -5.24288e6 -4.0 -2.0 0.0 5.24288e6; -1.9073486328125e-6 0.0 9.5367431640625e-7 3.0 -3.0 3.0 9.5367431640625e-7 -2.86102294921875e-6 1.8189894035458565e-12 -3.0; 0.0 -1.9073486328125e-6 -2.0 1.048576e6 1.048576e6 -2.097152e6 -1.0 -2.0 -2.86102294921875e-6 2.097152e6; 2.097152e6 2.0 0.0 1.099511627776e12 1.099511627776e12 3.298534883328e12 2.097152e6 3.145728e6 1.0 -1.099511627776e12; -1.9073486328125e-6 -1.8189894035458565e-12 0.0 4.0 -4.0 -1.0 -1.9073486328125e-6 3.814697265625e-6 -1.8189894035458565e-12 -1.0; -3.0 1.9073486328125e-6 4.0 4.194304e6 -2.097152e6 4.194304e6 2.0 -5.0 3.814697265625e-6 -2.097152e6; -2.8610229483305716e-6 -9.094947017729282e-13 0.0 2.0 -1.0 2.0 -9.5367431640625e-7 2.86102294921875e-6 -2.7284841053187847e-12 -3.0; 1.048576e6 -1.0 0.0 2.199023255552e12 -3.298533834752e12 -3.298534883328e12 -1.048576e6 1.048576e6 1.0 2.199023255552e12; 0.0 3.814697265625e-6 4.0 -2.097152e6 -2.097152e6 4.194304e6 2.0 4.0 5.7220458984375e-6 -4.194304e6; 3.0 -2.86102294921875e-6 0.0 6.291456e6 -9.437184e6 -9.437184e6 -3.0 3.0 2.86102294921875e-6 6.291456e6; -3.0 -1.9073486328125e-6 0.0 -2.097152e6 1.0485760009765625e6 -1.048576e6 -2.0 -2.0 1.9073486328125e-6 -1.048576e6; -3.145728e6 -2.0 0.0 -2.199023255552e12 1.099511627776e12 -1.099511627776e12 -2.097152e6 -2.097152e6 2.0 -1.099511627776e12]
+    l = [2.1998060169745713e7, -6.815749000004768e6, 0.0, 6.0473144770595e12, -2.200981235487733e6, 3.2499976888527238, -1.0e27, 3.9277035187950437e6, -1.0000004768280633, -7.340031008770155e6, 8.24175119090262, -Inf, -Inf, -Inf, 8.388609750000954e6, 6.999987993213482, -3.2985351510759307e12, 6.808923261e6, -Inf, -524291.0242665587, -5.49756076027e11]
+    u = [2.2042100330245703e7, -6.815739621255906e6, 7.499991416927514, 6.047320524373978e12, 8.492437735482965e6, Inf, 2.0990192751766665, 3.936600981197327e6, -1.0000004768280633, -7.340030991224123e6, Inf, Inf, Inf, 4.005825706687016, 8.388609750000954e6, 7.000001993203469, -3.2985351398630693e12, Inf, -9.42114462153639e6, Inf, -5.49756076027e11]
+    for wsk in (:rows, :gram)
+        sol = solve(P, q, A, l, u, ActiveSet(; working_set = wsk))
+        @test sol.status !== PureQPBase.PRIMAL_INFEASIBLE
+    end
+end
+
+@testitem "the infeasibility radius is a setting" begin
+    using PureQPBase, PureDAQP, LinearAlgebra
+
+    # `x = (0, 1e4)` satisfies both rows, so the problem is feasible. The ray the loop finds
+    # proves only that no feasible `x` has `‖x‖∞` below `1e4`: infeasible within the default
+    # radius `primal_tol^(-1/2)`, about `8e3`, and not within `1e6`.
+    P, q = Matrix(1.0I, 2, 2), [0.0, 0.0]
+    A, l, u = [1.0 0.0; 1.0 1.0e-9], [-Inf, 1.0e-5], [0.0, Inf]
+    for wsk in (:rows, :gram)
+        @test solve(P, q, A, l, u, ActiveSet(; working_set = wsk)).status === PureQPBase.PRIMAL_INFEASIBLE
+        sol = solve(P, q, A, l, u, ActiveSet(; working_set = wsk, infeasibility_radius = 1.0e6))
+        @test sol.status !== PureQPBase.PRIMAL_INFEASIBLE
+    end
+
+    @test PureDAQP.ActiveSet{Float64}(ActiveSet()).infeasibility_radius ≈ 1 / sqrt(sqrt(eps(Float64)))
+    @test PureDAQP.ActiveSet{Float32}(ActiveSet()).infeasibility_radius ≈ 1 / sqrt(sqrt(eps(Float32)))
+    @test PureDAQP.ActiveSet{Float64}(ActiveSet(; primal_tol = 1.0e-4)).infeasibility_radius ≈ 100
+    @test PureDAQP.ActiveSet{Float64}(ActiveSet(; infeasibility_radius = 5.0)).infeasibility_radius == 5.0
+    for bad in (0.0, -1.0, Inf, NaN)
+        @test_throws "infeasibility_radius must be" ActiveSet(; infeasibility_radius = bad)
+    end
+end
+
+@testitem "rows of large norm are held to the rounding of their own product" begin
+    using PureQPBase, PureDAQP, LinearAlgebra, Random
+
+    # `Ax` is formed with an error of `eps‖aᵢ‖‖x‖`, so a row of norm `1e8` at a point of size one
+    # cannot be asked to hold to `1.5e-8` of `1 + |zᵢ|`: an answer that is right to the
+    # precision of the data is still an answer. Each problem has `x = 0` feasible, so a row
+    # that binds does so at a vertex where `zᵢ` is zero and its rounding is not.
+    for (T, s) in ((Float64, 1.0e8), (Float32, 1.0e4)), wsk in (:rows, :gram)
+        rng = Xoshiro(1)
+        errors = 0
+        total = 150
+        for _ in 1:total
+            A = T.(s .* randn(rng, 8, 6))
+            sol = solve(Matrix{T}(I, 6, 6), T.(randn(rng, 6)), A, fill(T(-Inf), 8), zeros(T, 8), ActiveSet(; working_set = wsk))
+            errors += sol.status !== PureQPBase.SOLVED
+        end
+        # The unscaled problems fail at a small, fixed rate whatever the guard does.
+        @test errors <= 0.1 * total
+    end
+end
+
+@testitem "the feasibility check does not move when the cost is scaled" begin
+    using PureQPBase, PureDAQP, LinearAlgebra, Random
+
+    # Scaling `P` and `q` by one constant leaves the minimizer where it was and changes the norm of
+    # the reduced rows `A R⁻¹` by its square root. The rounding of `Ax` does not depend on the
+    # cost, so neither does what the check asks of a row.
+
+    # Seven rows in six variables, feasible only at a point far from the origin: a point that
+    # violates a row by the size of the data is not an answer at any scale of the cost.
+    P = [11.0 1.0 0.0 10.0 2.0 1.0; 1.0 12.0 4.0 3.0 -4.0 5.0; 0.0 4.0 8.0 4.0 -3.0 -5.0; 10.0 3.0 4.0 15.0 0.0 0.0; 2.0 -4.0 -3.0 0.0 8.0 -4.0; 1.0 5.0 -5.0 0.0 -4.0 18.0]
+    q = [-2.0, 0.0, 3.0, -2.0, -2.0, -2.0]
+    A = [0.0 -9.5367431640625e-7 2.86102294921875e-6 -1.0 1.0 -1.9073486328125e-6; -2.097152e6 -2.097152e6 3.145728e6 1.099511627776e12 0.0 -1.048575e6; 0.0 -3.0 3.0 -3.145728e6 -3.145728e6 -2.0; 0.0 2.097152e6 -3.145728e6 2.199023255552e12 3.298534883328e12 1.048576e6; -1.0 -2.0 -1.0 -3.145728e6 -1.048576e6 -2.0; 4.0 6.0 2.0 -4.194304e6 4.194304e6 4.0; 2.0 3.0 1.0 -2.097151e6 2.097152e6 2.0]
+    l = [3.000000814693451, -3.298532414689616e12, 9.427750812e6, -Inf, -Inf, 1.2582908e7, 6.291451e6]
+    u = [Inf, -3.298525817631384e12, Inf, -6.597066839598563e12, 1.887437e7, 1.2582908e7, 6.291451e6]
+    for c in (2.0^-80, 2.0^-40, 1.0, 2.0^40), wsk in (:rows, :gram)
+        sol = solve(c * P, c * q, A, l, u, ActiveSet(; working_set = wsk))
+        @test sol.status !== PureQPBase.SOLVED || sol.prim_res < 1.0e-6 * (1 + maximum(abs, A * sol.x))
+    end
+
+    # Rows of norm `1e8` against a cost of `c·I`: the answers are the same as at `c = 1`.
+    for c in (2.0^-40, 2.0^40), wsk in (:rows, :gram)
+        rng = Xoshiro(1)
+        errors = 0
+        total = 100
+        for _ in 1:total
+            A = 1.0e8 .* randn(rng, 8, 6)
+            q = randn(rng, 6)
+            sol = solve(c * Matrix(1.0I, 6, 6), c * q, A, fill(-Inf, 8), zeros(8), ActiveSet(; working_set = wsk))
+            errors += sol.status !== PureQPBase.SOLVED
+        end
+        @test errors <= 0.1 * total
+    end
+end
+
+@testitem "a warm re-solve after the bounds move matches a fresh solve" begin
+    using PureQPBase, PureDAQP, LinearAlgebra, Random
+
+    # Rows that are multiples of one row `a`, with intervals in `t = aᵀx` that overlap or do not
+    # and bounds that move between finite, absent, equal and disjoint: infeasible verdicts are
+    # common, and the working set that proves one is the one the next bounds start from.
+    function disagreements(wsk, eps_prox)
+        count = 0
+        for t in 1:1500
+            rng = MersenneTwister(t)
+            n = rand(rng, 2:5)
+            m = rand(rng, 2:5)
+            P = Matrix(1.0I, n, n)
+            q = randn(rng, n)
+            a = randn(rng, n)
+            c = rand(rng, m) .* 3 .+ 0.2
+            A = c * a'
+            function bounds()
+                lo = randn(rng, m) .* 2
+                hi = lo .+ rand(rng, m) .* 3
+                l = c .* lo
+                u = c .* hi
+                for i in 1:m
+                    r = rand(rng)
+                    r < 0.25 && (l[i] = -Inf)
+                    r > 0.7 && (u[i] = Inf)
+                    0.25 <= r < 0.32 && (l[i] = u[i] = c[i] * lo[i])
+                end
+                return l, u
+            end
+            alg = ActiveSet(; working_set = wsk, eps_prox)
+            l, u = bounds()
+            ws = setup(P, q, A, l, u, alg)
+            solve!(ws)
+            for _ in 1:6
+                l, u = bounds()
+                update!(ws; l, u)
+                warm = solve!(ws)
+                warm_status, warm_x = warm.status, copy(warm.x)
+                fresh = solve(P, q, A, l, u, alg)
+                count += warm_status !== fresh.status
+                if warm_status === PureQPBase.SOLVED && fresh.status === PureQPBase.SOLVED
+                    count += norm(warm_x - fresh.x, Inf) >= 1.0e-5 * (1 + norm(fresh.x, Inf))
+                end
+            end
+        end
+        return count
+    end
+    for wsk in (:rows, :gram), eps_prox in (0.0, 1.0e-4)
+        @test disagreements(wsk, eps_prox) == 0
+    end
+end

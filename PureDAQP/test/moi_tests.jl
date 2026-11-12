@@ -18,10 +18,7 @@
     # count, and `1e-4` reaches every answer here to the tolerance checked below.
     MOI.set(model, MOI.RawOptimizerAttribute("eps_prox"), 1.0e-4)
     # The basis attributes: this method tracks a working set rather than a basis. `ObjectiveBound`:
-    # it has none to report. `test_linear_DUAL_INFEASIBLE`: an unbounded problem reaches
-    # `max_iter` and is reported as `ITERATION_LIMIT`, because a dual active-set method issues no
-    # dual-infeasibility certificate — the status is honest rather than wrong, and not one of the
-    # three MOI accepts here.
+    # it has none to report.
     MOI.Test.runtests(
         model,
         MOI.Test.Config(;
@@ -29,7 +26,6 @@
             exclude = Any[MOI.ConstraintBasisStatus, MOI.VariableBasisStatus, MOI.ObjectiveBound],
         ),
         include = ["test_linear_", "test_quadratic_"],
-        exclude = ["test_linear_DUAL_INFEASIBLE"],
     )
 end
 

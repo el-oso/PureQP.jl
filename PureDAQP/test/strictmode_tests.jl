@@ -71,6 +71,22 @@
             guarantees = (:trim_compatible,)
         ) isa Vector
 
+        # The functions that run only when a solve ends other than at an optimum, which the
+        # iteration above does not reach: the infeasibility check, the unboundedness check, the
+        # feasibility guard on an answer, and the release of rows held at an absent bound. The
+        # Gram working set's pivot refinement runs inside its row insertion.
+        outcome = Any[
+            (PureDAQP.certifiable, (W,)),
+            (PureDAQP.separates, (W, V)),
+            (PureDAQP.unbounded_direction, (W, V)),
+            (PureDAQP.violates_rows, (W,)),
+            (PureDAQP.drop_unbounded_rows!, (LW, V, V)),
+        ]
+        if ws.red.ws.W isa PureDAQP.WorkingSetGram
+            push!(outcome, (PureDAQP.refine_pivot!, (typeof(ws.red.ws.W), V, Int)))
+        end
+        @test test_signatures(outcome; guarantees = (:noalloc,)) isa Vector
+
         @test test_signatures(
             [
                 (PureDAQP.run_daqp!, (RD, V, ALG, Int)),
@@ -154,6 +170,36 @@ end
     Pd = Matrix(X'X / n + I)
     @test iszero(operator_bytes(Pd, q, A, l, u, false))
     @test operator_bytes(Pd, q, A, l, u, true) > 0
+end
+
+@testitem "a solve that ends other than at an optimum allocates nothing at run time" begin
+    using PureDAQP, PureQPBase, LinearAlgebra
+
+    function solve_bytes(ws)
+        solve!(ws)
+        return @allocated solve!(ws)
+    end
+    update_bounds_bytes(w, ll, uu) = (update!(w; l = ll, u = uu); @allocated update!(w; l = ll, u = uu))
+
+    for wsk in (:rows, :gram)
+        # Duplicate rows with disjoint bounds: infeasible, ended by the singular step and the
+        # check of its ray against the caller's rows.
+        P, q, A = Matrix(1.0I, 2, 2), [0.0, -1.0], [1.0 1.0; 1.0 1.0]
+        ws = setup(P, q, A, [10.0, -Inf], [Inf, 1.0], ActiveSet(; working_set = wsk))
+        @test iszero(solve_bytes(ws))
+        @test ws.sol.status === PureQPBase.PRIMAL_INFEASIBLE
+        # The bounds that follow, and the solve from the emptied working set.
+        @test iszero(update_bounds_bytes(ws, [-Inf, -Inf], [3.0, 5.0]))
+        @test iszero(solve_bytes(ws))
+        @test ws.sol.status === PureQPBase.SOLVED
+
+        # Unbounded along `x₂`: the proximal-point loop's last step is tested and reported.
+        alg = ActiveSet(; working_set = wsk, eps_prox = 1.0e-4)
+        wu = setup([1.0 0.0; 0.0 0.0], [0.0, -1.0], reshape([1.0, 1.0], 1, 2), [1.0], [Inf], alg)
+        @test iszero(solve_bytes(wu))
+        @test wu.sol.status === PureQPBase.DUAL_INFEASIBLE
+        @test length(wu.sol.dual_inf_cert) == 2
+    end
 end
 
 @testitem "the workspace aliases name the types setup builds" begin

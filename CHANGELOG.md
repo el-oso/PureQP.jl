@@ -56,6 +56,74 @@ what is true now; this file is where the history lives.
 
 ### Fixed
 
+- **`ActiveSet` `PRIMAL_INFEASIBLE` is a verdict within a radius, and a ray that proves less is
+  not one.** The check on the ray the loop finds required `‖Aᵀy‖∞ < primal_tol·‖y‖∞`, which
+  ignores the size of `A`, and a negative support function, which with `Aᵀy ≠ 0` proves only that
+  no feasible `x` has `‖x‖∞ < −support/‖Aᵀy‖₁`. It now reads `Aᵀy` against `|yᵢ|‖aᵢ‖` and
+  requires that radius to be at least `primal_tol^(-1/2)`, about `8e3`. Against exact arithmetic
+  on 6000 random problems, 2060 are infeasible and all 2060 are now reported
+  `PRIMAL_INFEASIBLE`, where 1948 were and 112 were `NUMERICAL_ERROR`; none of the 2204 feasible
+  problems with `‖x*‖∞ < 1e4` is called infeasible, and 1734 of the 1736 feasible only beyond
+  `1e4` are reported infeasible within the radius. On equality problems feasible by construction,
+  48 of 3000 and 61 of 3000 false `PRIMAL_INFEASIBLE` verdicts, and 80 of 300 at `σ = 1e-8`, are
+  now `NUMERICAL_ERROR`, which says the problem was not decided. The radius is the
+  `infeasibility_radius` setting. Both `Aᵀy` and the support function are floating-point sums, so
+  each side of the radius test is moved against the claim by `(m + 2)·eps` times the sum of its
+  absolute terms; without that, a ray whose support function is one unit in the last place of
+  the terms that cancel in it was accepted on a feasible problem.
+
+- **`ActiveSet` no longer returns `SOLVED` with a row violated.** The loop ends when no row
+  prices in, and on a problem whose working set has pivots that are rounding the multipliers
+  are wrong and the point can violate a row by the size of the data; one random problem of
+  seven rows in six variables returned `SOLVED` with a primal residual of `2.2e3` under `:rows`
+  and `0.38` under `:gram`. After the point is formed, a row that leaves a present bound by more
+  than `primal_tol·(max(1, ‖aᵢ‖₂‖x‖∞) + |zᵢ|)` ends the run as `NUMERICAL_ERROR`. The
+  `‖aᵢ‖₂‖x‖∞` term is the rounding of the product `Ax`, and it is the norm of the caller's row
+  so that scaling the cost does not move it: a version that used the norm of the reduced row
+  `A R⁻¹` returned `SOLVED` with a violation of `8.7e13` on the problem above at a cost scaled by
+  `2⁻⁸⁰`. With rows of norm `1e8`, a version that held every row to `primal_tol·(1 + |zᵢ|)`
+  ended 17 of 150 random problems as `NUMERICAL_ERROR` under `:rows` where this ends 8, and with
+  rows of norm `1e4` in `Float32` 58 where this ends 9 (the test "rows of large norm are held to
+  the rounding of their own product"). The check is one comparison per row. Warm re-solves of
+  problems from `n = 25` to `n = 200` measured within 5% of the time without it, apart from one
+  `:gram` linear program that ends on a different status than before.
+
+- **`ActiveSet` re-solves no longer report `NUMERICAL_ERROR` on a feasible problem after an
+  infeasibility proof or after a bound is removed.** The working set of an infeasibility proof
+  holds the dependent rows of the proof, and a re-solve with consistent bounds read that
+  dependency again; it is now discarded, as it already was after `NUMERICAL_ERROR`. A row held
+  at a bound that `update!` makes infinite is released, since its target was at the size of the
+  stand-in for infinity. In the test "a warm re-solve after the bounds move matches a fresh
+  solve", 9000 re-solves of rows that are multiples of one row, HEAD disagreed with a fresh
+  solve in 2027 under `:rows` and 2009 to 2011 under `:gram`, and now none do.
+
+- **`ActiveSet` read an absent bound on a row of large norm as a bound.** The reduction divides
+  a row and its bounds by the row's norm, which turned the `1e30` that `PureQPBase` stores for
+  an infinite bound into `1e-122` on a row of norm `1e152`; the problem `min ½x₁² − x₂` subject
+  to a lower bound on `x₁ + x₂` returned `SOLVED` with a minimizer where it is unbounded. An
+  absent bound, `-1e30` below or `1e30` above, stays infinite through the reduction, and
+  the Farkas check of an infeasibility proof reads a bound as present anywhere short of that
+  clamp, so a proof that involves a bound of `1e27` is reported `PRIMAL_INFEASIBLE` where it was
+  `NUMERICAL_ERROR`. The termination tests in `PureQPBase` still read a bound beyond `1e26` as
+  infinite.
+
+- **`ActiveSet` with `working_set = :gram` read a nearly dependent row's pivot from rounding.**
+  The pivot of `Mₐ Mₐᵀ` for a row at distance `σ` from the span of the held rows is formed by
+  cancellation and carries an absolute error near `eps`, which is the size of the pivot itself
+  at `σ ≈ 3e-8`. A pivot below `100·eps/min(D)`, or one that rounded to zero, is now recomputed
+  from the explicit residual `‖m − Mₐᵀc‖²` after one refinement of `c`. On three equality rows
+  with the third at `σ = 3e-8` from the span of the first two, 85 of 300 solves failed: 59
+  returned a point that violates a row, 12 reported `PRIMAL_INFEASIBLE` and 14
+  `NUMERICAL_ERROR`. None do now; `:rows` was unaffected. Elsewhere the refinement accepts any
+  recomputed pivot above `eps`, so a working set with pivots that are rounding can still end in
+  a wrong point, which the feasibility check above turns into `NUMERICAL_ERROR`.
+
+- **`copyto!` between two `Solution`s threw when the status moved to or from an infeasibility.**
+  The certificates are empty unless the solve found one, so a kept solution refilled from a
+  workspace changed their length. A certificate whose length differs is now replaced by a
+  copy, and the vectors the destination held are left as they were: a workspace shares one empty
+  vector between its two certificates, so changing one in place would change what it reports.
+
 - **A `P` replaced by `update!` reached the interior-point method's next solve.**
   `ProductReduced` keeps the weight-independent `c·D P D + σI` between refactorizations, and
   only `factorize!` writes it. The interior-point method refactorizes at each iteration's
@@ -65,6 +133,30 @@ what is true now; this file is where the history lives.
   reaches a factorization that nothing has written.
 
 ### Added
+
+- **`ActiveSet` reports `DUAL_INFEASIBLE` for an unbounded problem whose direction is exact.**
+  With `eps_prox > 0` the proximal-point loop moves `x` along a descent direction for as long as
+  it runs. When it ends on `max_prox` passes and its last step, with the components below
+  `sqrt(eps)/16` of its largest set to zero, has `qᵀd < 0`, a zero floating-point product `Pd`
+  and no row moving toward a present bound, the status is `DUAL_INFEASIBLE` and
+  `Solution.dual_inf_cert` holds the direction. A direction that is exact only to rounding stays
+  `MAX_ITER_REACHED` with its point, as does the bundle master problem of darnstrom/daqp#222. An
+  infeasible problem can have an exact direction too, and 10 of the exactly infeasible runs
+  below returned `DUAL_INFEASIBLE`.
+  Against exact `Rational` arithmetic on 1200 small problems, 19200 solves, a version that
+  accepted the direction to a tolerance of `1.5e-8` reported 3621 bounded problems unbounded,
+  among them an ordinary problem with its cost scaled by `2⁻³⁰`. This version reports none of
+  13664 bounded runs, and detects 619 of the 1280 exactly unbounded runs. The rest end
+  `MAX_ITER_REACHED` (581), `NUMERICAL_ERROR` (4), `SOLVED` (40, against 42 at HEAD) and a
+  thrown error (36, as at HEAD). Of the 1239 certificates it returned, 24 have a residual in
+  exact arithmetic, at most `3e-16`, because a floating-point zero is not an exact one.
+  `test_linear_DUAL_INFEASIBLE` passes through the MathOptInterface wrapper, whose test checks
+  the termination status and not the direction.
+
+- **`ActiveSet` takes an `infeasibility_radius`**, default `primal_tol^(-1/2)`. It is the size
+  of `x` within which a ray that proves `PRIMAL_INFEASIBLE` must rule out every point, in the
+  units of the problem; a ray with a smaller radius ends the run as `NUMERICAL_ERROR`. It must
+  be finite and positive.
 
 - **The `always_factorize` option**, default `false`, starts every solve with a full factorization
   instead of one that refreshes only the weight-dependent part. Nothing in either algorithm

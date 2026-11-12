@@ -24,7 +24,7 @@ simply not a converged one, and are returned rather than discarded.
 
 | status | meaning |
 |---|---|
-| `PRIMAL_INFEASIBLE` | a certificate was found; it is in `Solution.prim_inf_cert` |
+| `PRIMAL_INFEASIBLE` | a certificate was found; it is in `Solution.prim_inf_cert`. `ActiveSet` leaves that empty, and its verdict holds within a radius of `x` (its `infeasibility_radius`) |
 | `DUAL_INFEASIBLE` | a certificate was found; it is in `Solution.dual_inf_cert` |
 | `PRIMAL_INFEASIBLE_INACCURATE`, `DUAL_INFEASIBLE_INACCURATE` | the same certificates, established only at ten times the requested tolerances |
 | `NON_CONVEX` | the residuals diverged, which a convex problem's cannot |
@@ -169,19 +169,18 @@ across however many calls were made, and it *is* counted in `run_time`: in the l
 caller pays. It resets once reported, so each solve accounts for its own updates and no
 others.
 
-!!! warning "An algorithm may hand back the same `Solution` on every solve"
-    The type is mutable so that an algorithm can keep one and refill it, which is what lets a
+!!! warning "A workspace hands back the same `Solution` on every solve"
+    The type is mutable so that a workspace can keep one and refill it, which is what lets a
     solve allocate nothing at all — a fresh one costs an allocation for the object itself
-    however few of its arrays are new. `ActiveSet` does this: the object
+    however few of its arrays are new. Every algorithm does this: the object
     [`solve!`](@ref) returns is the workspace's own, its `x` and `y` are the workspace's own
     arrays, and the next solve writes through all of it.
 
     So a `Solution` held across a solve is not a record of the earlier one. To keep an
-    answer, copy what you need — `copy(sol.x)`, `sol.obj_val` — before solving again.
+    answer, copy what you need — `copy(sol.x)`, `sol.obj_val` — before solving again, or keep
+    a whole `Solution` with [`copy`](@ref) and refill it with [`copyto!`](@ref).
     Reading it straight after the solve that produced it, which is what almost every caller
     does, is unaffected.
-
-    `OperatorSplitting` and `InteriorPoint` return a fresh one per solve.
 """
 mutable struct Solution{T <: Real}
     x::Vector{T}
@@ -275,27 +274,31 @@ end
 """
     copyto!(dest::Solution, src::Solution) -> dest
 
-Overwrite `dest` with `src`, allocating nothing.
+Overwrite `dest` with `src`. Allocates nothing unless a certificate changes length.
 
 What [`copy`](@ref) is for, for a caller that cannot allocate: keep one `Solution` of your own
 alongside the workspace's, and refill it after each solve. `copy` builds five vectors and is
 the wrong thing inside a loop held to no allocation.
 
-`dest` must already hold vectors of the right lengths, which it does when it came from `copy`
-of a solution of the same problem. Sizes that do not match throw, rather than resizing: a
-`dest` of the wrong length is a different problem's solution, and quietly reshaping it would
-hide that.
+`dest.x` and `dest.y` must already have the lengths of `src`'s, which they do when `dest` came
+from `copy` of a solution of the same problem. Sizes that do not match throw, rather than
+resizing: a `dest` of the wrong length is a different problem's solution, and quietly
+reshaping it would hide that.
+
+The two certificates are the exception. Their length follows the status, empty unless the
+solve found a certificate, so a solution that is kept across solves changes it whenever the
+status moves to or from an infeasibility. A certificate of `dest` whose length differs from
+`src`'s is replaced by a copy of `src`'s, which allocates once for that change. `dest`'s
+certificate vectors are never resized in place, because a workspace's solution points both at
+one shared empty vector, and resizing it would change what the workspace reports.
 """
 function Base.copyto!(dest::Solution{T}, src::Solution{T}) where {T}
-    (
-        length(dest.x) == length(src.x) && length(dest.y) == length(src.y) &&
-            length(dest.prim_inf_cert) == length(src.prim_inf_cert) &&
-            length(dest.dual_inf_cert) == length(src.dual_inf_cert)
-    ) || _solution_mismatch()
+    (length(dest.x) == length(src.x) && length(dest.y) == length(src.y)) || _solution_mismatch()
     copyto!(dest.x, src.x)
     copyto!(dest.y, src.y)
-    copyto!(dest.prim_inf_cert, src.prim_inf_cert)
-    copyto!(dest.dual_inf_cert, src.dual_inf_cert)
+    shared = dest.prim_inf_cert === dest.dual_inf_cert
+    dest.prim_inf_cert = refill_certificate!(dest.prim_inf_cert, src.prim_inf_cert, false)
+    dest.dual_inf_cert = refill_certificate!(dest.dual_inf_cert, src.dual_inf_cert, shared)
     dest.status = src.status
     dest.obj_val = src.obj_val
     dest.dual_obj_val = src.dual_obj_val
@@ -320,8 +323,20 @@ function Base.copyto!(dest::Solution{T}, src::Solution{T}) where {T}
     return dest
 end
 
+"""
+    refill_certificate!(d, s, shared) -> Vector
+
+`s` copied into `d` when they have the same length, and a copy of `s` otherwise. `shared` says
+`d` is also the other certificate of its solution: a nonempty vector held by both cannot be
+overwritten for one without changing the other, so it is replaced as well.
+"""
+@inline function refill_certificate!(d::Vector{T}, s::Vector{T}, shared::Bool) where {T}
+    length(d) == length(s) && (isempty(s) || !shared) && return copyto!(d, s)
+    return copy(s)
+end
+
 @noinline _solution_mismatch() =
-    throw(DimensionMismatch("the destination solution's vectors must match the source's"))
+    throw(DimensionMismatch("the destination solution's x and y must match the source's"))
 
 """
     unit_certificate!(dest, scratch, s, src, scaled) -> dest

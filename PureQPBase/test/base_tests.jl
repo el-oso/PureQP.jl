@@ -83,3 +83,46 @@ end
     @test_throws MethodError solve(P, q, A, l, u)
     @test_throws MethodError setup(P, q, A, l, u)
 end
+
+@testitem "copyto! between solutions follows a certificate without touching shared vectors" begin
+    using PureQPBase: empty_solution, no_certificate, DUAL_INFEASIBLE, SOLVED
+
+    # A workspace's solution points both certificates at one empty vector. A certificate that
+    # arrives must not be written into it, or every later result would carry one.
+    none = no_certificate(Float64)
+    dest = empty_solution(zeros(2), zeros(1), none, none)
+    src_cert = empty_solution(fill(NaN, 2), fill(NaN, 1), none, [0.0, 1.0])
+    src_cert.status = DUAL_INFEASIBLE
+    src_plain = empty_solution([1.0, 2.0], [3.0], none, none)
+    src_plain.status = SOLVED
+
+    @test copyto!(dest, src_cert) === dest
+    @test dest.status === DUAL_INFEASIBLE
+    @test dest.dual_inf_cert == [0.0, 1.0]
+    @test isempty(dest.prim_inf_cert)
+    @test isempty(none)
+    @test dest.dual_inf_cert !== src_cert.dual_inf_cert
+
+    # And back to a plain result: the certificate is empty again, and no vector was resized.
+    @test copyto!(dest, src_plain) === dest
+    @test dest.status === SOLVED
+    @test isempty(dest.dual_inf_cert) && isempty(dest.prim_inf_cert)
+    @test dest.x == [1.0, 2.0] && dest.y == [3.0]
+    @test isempty(none) && isempty(src_cert.prim_inf_cert)
+
+    # A destination that holds one vector for both certificates keeps the other one intact.
+    shared = [0.0, 0.0]
+    both = empty_solution(zeros(2), zeros(1), shared, shared)
+    both_src = empty_solution(zeros(2), zeros(1), [1.0, 1.0], [2.0, 2.0])
+    copyto!(both, both_src)
+    @test both.prim_inf_cert == [1.0, 1.0]
+    @test both.dual_inf_cert == [2.0, 2.0]
+
+    # A solve that stays at one status allocates nothing.
+    copyto!(dest, src_plain)
+    @test (@allocated copyto!(dest, src_plain)) == 0
+
+    # The vectors the destination holds for x and y still have to match.
+    other = empty_solution(zeros(3), zeros(1), none, none)
+    @test_throws "must match the source" copyto!(other, src_plain)
+end

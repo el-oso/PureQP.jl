@@ -244,12 +244,13 @@ This is the representation the method was published with, and it is the faster o
 a row entering costs one rank-one extension of the factorization against `k` values, where
 [`WorkingSetQR`](@ref) orthogonalizes the entering row against every row held.
 
-What it cannot do is decide rank. The Gram matrix has the condition number of `Mₐ` squared,
-and the pivot that would decide dependence is formed by cancellation, so below roughly
-`sqrt(k·eps)` it cannot tell a dependent row from an independent one. On a reduction whose
-conditioning reaches that far, the method declares a working set singular that is not, walks
-a direction that means nothing, and reports a feasible problem infeasible. `qrset.jl` says
-what the other representation does instead.
+The Gram matrix has the condition number of `Mₐ` squared, so its pivots and the multipliers
+that solve against it carry that conditioning. The pivot that decides dependence is formed by
+cancellation, which [`refine_pivot!`](@ref) replaces with an explicit residual when the pivot is
+small enough for the cancellation to matter. On a reduction whose conditioning is worse than
+that repairs, the method can declare a working set singular that is not, walk a direction that
+means nothing, and report a feasible problem infeasible. `qrset.jl` says what the other
+representation does instead.
 
 Choose it with `ActiveSet(; working_set = :gram)` when the problems are known to be well
 conditioned and the speed matters.
@@ -261,12 +262,16 @@ struct WorkingSetGram{T <: Real}
     # entering row's products against the set are one more.
     Ma::Matrix{T}
     g::Vector{T}    # scratch: the entering row against the rows held
+    r::Vector{T}    # scratch: the part of the entering row outside the span of the rows held
+    c::Vector{T}    # scratch: the coefficients of the entering row's projection on that span
 end
 
 "An empty working set over `n` variables, sized for the largest it can reach."
 function WorkingSetGram{T}(n::Integer, kmax::Integer) where {T <: Real}
     k = Int(kmax)
-    return WorkingSetGram{T}(GramLDL{T}(k), zeros(T, Int(n), k), zeros(T, k))
+    return WorkingSetGram{T}(
+        GramLDL{T}(k), zeros(T, Int(n), k), zeros(T, k), zeros(T, Int(n)), zeros(T, k)
+    )
 end
 
 @inline nactive(W::WorkingSetGram) = W.F.k
@@ -281,12 +286,91 @@ not, which is what [`full_set_step!`](@ref) exists for.
 @inline maxrows(W::WorkingSetGram) = size(W.Ma, 2)
 
 """
+A new pivot at most this multiple of `eps(T)/min(D)` is recomputed from an explicit residual.
+
+The pivot is `‖m‖² − gᵀc` for `c` solving the Gram system, a difference of two numbers near one
+whose rounding error is about `eps(T)`, and `c` itself carries that error amplified by `1/min(D)`.
+A pivot below this threshold may be dominated by that error. The rows of `M` have unit norm.
+"""
+const PIVOT_REFINE_GAIN = 100
+
+"""
+    suspect_pivot(F, k) -> Bool
+
+Whether the pivot just appended after `k` rows is small enough for rounding to dominate it. A
+pivot stored as zero counts, because [`add_row!`](@ref) stores zero for any pivot that came out
+at or below `eps`, and that includes pivots whose exact value is above it. A set that holds a
+dependent row has no accurate `min(D)` to test against and never counts. Inlined, because it
+runs on every row that enters and is false for nearly all of them.
+"""
+@inline function suspect_pivot(F::GramLDL{T}, k::Int) where {T}
+    k > 0 || return false
+    dnew = F.D[k + 1]
+    dmin = typemax(T)
+    for i in 1:k
+        d = F.D[i]
+        dmin = d < dmin ? d : dmin
+    end
+    return dmin > zero(T) && dnew * dmin < PIVOT_REFINE_GAIN * eps(T)
+end
+
+"""
+    refine_pivot!(W, m_r, k) -> W
+
+Recompute the pivot of the row just appended as the squared norm of its residual against the
+`k` rows held, for a pivot [`suspect_pivot`](@ref) flags.
+
+The coefficients `c` of the projection of `m_r` on the held rows come from the factorization and
+are refined once against the explicit residual `r = m_r − Mₐᵀc`. The pivot is then `‖r‖²`, which
+is formed without the cancellation, and the new row of `L` is `Lᵀc`, the row that reproduces `g`
+under the factorization. A pivot that is still at or below `eps(T)` is stored as an exact zero,
+which is what [`first_dependent`](@ref) reads.
+"""
+@noinline function refine_pivot!(W::WorkingSetGram{T}, m_r::AbstractVector{T}, k::Int) where {T}
+    F = W.F
+    Mk = view(W.Ma, :, 1:k)
+    c = view(W.c, 1:k)
+    r = W.r
+    for i in 1:k
+        c[i] = F.L[k + 1, i]
+    end
+    backward_L!(F, c)
+    # `r = m_r − Mₐᵀc`, then one correction of `c` against it, then `r` again.
+    for pass in 1:2
+        for i in eachindex(r)
+            r[i] = m_r[i]
+        end
+        mul!(r, Mk, c, -one(T), one(T))
+        pass == 2 && break
+        rhs = view(W.g, 1:k)
+        mul!(rhs, transpose(Mk), r)
+        solve_gram!(F, rhs)
+        for i in 1:k
+            c[i] += rhs[i]
+        end
+    end
+    pivot = dot(r, r)
+    # `Lᵀc`, in place of the row the factorization wrote.
+    for j in 1:k
+        s = c[j]
+        for i in (j + 1):k
+            s += F.L[i, j] * c[i]
+        end
+        F.L[k + 1, j] = s
+    end
+    F.D[k + 1] = pivot > eps(T) ? pivot : zero(T)
+    return W
+end
+
+"""
     add_row!(W, m_r) -> Bool
 
 Append `m_r` to the working set. `false` when the row is not finite, which is the one case
 the caller cannot continue from.
 
-A dependent row goes in at `D[k] = 0`, which is the value [`first_dependent`](@ref) reads.
+A dependent row goes in at `D[k] = 0`, which is the value [`first_dependent`](@ref) reads. A
+pivot small enough for rounding to dominate it is first recomputed by [`refine_pivot!`](@ref),
+and the row is dependent only if the recomputed pivot is at or below `eps(T)`.
 
 The tolerance is `eps(T)` rather than the `sqrt(eps(T))` the factorization defaults to,
 because `D` holds the *square* of the distance `R`'s diagonal holds in the other
@@ -307,7 +391,11 @@ function add_row!(W::WorkingSetGram{T}, m_r::AbstractVector{T}) where {T}
     # cancellation, so it is noise of any size rather than the zero `first_dependent` reads, and
     # a set claiming full rank in fewer dimensions than it has rows answers a singular system as
     # though it were solvable.
-    k + 1 > size(W.Ma, 1) && (W.F.D[k + 1] = zero(T))
+    if k + 1 > size(W.Ma, 1)
+        W.F.D[k + 1] = zero(T)
+    elseif suspect_pivot(W.F, k)
+        refine_pivot!(W, m_r, k)
+    end
     # An explicit loop rather than `copyto!`, which checks whether two views of one matrix
     # alias and copies the source when it cannot tell -- an allocation site the hot-path
     # guarantee sees whether or not the branch can be reached.
@@ -345,9 +433,10 @@ a working set singular where it is not, walks a direction that means nothing, an
 feasible problem infeasible. At the default `zero_tol` the square is `eps(T)`, the tolerance
 [`add_row!`](@ref) admits a row at, so the two tests agree about which rows are dependent.
 
-Squaring cannot recover what forming `Mₐ Mₐᵀ` destroyed: the pivot is built by cancellation,
-so below roughly `sqrt(k·eps)` no tolerance separates a dependent row from an independent one.
-That is the limit [`WorkingSetQR`](@ref) exists for.
+A pivot small enough for the cancellation in forming it to matter is recomputed from an explicit
+residual when the row enters ([`refine_pivot!`](@ref)), so the entry this reads is accurate
+there. The multipliers still solve the squared system, which is the limit
+[`WorkingSetQR`](@ref) exists for.
 """
 @inline function first_dependent(W::WorkingSetGram{T}, zero_tol::T) where {T}
     F = W.F

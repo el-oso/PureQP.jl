@@ -13,12 +13,12 @@ keeps the working set too, which is what makes a warm start cheap here.
 """
 mutable struct ActiveSetWorkspace{
         T <: Real, MP <: AbstractMatrix, MA <: AbstractMatrix, V <: AbstractVector{T},
-        RD <: DAQPReduction{T}, ALG <: ActiveSet{T, T, T, T},
+        RD <: DAQPReduction{T}, ALG <: ActiveSet{T, T, T, T, T},
     } <: QPWorkspace{T}
     # Not `const`: `update!` replaces `P` or `A` by handing back another `QPData` around the
     # same vectors, which is what an immutable problem costs and all it costs.
     prob::QPData{T, MP, MA, V}
-    # Concretely typed for the same reason `red` is: `ActiveSet{T, T, T, T}` leaves the
+    # Concretely typed for the same reason `red` is: `ActiveSet{T, T, T, T, T}` leaves the
     # working-set parameter free, and a field of that type is abstract.
     algorithm::ALG
     options::Options{T}
@@ -43,6 +43,14 @@ mutable struct ActiveSetWorkspace{
     # One entry per constraint row, where a candidate infeasibility certificate is written
     # back into the caller's own indexing before it is checked.
     const ycert::V
+    # The 2-norm of each row of `A`, which sets the rounding of the product `Ax`. Read once when
+    # the problem is set up and again when `A` is replaced.
+    const row_norm::V
+    # The dual infeasibility certificate, a direction in the caller's variables, and the empty
+    # vector `Solution.dual_inf_cert` holds when there is none. Both are allocated once so that
+    # handing back either is a rebinding.
+    const cert_dual::V
+    const cert_none::V
     # Refilled and handed back by every solve, so a solve allocates nothing at all. Its `x`
     # and `y` are this workspace's own arrays. `Solution` says what that means for a caller
     # holding one across a solve.
@@ -64,7 +72,7 @@ const DenseWorkspace{T} = ActiveSetWorkspace{
         T, UpperTriangular{T, Matrix{T}},
         LowerTriangular{T, Transpose{T, Matrix{T}}}, WorkingSetQR{T}, DenseRows{T},
     },
-    ActiveSet{T, T, T, T, WorkingSetQR},
+    ActiveSet{T, T, T, T, T, WorkingSetQR},
 }
 
 """
@@ -84,7 +92,7 @@ const KroneckerWorkspace{T} = ActiveSetWorkspace{
             Transpose{T, KroneckerCholesky{T}},
         },
     },
-    ActiveSet{T, T, T, T, WorkingSetQR},
+    ActiveSet{T, T, T, T, T, WorkingSetQR},
 }
 
 function Base.show(io::IO, ws::ActiveSetWorkspace{T}) where {T}
@@ -230,7 +238,7 @@ function setup_backend(
     prob = validated_data(T, n, m, P, q, A, l, u)
     # `convert` rather than `Vector{T}`: that copies even when the argument already has the
     # type asked for, and the reduction only reads this data.
-    iseq = [prob.l0[i] == prob.u0[i] for i in 1:m]
+    iseq = [is_equality(prob.l0[i], prob.u0[i]) for i in 1:m]
     # The working set comes from the algorithm's type, not its `working_set` field: that leaves
     # one type for the reduction to settle rather than two, which is what keeps this
     # construction statically resolvable for a `P` whose factor has two forms.
@@ -250,12 +258,28 @@ function setup_backend(
         x, y, z,
         UNSOLVED, false, POLISH_NOT_PERFORMED, 0, false,
         (time_ns() - t0) / 1.0e9, 0.0, 0.0,
-        zeros(T, n), zeros(T, m),
-        # A dual active-set method reports no infeasibility certificate, so neither vector
-        # ever grows and neither needs memory reserved for it.
+        zeros(T, n), zeros(T, m), zeros(T, m),
+        zeros(T, n), T[],
+        # The Farkas vector of a primal infeasibility proof is checked in `ycert` and not
+        # reported, so `prim_inf_cert` stays empty. A dual certificate is a direction in the
+        # caller's variables, reported from `cert_dual`.
         empty_solution(x, y, T[], T[]),
     )
+    row_norms!(ws.row_norm, prob.A, ws.px)
     return ws
+end
+
+"""
+    row_norms!(dest, A, buf) -> dest
+
+The 2-norm of each row of `A`, read one row at a time through `buf`, a vector of length `n`.
+"""
+function row_norms!(dest::AbstractVector, A, buf::AbstractVector)
+    for i in eachindex(dest)
+        dense_row!(buf, A, i)
+        dest[i] = norm(buf)
+    end
+    return dest
 end
 
 """
@@ -305,12 +329,11 @@ lives in the reduced space of `M = A R⁻¹`, and the factorization it comes fro
 singular can have come from rounding rather than from a dependency among the rows.
 
 The claim is settled where it is stated: against the caller's own data. Written back to one
-entry per row, the direction is a Farkas certificate exactly when `Aᵀy = 0` and the support
-function of `y` over `[l, u]` is negative, and both are checked here directly. This is the
-test the operator-splitting method applies to its own certificates
-([`is_primal_infeasible`](@ref)), which never forms `A R⁻¹` and so never needs a rank
-decision; the tolerance is the solve's own `eps_prim`, because a certificate holding to that
-tolerance is what any numerical method can honestly assert.
+entry per row as `y`, the direction is a Farkas certificate when `Aᵀy = 0` and the support
+function of `y` over `[l, u]` is negative. In floating point `Aᵀy` is not zero, and the
+direction then proves infeasibility only within a radius of `x`; [`separates`](@ref) accepts it
+when that radius is at least `infeasibility_radius`, with the rounding error of both sums
+counted against it.
 
 It runs once, on the branch that has already decided to report infeasibility, so no solve
 that reaches an answer pays for it.
@@ -339,24 +362,137 @@ function certifiable(ws::ActiveSetWorkspace{T}) where {T}
     return separates(ws, y)
 end
 
-"Whether `y` is a Farkas certificate of primal infeasibility for the caller's own data."
+"""
+    separates(ws, y) -> Bool
+
+Whether `y` proves the caller's own rows infeasible within `infeasibility_radius`. After the
+projection onto the polar of the recession cone of `[l, u]`, with `s` the support function of
+`[l, u]` at `y`:
+
+- `Aᵀy` is at rounding level against the terms that cancel in it, `‖Aᵀy‖∞ ≤ primal_tol·max|yᵢ|‖aᵢ‖₂`;
+- no `x` with `‖x‖∞ < ρ` satisfies the rows, for `ρ = −s/‖Aᵀy‖₁`, and `ρ` is at least
+  `infeasibility_radius`.
+
+Both `s` and `Aᵀy` are computed in floating point, so the second condition is evaluated with each
+side moved against the claim by the rounding error of its sum, `(m + 2)·eps` times the sum of the
+absolute terms. `y` is overwritten by the projection.
+"""
 function separates(ws::ActiveSetWorkspace{T}, y) where {T}
     prob = ws.prob
     ny = norm_inf(y)
     ny > DIVISION_TOL(T) || return false
     # Outside the polar of the recession cone a direction cannot separate at all, and the
-    # support function below would read a bound the row does not have.
-    project_polar_reccone!(y, prob.l0, prob.u0)
+    # support function below would read a bound the row does not have. The projection reads a
+    # bound as absent only at the clamp, as the rest of this solver does.
+    absent = prevfloat(INFTY(T))
+    for i in eachindex(y)
+        y[i] = polar_reccone(y[i], prob.l0[i], prob.u0[i], absent)
+    end
     norm_inf(y) > DIVISION_TOL(T) || return false
-    support_plain(y, prob.l0, prob.u0) < zero(T) || return false
     # `adjoint` rather than `transpose`: the element type is real, so the two products are the
     # same one, and it is the adjoint that an operator supplying products only answers. Asked
     # for the transpose it falls back to reading entries, which such an operator refuses.
     mul!(ws.px, adjoint(prob.A), y)
-    # Relative to the direction's own size, at the tolerance this algorithm already prices
-    # rows against. A residual below it is a certificate of the problem the caller posed to
-    # the accuracy the caller asked for.
-    return norm_inf(ws.px) < ws.algorithm.primal_tol * norm_inf(y)
+    # Only the rows of the ray are read, each once: for the rounding scale of `Aᵀy` and of the
+    # support function.
+    row = ws.red.ws.xold
+    support = zero(T)
+    support_abs = zero(T)
+    row_scale = zero(T)
+    row_sum = zero(T)
+    for i in eachindex(y)
+        yi = y[i]
+        iszero(yi) && continue
+        bound = yi > zero(T) ? prob.u0[i] : prob.l0[i]
+        support += yi * bound
+        support_abs += abs(yi * bound)
+        dense_row!(row, prob.A, i)
+        row_scale = max(row_scale, abs(yi) * norm(row))
+        row_sum += abs(yi) * norm(row, 1)
+    end
+    support < zero(T) || return false
+    norm_inf(ws.px) <= ws.algorithm.primal_tol * row_scale || return false
+    gamma = (length(y) + 2) * eps(T)
+    proved = -support - gamma * support_abs
+    needed = ws.algorithm.infeasibility_radius * (norm(ws.px, 1) + gamma * row_sum)
+    return proved >= needed
+end
+
+"""
+    unbounded_direction(ws, x) -> Bool
+
+Whether the last step of the proximal-point loop, `x − xold`, certifies that the problem is
+unbounded below.
+
+A step certifies when it descends, `qᵀd < 0`, leaves the cost exactly flat, `Pd = 0`, and moves
+no row toward a bound that is present: `Ad` has no positive entry at a row with a finite upper
+bound and no negative entry at one with a finite lower bound. The components of the step below
+`sqrt(eps)/16` of its largest are first set to zero. An unbounded problem makes every pass of the
+loop move the iterate along such a direction, and the components that curvature resists shrink
+geometrically, so the last step is the candidate.
+
+The conditions hold exactly or not at all. A tolerance cannot tell an unbounded problem from a
+bounded one whose minimizer lies beyond the passes the loop takes, whatever its size: curvature
+of `1e-9` against a tolerance of `1e-8` is the whole difference. A step that satisfies the
+conditions only to a tolerance leaves the status at `MAX_ITER_REACHED`, with the point reached.
+
+Only the proximal-point loop produces one: with `eps_prox = 0` the problem is bounded below, as
+the method then needs `P ≻ 0`. The step is written over `xold`, and `Pd` and `Ad` into `px` and
+`z`, which a run that ended on its iteration limit has no other use for.
+"""
+function unbounded_direction(ws::ActiveSetWorkspace{T}, x::AbstractVector{T}) where {T}
+    iszero(ws.algorithm.eps_prox) && return false
+    prob, d = ws.prob, ws.red.ws.xold
+    for j in eachindex(d)
+        d[j] = x[j] - d[j]
+    end
+    nd = norm_inf(d)
+    nd > DIVISION_TOL(T) || return false
+    # A component that the curvature still resists is a fraction of the step that shrinks each
+    # pass, and below `sqrt(eps)/16` of it, `6e-10` in `Float64`, it is rounding. It is set to
+    # zero, and the direction that remains is what the conditions below test.
+    snap = sqrt(eps(T)) / 16 * nd
+    for j in eachindex(d)
+        abs(d[j]) < snap && (d[j] = zero(T))
+    end
+    dot(prob.q0, d) < zero(T) || return false
+    mul!(ws.px, prob.P, d)
+    iszero(norm_inf(ws.px)) || return false
+    mul!(ws.z, prob.A, d)
+    for i in eachindex(ws.z)
+        zi = ws.z[i]
+        (zi > zero(T) && is_upper_bound(prob.u0[i])) && return false
+        (zi < zero(T) && is_lower_bound(prob.l0[i])) && return false
+    end
+    unit_certificate!(ws.cert_dual, ws.px, d, d, false)
+    return true
+end
+
+"""
+    violates_rows(ws) -> Bool
+
+Whether a row of `ws.z = Ax` leaves a bound that is present by more than
+`primal_tol·(max(1, ‖aᵢ‖₂‖x‖∞) + |zᵢ|)`.
+
+The product `Ax` is formed with an error of about `eps‖aᵢ‖‖x‖`, so a row of large norm at a
+point of size one is held to the rounding of its own product and not to `primal_tol`. The norm
+is that of the caller's row, so scaling the cost does not move it. The floor of one is that of pricing's absolute tolerance, and `|zᵢ|` lets a
+row of value `1e8` be off by a part in `1e8`. A bound that is absent is not a bound, whatever
+the row's value. The comparison is a product rather than a quotient and the loop ends at the
+first row that fails: it runs on every solve, and a row that violates is the exception.
+"""
+function violates_rows(ws::ActiveSetWorkspace{T}) where {T}
+    prob = ws.prob
+    tol = ws.algorithm.primal_tol
+    row_norm = ws.row_norm
+    xn = max(one(T), norm_inf(ws.x))
+    for i in eachindex(ws.z)
+        zi = ws.z[i]
+        slack = tol * (max(one(T), row_norm[i] * xn) + abs(zi))
+        (zi > prob.u0[i] && is_upper_bound(prob.u0[i]) && zi - prob.u0[i] > slack) && return true
+        (zi < prob.l0[i] && is_lower_bound(prob.l0[i]) && prob.l0[i] - zi > slack) && return true
+    end
+    return false
 end
 
 "Record the outcome of a pass, whatever it was, and build the result."
@@ -368,7 +504,19 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
         # The refinement reads `ws.z` for the active rows' residual, and moves the point it
         # was computed from, so `z` is formed again from the corrected `x`.
         refine_primal!(ws) && mul!(ws.z, prob.A, ws.x)
-        ws.status = SOLVED
+        if !violates_rows(ws)
+            ws.status = SOLVED
+        else
+            # The loop stopped because no row prices in, and a row is violated all the same: the
+            # multipliers solved a system whose pivots were rounding, so the point is not the
+            # working set's. A point that violates the rows is not reported as an answer.
+            fill!(ws.x, T(NaN))
+            fill!(ws.y, T(NaN))
+            fill!(ws.z, T(NaN))
+            reset_working_set!(ws.red)
+            ws.warm = false
+            ws.status = NUMERICAL_ERROR
+        end
     elseif status == LDP_INFEASIBLE
         fill!(ws.x, T(NaN))
         fill!(ws.y, T(NaN))
@@ -381,8 +529,20 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
             ws.status = PRIMAL_INFEASIBLE
         else
             ws.status = NUMERICAL_ERROR
-            ws.warm = false
         end
+        # The working set the loop stopped on holds the dependent rows of the failed pass. A
+        # later solve with other bounds, from `update!` or `warm_start!`, would read that
+        # dependency again, so the set is emptied to the equality rows.
+        reset_working_set!(ws.red)
+        ws.warm = false
+    elseif status == LDP_ITERATION_LIMIT && unbounded_direction(ws, x)
+        # Passes that keep moving the iterate along a descent direction of the cost that the
+        # constraints allow are an unbounded problem, which the dual active-set method has no
+        # other way to see: its dual is infeasible, and nothing in the working set says so.
+        fill!(ws.x, T(NaN))
+        fill!(ws.y, T(NaN))
+        fill!(ws.z, T(NaN))
+        ws.status = DUAL_INFEASIBLE
     elseif status == LDP_ITERATION_LIMIT
         # `MAX_ITER_REACHED` reports a point, so the iterate the loop stopped at is adopted
         # here. Left alone, the workspace keeps whatever it held before -- the zeros `setup`
@@ -398,9 +558,9 @@ function finish_solve!(ws::ActiveSetWorkspace{T}, prob, x, status, t0) where {T}
         fill!(ws.y, T(NaN))
         fill!(ws.z, T(NaN))
         ws.status = NUMERICAL_ERROR
-        # The working set it cycled on is still in place. Carried into the next solve it
-        # cycles again, so one bad pass would end every pass after it; the next one starts
-        # from nothing instead.
+        # The working set it cycled on would cycle again if carried into the next solve, so one
+        # bad pass would end every pass after it; the set is emptied to the equality rows.
+        reset_working_set!(ws.red)
         ws.warm = false
     end
     ws.solve_time = (time_ns() - t0) / 1.0e9
@@ -452,7 +612,7 @@ function update!(
     # that never reach the branch holding the comprehension.
     data = ws.prob
     if !isnothing(P) || !isnothing(A)
-        iseq = [data.l0[i] == data.u0[i] for i in 1:data.m]
+        iseq = [is_equality(data.l0[i], data.u0[i]) for i in 1:data.m]
         red = reduce_qp(
             factored_operand(T, data.P), row_operand(T, data.A),
             convert(Vector{T}, data.u0), convert(Vector{T}, data.l0),
@@ -461,6 +621,7 @@ function update!(
         # `validate_update!` has already required `P` and `A` to keep their types, which fixes
         # the reduction's type, so this assignment cannot change what the workspace holds.
         ws.red = red
+        row_norms!(ws.row_norm, data.A, ws.px)
         ws.warm = false
     elseif !isnothing(l) || !isnothing(u)
         # A row that has just become an equality, or stopped being one, is held on different

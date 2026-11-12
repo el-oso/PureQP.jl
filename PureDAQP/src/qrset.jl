@@ -4,9 +4,10 @@
 # the ones already held, what are the multipliers, what direction does a dependency admit --
 # but not to the same accuracy. `Mₐ Mₐᵀ` has the condition number of `Mₐ` squared, and the
 # pivot that decides dependence is formed by cancellation: for unit rows `d = 1 - (1 - σ²)`,
-# whose absolute error is about `k·eps`, so a pivot cannot distinguish `σ` below roughly
-# `sqrt(k·eps)` from zero however the tolerance is set. On a reduction where `σ` reaches 1e-7
-# that decision is noise, and the method reports a problem infeasible that is not.
+# whose absolute error is about `k·eps`. `refine_pivot!` recomputes a pivot small enough for that
+# to matter from the explicit residual, but the multipliers still solve the squared system, so
+# on a reduction whose conditioning is worse than that repairs the method can report a problem
+# infeasible that is not.
 #
 # The QR decides it on `|R_kk|`, the norm of the part of the entering row orthogonal to the
 # ones held, which carries the condition number of `Mₐ` once rather than twice.

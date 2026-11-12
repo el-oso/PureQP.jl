@@ -11,7 +11,8 @@ result across a solve is on [`Solution`](@ref).
 
 Several fields are structurally zero here and stay that way: there is no `ρ` to report, no
 accelerator, no conjugate-gradient count and no primal-dual integral, because none of those
-exist in an active-set method.
+exist in an active-set method. `dual_inf_cert` holds a unit direction when the status is
+`DUAL_INFEASIBLE` and is empty otherwise; `prim_inf_cert` is always empty.
 """
 function build_solution(ws::ActiveSetWorkspace{T}) where {T}
     run_time = ws.setup_time + ws.update_time + ws.solve_time
@@ -34,6 +35,7 @@ function build_solution(ws::ActiveSetWorkspace{T}) where {T}
     end
     sol = ws.sol
     sol.status = ws.status
+    sol.dual_inf_cert = ws.status == DUAL_INFEASIBLE ? ws.cert_dual : ws.cert_none
     sol.obj_val = obj
     sol.dual_obj_val = obj - gap
     sol.duality_gap = gap

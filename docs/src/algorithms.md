@@ -149,10 +149,11 @@ the right-hand side is rebuilt; updating `P` or `A` rebuilds the reduction. The 
 from the previous answer's active rows, which is the whole of what a warm start means here.
 
 !!! warning
-    The `Solution` an `ActiveSet` solve returns is the workspace's own object, and its `x` and
-    `y` are the workspace's own arrays. That is what makes a solve allocate nothing, and it
-    means a result held across the next `solve!` is overwritten in place. Copy what you need
-    before re-solving. The other two algorithms return a fresh `Solution` each time.
+    The `Solution` that `solve!` returns is the workspace's own object, whichever algorithm
+    runs, and its `x` and `y` are the workspace's own arrays. That is what makes a solve
+    allocate nothing, and it means a result held across the next `solve!` is overwritten in
+    place. Copy what you need before re-solving, or keep a whole `Solution` with `copy` and
+    refill it with `copyto!`.
 
 ## What each algorithm throws on
 
@@ -211,8 +212,12 @@ their `*_INACCURATE` versions, with a certificate in `Solution.prim_inf_cert` or
 `Solution.dual_inf_cert`. `ActiveSet` finds primal infeasibility differently: a dual step along
 the null direction of a singular working-set Gram matrix with no row to block it is an unbounded
 dual ray, and the dual of a convex QP is unbounded exactly when the primal is infeasible. It
-reports `PRIMAL_INFEASIBLE` without populating either certificate field, and has no
-dual-infeasibility test and no `*_INACCURATE` status.
+reports `PRIMAL_INFEASIBLE` without populating `prim_inf_cert`, and has no `*_INACCURATE` status.
+It finds dual infeasibility, an unbounded problem, only through the proximal-point loop that a
+singular `P` needs: when the loop ends on `max_prox` passes and its last step is an exact
+recession direction of descent, the status is `DUAL_INFEASIBLE` and `Solution.dual_inf_cert`
+holds the direction. A direction that is exact only to rounding leaves the status at
+`MAX_ITER_REACHED`.
 
 **What `Solution` carries differs in which fields read zero.** The struct is shared, so every
 field exists under every algorithm. But `rho_estimate`, `rho_updates`, `accel_declined`,
@@ -264,10 +269,12 @@ and a row leaving sweeps Givens rotations across the factor. Measured at `k = 10
 That is where the 1.2×–1.5× comes from.
 
 **Rank.** The pivot that decides dependence is, for `:gram`, formed by cancellation: for unit
-rows it is `d = 1 − (1 − σ²)`, whose absolute error is about `k·eps`. So it cannot distinguish
-a `σ` below roughly `sqrt(k·eps)` — about `1e-8` in double precision — from zero, however the
-tolerance is set. `:rows` reads `|R_ii|` instead, the norm of the entering row's component
-orthogonal to the rest, which carries the conditioning once rather than twice.
+rows it is `d = 1 − (1 − σ²)`, whose absolute error is about `k·eps`. A pivot small enough for
+that to matter, below `100·eps/min(D)`, is recomputed from the residual of the entering row
+against the rows held, `‖m − Mₐᵀc‖²`, and an entry at or below `eps` is stored as zero. `:rows`
+reads `|R_ii|` instead, the norm of the entering row's component orthogonal to the rest, which
+carries the conditioning once rather than twice. The multipliers of both solve a system with
+the squared conditioning.
 
 **What goes wrong.** A working set wrongly declared singular sends the method down its
 singular branch, where it walks a direction that means nothing and finds nothing to block it.
@@ -376,7 +383,7 @@ and the problems behind them.
 | unmaterialized operators | no restriction | `product_reduced` on `:auto`, which assembles the `n×n` reduced matrix from products; conjugate gradients instead need `linsys = :indirect`, a caller-supplied preconditioner and `scaling = 0` | `A` yes, read by row; `P` not supported |
 | `linsys` | every backend | all but `:kronecker` and `:lowrank` | none: it has no backend to choose, but `working_set` picks what its own factorization holds |
 | derivatives | ready from the iterate as it stands | require `polishing = true` first | ready: inactive multipliers are exactly zero |
-| infeasibility certificates | yes | yes, through the same test | primal only, and without a certificate |
+| infeasibility certificates | yes | yes, through the same test | primal without a certificate; dual with one, from the proximal-point loop only |
 
 The [table at the top](@ref "Start here") is the short version of this one.
 

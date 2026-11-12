@@ -1,19 +1,40 @@
 # Algorithm
 
-This page explains how two of the three algorithms work inside:
-[`OperatorSplitting`](@ref), OSQP's ADMM iteration, and [`InteriorPoint`](@ref), a Mehrotra
-predictor–corrector method. Both reduce every iteration to one linear system of the same shape,
-and both use the same set of backends. [The linear system](@ref) and the way a backend is picked
-belong to neither algorithm; they are shared.
+This page explains how the three algorithms work inside: [`OperatorSplitting`](@ref), OSQP's
+ADMM iteration; [`InteriorPoint`](@ref), a Mehrotra predictor–corrector method; and
+[`ActiveSet`](@ref), a dual active-set method.
 
-[`ActiveSet`](@ref) is not on this page. It forms no such system and has no backend: it reduces
-the problem to a least-distance problem once and then maintains an `LDLᵀ` of the working set's
-Gram matrix under rank-one updates. Its docstring and [Choosing an algorithm](@ref) describe it.
+`OperatorSplitting` and `InteriorPoint` reduce every iteration to one linear system of the same
+shape and use the same set of backends. [The linear system](@ref) and the way a backend is picked
+belong to neither algorithm; they are shared. They differ in what changes inside that system
+from one iteration to the next, and in what the outer loop does with the answer.
 
-The algorithms differ in what changes inside that system from one iteration to the next, and in
-what the outer loop does with the answer. Each section below covers its own. Equilibration,
-termination, adaptive `ρ`, infeasibility and polishing come after both, once, because both use
-them the same way except where a section says otherwise.
+`ActiveSet` forms no such system and has no backend. It reduces the problem to a least-distance
+problem once and then maintains a factorization of the rows held at a bound, one row at a time.
+
+Each algorithm has its own section below. Equilibration, termination, adaptive `ρ`,
+infeasibility and polishing come after the first two, once, because both use them the same way
+except where a section says otherwise. `ActiveSet` uses none of them.
+
+## The linear solver each algorithm uses
+
+| | what is solved | what solves it by default |
+|---|---|---|
+| [`OperatorSplitting`](@ref) | one system per iteration, with a matrix that changes only when `ρ` does | the first candidate that serves the pair: a structured backend, a sparse factorization, or the dense reduced Cholesky (`ReducedCholesky`, which a dense `P` and `A` reach), with conjugate gradients last |
+| [`InteriorPoint`](@ref) | one system per solve, with a matrix refactored at every iteration | the same list without the candidates that need fixed weights; a dense `P` and `A` reach `FullKKT`, the dense augmented system factored with `bunchkaufman!` |
+| [`ActiveSet`](@ref) | no system with a fixed shape: the Cholesky factor `R` of `P`, once, and a factorization of the working set | a triangular solve against `R`, and either a `QR` of the working set's rows or an `LDLᵀ` of their Gram matrix, chosen by `working_set` |
+
+`linsys` picks the first two by name and `:auto` takes the default above; [How a backend is
+chosen](@ref) gives the order of the candidates. `ActiveSet` refuses any `linsys` except `:auto`
+and `:dense`. Two settings of `ActiveSet` decide the rest, and [the dual active-set
+method](@ref "The dual active-set method") describes both:
+
+- `working_set` is what it factors. `:rows` (default) factors the held rows themselves, as a
+  `QR`. `:gram` factors their Gram matrix, as an `LDLᵀ`: cheaper per pass, and it squares the
+  conditioning of the rows.
+- `scan` is how many rows a pass prices to choose the one that enters. `:all` (default) prices
+  every row and takes the worst violator. `:window` prices a window of them and takes the worst
+  violator in it.
 
 ## Operator splitting (ADMM)
 
@@ -345,6 +366,61 @@ ADMM reaches in a modest iteration count, or when ADMM's residuals fall slowly o
 Pick ADMM when you re-solve the same workspace many times through [`update!`](@ref), or when
 your matrices are operators and you have no preconditioner to supply.
 
+### The iteration
+
+Each row `i` of `l ≤ Ãx ≤ ũ` has a lower slack `s_l = Ãx − l̃` and an upper slack
+`s_u = ũ − Ãx`, each with a multiplier `z_l`, `z_u` that must stay nonnegative. `μ` is the mean
+of the products `s·z` over every inequality side, and it measures how far the point is from
+the boundary where a bound is active. A solve goes through these steps.
+
+1. **Starting point.** Unless a point is supplied, `x` solves
+   `(P̃ + δ_p I + ÃᵀÃ) x = −q̃ + Ãᵀt`, where `t` is the midpoint of a two-sided row, the finite
+   bound of a one-sided row, the bound of an equality row and zero for a free row. The slacks
+   are the distances of `Ãx` to the bounds, shifted up until all are positive, and the
+   multipliers start at one, then both take Mehrotra's balancing shift. A warm start seeds `x`
+   and `y` and rebuilds the slacks and multipliers from them.
+2. **Weights and factorization.** `w` is computed from the current slacks and multipliers, as
+   above, and the Newton system is factored at it.
+3. **Predictor.** One solve gives the direction that aims `μ` at zero. The longest step along
+   it that keeps every slack and multiplier nonnegative gives the `μ_a` the step would reach.
+4. **Centering.** The centering parameter is `σ = max((μ_a/μ)³, min(1, 0.1‖r‖∞/μ))`, where `r`
+   is the largest Newton residual. A predictor that makes little progress gives `σ` near one
+   and the corrector re-centers. The second term stops `μ` from falling while the residuals are
+   still large.
+5. **Corrector.** A second solve, with the factorization from step 2, aims at `σμ` and adds the
+   second-order term `Δs_a ∘ Δz_a` from the predictor.
+6. **Step.** The step length is `step_fraction`, `0.99` by default, of the way to the boundary,
+   capped at one, and primal and dual variables share it. The Newton solves are refined
+   `refine_iter` times against the regularized system.
+
+A problem with no inequality side has no complementarity: each iteration takes one solve and a
+full step. An equality row has no slacks and its weight is `1/δ_d`; a free row has weight `δ_d`.
+
+### When it stops
+
+`check_termination = 1` by default, so the residual and gap tests run at every iteration, at
+the tolerances `eps_abs` and `eps_rel` (`1e-8`). The run ends in one of these ways.
+
+| status | when |
+|---|---|
+| `SOLVED` | the primal and dual residuals, and the duality gap if `check_dualgap` is set, meet the tolerances |
+| `PRIMAL_INFEASIBLE`, `DUAL_INFEASIBLE` | the normalized iterate, or the last step, passes the certificate test ADMM uses |
+| `SOLVED_INACCURATE` and the `*_INFEASIBLE_INACCURATE` statuses | the tests pass only at ten times the tolerances, and only when the run stalls or reaches `max_iter` |
+| `NUMERICAL_ERROR` | the Newton system cannot be factored after `max_reg_bumps` increases of the regularization, a residual is not finite, conjugate gradients miss `cg_fail_limit` solves in a row, the iterate diverges past a ceiling set from `1/sqrt(eps)` times the size of the data and no certificate passes, or the run stalls and neither test passes |
+| `MAX_ITER_REACHED` | `max_iter` iterations (`100`) and neither test passes |
+| `TIME_LIMIT_REACHED`, `INTERRUPTED` | `time_limit` or an interrupt, with the point reached |
+
+Two guards watch for trouble. A step shorter than a small threshold for several iterations in a
+row stalls the run: the tests run at once on the last step and the normalized iterate, then at
+ten times the tolerances, and the run ends `NUMERICAL_ERROR` if neither passes. A `μ` that has
+stopped falling, or an iterate past the bound, raises an alert instead: the tests then run at
+every iteration whatever `check_termination` says, and the run continues. An infeasible
+problem's multipliers grow without bound, and that growth is the evidence the tests read.
+
+When the Newton system cannot be factored, the solver multiplies both regularizations by ten
+and tries again, at most `max_reg_bumps` times in one solve. Every solve starts from `reg_primal`
+and `reg_dual` again.
+
 ### What it accepts, and what throws
 
 - [`update!`](@ref), [`warm_start!`](@ref), [`cold_start!`](@ref) and
@@ -434,7 +510,190 @@ run on the dense reduced Cholesky, which `:auto` picks for them, but not on `:kk
 `bunchkaufman!` has no method for them. The derivative of the objective through a solve matches
 a central difference of the `Float64` objective.
 
+## The dual active-set method
+
+[`ActiveSet`](@ref) is the dual active-set method of Arnström, Bemporad and Axehill (*A dual
+active-set solver for embedded quadratic programming using recursive LDLᵀ updates*, IEEE
+Transactions on Automatic Control, 2022). It solves the dual of the QP, which is a
+least-distance problem, and it solves it exactly: the answer is the solution of an
+equality-constrained QP over the rows held at a bound. It forms no linear system that is
+factored once and reused. It keeps a factorization of the held rows and changes it by one row
+at a time.
+
+### The reduction
+
+With `P = RᵀR` and `v = R⁻ᵀq`, the substitution `x = R⁻¹(−u − v)` turns the QP into
+
+```math
+\min_u \tfrac12\|u\|^2 \quad \text{s.t.} \quad
+-(b_u + Mv) \le Mu \le -(b_l + Mv), \qquad M = A R^{-1},
+```
+
+where `b_l ≤ Ax ≤ b_u` are the caller's bounds. Each row of `M` is divided by its norm, with
+the bounds divided the same way, so a tolerance means the same thing on every row. `R` is the
+Cholesky factor of `P`, or of `P + εI` when `eps_prox > 0`, kept in `P`'s own form: a dense
+triangle, a diagonal, a block-diagonal or a Kronecker factor. The reduction is built once in
+[`setup`](@ref). `M` is formed and stored when `A` and `R` are both dense. Otherwise the
+reduction holds `A` and `R` and derives a row of `M` as one row of `A` and one triangular
+solve, and `Mu` as one triangular solve and one product with `A`, so storage grows with `m`
+only through vectors of length `m`. A sparse or banded `P` or `A` is read into a dense matrix,
+since there is no sparse factor and no row read in `O(nnz)`.
+
+### The iteration
+
+The **working set** is the set of rows of `M` held at a bound. `Mₐ` denotes its rows, and `tₐ`
+the bounds they are held at. Each pass does one of these things.
+
+1. **The set is singular.** A row of the set is a combination of the others. The next section
+   covers this.
+2. **Some multiplier has the wrong sign.** The multipliers `μ` solve `Mₐ Mₐᵀ μ = tₐ`. An
+   inequality row needs a multiplier whose sign matches the side it is held at, up to a noise
+   floor that scales with the conditioning of the set. When one is wrong, the pass moves the
+   multipliers from their current values toward the solved ones until the first reaches zero,
+   and drops that row.
+3. **The multipliers are feasible.** The point `u = Mₐᵀ μ` is dual feasible. Every row is
+   priced, `Mu` against its bounds in the caller's units. If no row is violated by more than
+   `primal_tol` the run ends. Otherwise the worst violator enters the set, held at the bound it
+   violates.
+
+Each pass adds or drops one row. Equality rows are in the set from the first pass, and a step
+never drops one, because an equality's multiplier is free in sign. The set holds at most `n`
+equality rows: any beyond the `n`th is priced as an inequality, since `n` rows span everything
+the others can say.
+
+### Dependent rows and infeasibility
+
+A row that enters the set can be a combination of the rows already held. Then `Mₐ Mₐᵀ` is
+singular and the pass walks the null direction `p` of the held rows instead of solving for
+multipliers. Moving the multipliers along `p` leaves `Mₐᵀ μ` unchanged, and it ends in one of
+three ways.
+
+- **A multiplier reaches zero.** That inequality row drops and the run continues.
+- **Nothing blocks, and the dependent row's own bound agrees with what the rows it depends on
+  imply.** The row is redundant and is dropped. Two equality rows that state the same
+  constraint, or one that is a multiple of another, take this path. "Agrees" means the two
+  differ by at most `primal_tol`, in the units pricing reads in.
+- **Nothing blocks, and the bound disagrees.** `p` is then an unbounded ray of the dual, and the
+  dual of a convex QP is unbounded exactly when the primal is infeasible. The method does not
+  report this until it has checked `p`, written back to one entry per row of the caller's
+  problem as `y`, against the caller's own `A`, `l` and `u`. After the projection onto the polar
+  of the recession cone of `[l, u]`, the support function of `[l, u]` at `y` must be negative, `Aᵀy`
+  must be at rounding level against the terms that cancel in it, `|yᵢ|‖aᵢ‖`, and the radius
+  `ρ = −support/‖Aᵀy‖₁` within which no `x` satisfies the rows must be at least
+  `infeasibility_radius`, `primal_tol^(-1/2)` or about `8e3` by default. Both sums are floating
+  point, so each side of the radius test is moved against the claim by `(m + 2)·eps` times the
+  sum of its absolute terms. A ray that passes gives `PRIMAL_INFEASIBLE`. One that fails means
+  the rank decision came from rounding, or that the rows are feasible only at a point larger
+  than the radius, and the run reports `NUMERICAL_ERROR`.
+
+A row dropped as redundant that enters and is dropped again, or more such drops than there are
+rows, ends the run as a cycle, `NUMERICAL_ERROR`.
+
+### What the working set factors: `working_set`
+
+The set changes by one row per pass, and neither factorization is ever recomputed from
+scratch. A row entering or leaving updates it in place.
+
+| `working_set` | what is factored | the rank test | at most |
+|---|---|---|---|
+| `:rows` (default) | the `QR` of `Mₐᵀ`, an `n × k` matrix, updated by appending and deleting a column | `|R_ii|`, the part of the entering row orthogonal to the held rows | `n` rows |
+| `:gram` | the `LDLᵀ` of `Mₐ Mₐᵀ`, a `k × k` matrix, extended by one row on entry and repaired by a rank-one update on deletion | the diagonal entry of `D`, recomputed from an explicit residual when it is small | `min(m, n) + 1` rows |
+
+`Mₐ Mₐᵀ` squares the condition number of `Mₐ`. That makes `:gram` cheaper per pass, and it
+squares the conditioning of the multipliers, which solve `Mₐ Mₐᵀ μ = tₐ` in either
+representation. The diagonal entry of `D` for a row that is nearly dependent on the held rows is
+a difference of two numbers near one, so rounding can dominate it. When it is below
+`100·eps/min(D)`, which includes one the plain formula rounded to zero, the factorization
+recomputes it as `‖m − Mₐᵀc‖²` for the projection
+coefficients `c` of the entering row `m` on the held rows, refined once, and stores an entry at
+or below `eps` as zero, which marks the row dependent. `:rows` reads `|R_ii|` directly. Both give
+the same answer wherever both reach one. [Choosing a working set for `ActiveSet`](@ref) measures
+the cost and says how to pick.
+
+The `:rows` set holds at most `n` rows, so a row that would be the `(n+1)`th is dependent by
+counting. It is not added. The pass computes its coefficients against the rows held, which is
+the null direction, and steps along that.
+
+### How many rows a pass prices: `scan`
+
+| `scan` | rows priced per pass | the row that enters |
+|---|---|---|
+| `:all` (default) | every row, with one product | the worst violator |
+| `:window` | a window of `max(256, m ÷ 8)` rows, resumed after the row that entered last | the worst violator in the window |
+
+A window that holds no violated row prices the remaining rows before the run ends, so
+`:window` never stops early or misses a violated row. It makes a pass cheaper and takes more
+passes, and which effect wins does not follow from the problem's dimensions. When `M` is not
+stored, one product prices every row and a window saves nothing. After `4(m + 1)` passes either
+setting prices every row and enters the lowest-indexed violated row, Bland's rule, which
+terminates finitely. With the default `max_iter = 1000` that happens only when `m < 249`.
+[`faster_scan`](@ref) times both settings on a problem of yours.
+
+### The proximal-point loop
+
+With `eps_prox = 0` the method needs `P ≻ 0` and one pass of the iteration above is the whole
+solve. With `eps_prox > 0` it solves `P + εI` instead, and wraps the iteration in an outer
+loop: each outer pass sets `v = R⁻ᵀ(q − εx)` at the current `x`, rebuilds the bounds, and runs
+the inner iteration starting from the working set the last pass ended on. This accepts a
+singular `P`, a linear program being the extreme case. The loop stops when `x` moves by less
+than `eta_prox` times `max(1, ‖x‖∞)` in the ∞-norm, or after `max_prox` outer passes.
+
+A problem that is unbounded below keeps the loop from settling: every pass moves `x` along a
+direction the cost does not resist, and the components that curvature resists shrink
+geometrically. When the loop ends on `max_prox` passes, its last step `d` is tested as a
+certificate. The components of `d` below `sqrt(eps)/16` of its largest are set to zero, which
+is rounding by then. It certifies when `qᵀd < 0`, the floating-point product `Pd` is zero, and
+no row moves toward a bound that is present: `Ad` has no positive entry at a row with a finite
+upper bound and no negative entry at one with a finite lower bound. The status is then
+`DUAL_INFEASIBLE`, and `d` scaled to unit ∞-norm is in `Solution.dual_inf_cert`. A floating-point
+zero is not an exact one, so the residual of the certificate in exact arithmetic is rounding.
+
+The conditions hold exactly or not at all, because a tolerance cannot tell an unbounded problem
+from a bounded one with a minimizer beyond what the passes reach. Curvature of `1e-9` along a
+variable, a cost scaled down by `1e-9`, or a row tilted by `1e-8` toward the direction all make
+a bounded problem that a tolerance of `1.5e-8` would call unbounded. A step that is a direction
+only to rounding, which includes the bundle master problem of darnstrom/daqp#222, ends the run
+at `MAX_ITER_REACHED` with the point reached. `DUAL_INFEASIBLE` therefore misses some unbounded
+problems and is not reported for a bounded one. An exact direction can exist on an infeasible
+problem too, where `PRIMAL_INFEASIBLE` is the sharper verdict. The loop also stops when the step
+is small against `‖x‖∞`, so an unbounded problem with columns scaled by large factors can end
+`SOLVED` at a point the passes had not left.
+
+### What a solve returns
+
+| status | when |
+|---|---|
+| `SOLVED` | no row prices in by more than `primal_tol`, and the point formed from the working set leaves no present bound by more than `primal_tol·(max(1, ‖aᵢ‖₂‖x‖∞) + |zᵢ|)` |
+| `PRIMAL_INFEASIBLE` | a singular step finds nothing to block it, and the ray passes the check against the caller's rows: no `x` with `‖x‖∞` below about `8e3` satisfies them |
+| `DUAL_INFEASIBLE` | the proximal-point loop ends on `max_prox` passes and its last step is an exact recession direction of descent; `x` and `y` are `NaN` |
+| `MAX_ITER_REACHED` | `max_iter` passes (`1000`) without ending, or `max_prox` outer passes without converging and without a certificate; the point reached is returned |
+| `NUMERICAL_ERROR` | the infeasibility ray fails its check, a multiplier step finds no row to drop, the pass cycles, or the point formed from the working set violates a row; `x` and `y` are `NaN` |
+
+After a `NUMERICAL_ERROR` or a `PRIMAL_INFEASIBLE` the solver empties the working set to the
+equality rows, because it holds the dependent rows of the failed pass and the next solve, with
+other bounds, would read that dependency again. That holds through [`update!`](@ref) and
+[`warm_start!`](@ref) as well. `PRIMAL_INFEASIBLE` leaves
+`prim_inf_cert` empty, and there are no `*_INACCURATE` statuses. Polishing is refused, because
+the answer already solves the equality-constrained QP over the working set that polishing would
+compute.
+
+A bound is absent when it is infinite, which `PureQPBase` stores as `-1e30` for a lower bound
+and `1e30` for an upper one. Any other bound is a constraint, however large, including a lower
+bound of `1e30` or an upper bound of `-1e30`. The reduction keeps an absent bound infinite when
+it divides a row and its bounds by the row's norm, so the norm does not turn it into a bound.
+A row held at a bound that an [`update!`](@ref) removes leaves the working set. The termination
+tests in `PureQPBase` read a bound beyond `1e26` as infinite, which `ActiveSet` does not.
+
+[`update!`](@ref) keeps the reduction when only `q`, `l` or `u` change and rebuilds it when `P`
+or `A` change. It keeps the working set too, which is what makes a re-solve cheap, unless the
+new bounds move a row between equality and inequality, which resets the set to the equality
+rows. [`cold_start!`](@ref) drops the working set.
+
 ## Equilibration
+
+This section and the four after it apply to [`OperatorSplitting`](@ref) and
+[`InteriorPoint`](@ref). [`ActiveSet`](@ref) does its own row normalization, described above,
+and needs none of them.
 
 The solver equilibrates the system with modified Ruiz scaling. It stores the scaling as factors
 rather than applying it to the matrices:

@@ -60,9 +60,10 @@ tables in [Benchmarks](https://el-oso.github.io/PureQP.jl/dev/benchmarks).
   cheap
 - a solve that allocates nothing: the reported `Solution` is the workspace's own, refilled
 
-What it does not have: a choice of linear-system backend, equilibration, polishing, an
-infeasibility certificate, and a dual-infeasibility test. Each is refused by name rather than
-ignored.
+What it does not have: a choice of linear-system backend, equilibration, polishing, and an
+infeasibility certificate in `Solution.prim_inf_cert`. Each is refused by name rather than
+ignored. It reports `PRIMAL_INFEASIBLE` within a radius of `x`, set by `infeasibility_radius`,
+and `DUAL_INFEASIBLE` for an unbounded problem whose direction is exact.
 
 ## License
 

@@ -21,15 +21,27 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
 - `zero_tol = sqrt(eps(T))` — a diagonal entry of the working set's `LDLᵀ` at or below this
   marks a linearly dependent row, which sends the iteration down its singular branch.
 - `primal_tol = sqrt(eps(T))` — a row priced below `-primal_tol` is violated and enters the
-  working set. Rows are normalized first, so this means the same thing on every row.
+  working set. It is absolute, in the units of the row's value `aᵢ·x`: a violation of a row whose
+  values are of the order of `primal_tol`, such as a row of norm `1e-8`, is never priced in, so
+  scale such a row up. It also bounds how far a row of the answer may leave its bounds,
+  `primal_tol·(max(1, ‖aᵢ‖₂‖x‖∞) + |zᵢ|)`, and an answer that leaves a row by more ends the run
+  as `NUMERICAL_ERROR`.
+- `infeasibility_radius = primal_tol^(-1/2)` — `PRIMAL_INFEASIBLE` is reported when the ray
+  that proves it rules out every `x` with `‖x‖∞` below this, in the units of `x`. A ray whose
+  `Aᵀy` is not zero proves only that much, and a problem that is feasible only at a point
+  larger than the radius is reported infeasible within it. A ray with a smaller radius ends the
+  run as `NUMERICAL_ERROR`: it could not be decided. Raise it when the variables are of a size
+  that makes the default too small, for example variables in the millions, and it must be
+  finite and positive.
 - `working_set = :rows` — what the working set factors. `:rows` factors the active rows
   themselves, and decides dependence on how much of an entering row is orthogonal to those
   already held, which carries the conditioning of `M` once. `:gram` factors their Gram
   matrix `Mₐ Mₐᵀ` instead — the normal equations of the same rows — which is the faster of
-  the two but squares that conditioning, so it cannot separate a dependent row from an
-  independent one much below `sqrt(k·eps)`. Prefer `:gram` only for problems measured to be
-  well conditioned; on one that is not, it reports a feasible problem infeasible rather than
-  solving it. The manual's section on choosing between them says how to tell.
+  the two but squares that conditioning. A new pivot small enough for rounding to dominate it
+  is recomputed from the explicit residual of the entering row against the rows held, and
+  the multipliers still carry the squared conditioning. Prefer `:gram` only for problems
+  measured to be well conditioned; on one that is not, it can refuse a problem the rows
+  solve. The manual's section on choosing between them says how to tell.
 - `scan = :all` — how many rows are examined to choose the one that enters. `:all` examines
   every row and takes the worst violator. `:window` examines a window of them, resumed where
   the last row entered, and takes the worst violator within it; it still examines every row
@@ -44,6 +56,14 @@ A dual active-set method, passed as the algorithm of [`setup`](@ref) and
   every row, so a window saves nothing; and in an iteration where the window holds no violated
   row, every row is priced a second time before the run ends, so `:window` can cost more than
   `:all` there.
+
+With `eps_prox > 0`, a problem that is unbounded below keeps the proximal-point loop from
+settling. When the loop ends on `max_prox` passes and its last step `d` satisfies `qᵀd < 0` and
+`Pd = 0` exactly, and no row moves toward a bound that is present, the status is
+`DUAL_INFEASIBLE` and `Solution.dual_inf_cert` holds `d`, scaled to unit ∞-norm. A direction
+that is exact only to rounding leaves the status at `MAX_ITER_REACHED`, because a tolerance
+cannot tell it from a bounded problem with a distant minimizer. Without `eps_prox` the method
+needs `P ≻ 0` and cannot be unbounded.
 
 The method reduces the problem to a least-distance problem, `min ‖u‖²` subject to
 `lo ≤ Mu ≤ hi` with `M = A R⁻¹` for the Cholesky factor `R` of `P` (or of `P + εI`), and solves
@@ -67,21 +87,27 @@ name. `A` has no such requirement, since it is only multiplied and read by row, 
 `A` needs a transpose. **A sparse or banded `P` or `A`, and a `RowCoupled` one, is read into a
 dense matrix**, since there is no sparse factor and no row read in `O(nnz)`.
 
+Of the options shared with the other algorithms, `max_iter` is the only one this method reads:
+`eps_abs`, `eps_rel`, `eps_prim_inf` and `eps_dual_inf` decide nothing here, and `primal_tol`,
+`zero_tol` and `infeasibility_radius` decide its statuses. A singular `P` needs `eps_prox` above
+about `eps·‖P‖`, or `setup` refuses it as not positive definite.
+
 `linsys` is refused other than `:auto` and `:dense`: the method has no choice of backend to
 make. `scaling` must be `0` — the reduction does its own row normalization.
 """
-struct ActiveSet{T <: Real, EE, EZ, EP, WS} <: QPAlgorithm
+struct ActiveSet{T <: Real, EE, EZ, EP, ER, WS} <: QPAlgorithm
     eps_prox::T
     eta_prox::EE
     max_prox::Int
     zero_tol::EZ
     primal_tol::EP
+    infeasibility_radius::ER
     working_set::Symbol
     scan::Symbol
 end
 
 """
-The working set's type, as the fifth type parameter of `a`.
+The working set's type, as the sixth type parameter of `a`.
 
 The reduction carries its working set as a type parameter, and the factor `P` reduces through
 is one of two types for a Kronecker `P`, chosen by whether its blocks are positive definite.
@@ -90,7 +116,7 @@ Two choices against two is four, and inference keeps two concrete results but wi
 type leaves one choice to make while the reduction is built, so `setup` stays trim-compatible.
 `working_set` reads back the `Symbol` the caller passed.
 """
-working_set_param(::ActiveSet{T, EE, EZ, EP, WS}) where {T, EE, EZ, EP, WS} = WS
+working_set_param(::ActiveSet{T, EE, EZ, EP, ER, WS}) where {T, EE, EZ, EP, ER, WS} = WS
 
 "The real type a parameter given as `x` is stored in; `nothing` leaves it to the default."
 stored_real(x::Real) = typeof(x)
@@ -101,7 +127,8 @@ stored_real(::Nothing) = Float64
 # rather than their union.
 Base.@constprop :aggressive function ActiveSet(;
         eps_prox = 0.0, eta_prox = nothing, max_prox = 100,
-        zero_tol = nothing, primal_tol = nothing, working_set = :rows, scan = :all,
+        zero_tol = nothing, primal_tol = nothing, infeasibility_radius = nothing,
+        working_set = :rows, scan = :all,
     )
     working_set in (:rows, :gram) ||
         throw(ArgumentError(lazy"working_set must be :rows or :gram, got $(repr(working_set))"))
@@ -112,40 +139,46 @@ Base.@constprop :aggressive function ActiveSet(;
     isnothing(eta_prox) || eta_prox > 0 || throw(ArgumentError(lazy"eta_prox must be positive, got $eta_prox"))
     isnothing(zero_tol) || zero_tol > 0 || throw(ArgumentError(lazy"zero_tol must be positive, got $zero_tol"))
     isnothing(primal_tol) || primal_tol > 0 || throw(ArgumentError(lazy"primal_tol must be positive, got $primal_tol"))
+    isnothing(infeasibility_radius) || (isfinite(infeasibility_radius) && infeasibility_radius > 0) ||
+        throw(ArgumentError(lazy"infeasibility_radius must be finite and positive, got $infeasibility_radius"))
     F = float(
         promote_type(
-            stored_real(eps_prox), stored_real(eta_prox),
-            stored_real(zero_tol), stored_real(primal_tol)
+            stored_real(eps_prox), stored_real(eta_prox), stored_real(zero_tol),
+            stored_real(primal_tol), stored_real(infeasibility_radius)
         )
     )
     et = isnothing(eta_prox) ? nothing : F(eta_prox)
     zt = isnothing(zero_tol) ? nothing : F(zero_tol)
     pt = isnothing(primal_tol) ? nothing : F(primal_tol)
+    rt = isnothing(infeasibility_radius) ? nothing : F(infeasibility_radius)
     # Each optional tolerance carries its own field type, so any mix of given and defaulted
     # is representable and every instance stays concretely typed. One branch per working set,
     # so the type parameter is a constant in each: the branches rejoin as a two-way union
     # here, which inference keeps, and `setup` is reached with one of them.
     ws = Symbol(working_set)
-    args = (F(eps_prox), et, Int(max_prox), zt, pt, ws, Symbol(scan))
-    ws === :rows && return ActiveSet{F, typeof(et), typeof(zt), typeof(pt), WorkingSetQR}(args...)
-    return ActiveSet{F, typeof(et), typeof(zt), typeof(pt), WorkingSetGram}(args...)
+    args = (F(eps_prox), et, Int(max_prox), zt, pt, rt, ws, Symbol(scan))
+    ws === :rows && return ActiveSet{F, typeof(et), typeof(zt), typeof(pt), typeof(rt), WorkingSetQR}(args...)
+    return ActiveSet{F, typeof(et), typeof(zt), typeof(pt), typeof(rt), WorkingSetGram}(args...)
 end
 
 """
     ActiveSet{T}(a::ActiveSet)
 
-`a` in element type `T`, with every tolerance left out resolved to `sqrt(eps(T))`.
+`a` in element type `T`, with every tolerance left out resolved to `sqrt(eps(T))`, and the
+infeasibility radius to the inverse square root of the resolved `primal_tol`.
 """
 function ActiveSet{T}(a::ActiveSet) where {T <: Real}
     tol = sqrt(eps(float(T)))
+    primal_tol = isnothing(a.primal_tol) ? T(tol) : T(a.primal_tol)
     # The working set is carried over rather than re-derived: it is already a parameter of `a`,
     # so this stays one concrete type rather than reopening the choice.
-    return ActiveSet{T, T, T, T, working_set_param(a)}(
+    return ActiveSet{T, T, T, T, T, working_set_param(a)}(
         T(a.eps_prox),
         isnothing(a.eta_prox) ? T(tol) : T(a.eta_prox),
         a.max_prox,
         isnothing(a.zero_tol) ? T(tol) : T(a.zero_tol),
-        isnothing(a.primal_tol) ? T(tol) : T(a.primal_tol),
+        primal_tol,
+        isnothing(a.infeasibility_radius) ? inv(sqrt(primal_tol)) : T(a.infeasibility_radius),
         a.working_set,
         a.scan,
     )
@@ -201,6 +234,7 @@ function faster_scan(
         a = ActiveSet(;
             eps_prox = alg.eps_prox, eta_prox = alg.eta_prox, max_prox = alg.max_prox,
             zero_tol = alg.zero_tol, primal_tol = alg.primal_tol,
+            infeasibility_radius = alg.infeasibility_radius,
             working_set = alg.working_set, scan = which,
         )
         sol = solve(P, q, A, l, u, a; kwargs...)   # also the warm-up for the timing below

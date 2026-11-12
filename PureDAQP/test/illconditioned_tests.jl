@@ -223,3 +223,76 @@ end
         @test sol.iter < 10
     end
 end
+
+@testitem "the Gram pivot of a nearly dependent row is read from an explicit residual" begin
+    using PureDAQP, LinearAlgebra, Random
+    using PureDAQP: WorkingSetGram, build_working_set, add_row!
+
+    # Five rows, the last at distance `sigma` from the span of the first four. Its pivot in
+    # `Mₐ Mₐᵀ` is `sigma²`, which is formed by cancellation against a diagonal of one and carries
+    # an absolute error near `eps`: at `sigma = 3e-8` that error is half the pivot, and a pivot
+    # that rounds to `eps` or below is stored as zero although its exact value is above it. The
+    # exact value is `‖m − Mₐᵀc‖²`, which the residual computes without the cancellation. A
+    # `sigma` below `sqrt(eps)` is a dependent row, so the band here sits just above it.
+    n, k = 8, 4
+    for sigma in (1.0e-7, 3.0e-8, 2.0e-8)
+        worst = 0.0
+        for seed in 1:100
+            rng = MersenneTwister(seed)
+            rows = [normalize(randn(rng, n)) for _ in 1:k]
+            # Orthogonal to the span of all the rows, which sequential projections are not.
+            Q = Matrix(qr(reduce(hcat, rows)).Q)[:, 1:k]
+            w = randn(rng, n)
+            w -= Q * (Q' * w)
+            w = normalize(w)
+            m = normalize(sum(randn(rng) * a for a in rows)) + sigma * w
+            W = build_working_set(WorkingSetGram, Float64, n, n)
+            for a in rows
+                add_row!(W, a)
+            end
+            add_row!(W, m)
+
+            # The same pivot in extended precision.
+            Mb = BigFloat.(reduce(hcat, rows))
+            c = (Mb' * Mb) \ (Mb' * BigFloat.(m))
+            exact = Float64(sum(abs2, BigFloat.(m) - Mb * c))
+            worst = max(worst, abs(W.F.D[k + 1] - exact) / exact)
+        end
+        @test worst < 1.0e-6
+    end
+end
+
+@testitem "the Gram working set solves equality rows that are nearly dependent" begin
+    using PureDAQP, PureQPBase, LinearAlgebra, Random
+
+    # The third equality row is within `sigma` of the span of the first two, with bounds from a
+    # point that satisfies all three, so the problem is feasible. The pivot that decides whether
+    # the row is dependent is formed by cancellation, and a pivot that is noise reports a
+    # point that violates a row, or a feasible problem infeasible.
+    for sigma in (1.0e-7, 3.0e-8, 2.0e-8)
+        failures = 0
+        for seed in 1:300
+            rng = MersenneTwister(seed)
+            n = 8
+            a1 = normalize(randn(rng, n))
+            a2 = normalize(randn(rng, n))
+            # Orthogonal to the span of both rows, which sequential projections are not.
+            Q = Matrix(qr(hcat(a1, a2)).Q)[:, 1:2]
+            w = randn(rng, n)
+            w -= Q * (Q' * w)
+            w = normalize(w)
+            a3 = normalize(randn(rng) * a1 + randn(rng) * a2) + sigma * w
+            A = vcat(Matrix(hcat(a1, a2, a3)'), randn(rng, 6, n))
+            x0 = randn(rng, n)
+            b = A * x0
+            l, u = copy(b), copy(b)
+            l[4:end] .-= 1
+            u[4:end] .+= 1
+            sol = solve(Matrix(1.0I, n, n), randn(rng, n), A, l, u, ActiveSet(; working_set = :gram))
+            Ax = A * sol.x
+            violation = max(maximum(l .- Ax), maximum(Ax .- u))
+            failures += !(sol.status === PureQPBase.SOLVED && violation < 1.0e-6)
+        end
+        @test failures == 0
+    end
+end
