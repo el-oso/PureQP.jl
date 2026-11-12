@@ -22,6 +22,7 @@
 const STALL_STEPS = 3
 "Iterations in a row whose merit does not fall before the certificate tests run every iteration."
 const STALL_MERIT = 10
+const REGULARIZE_MERIT = 3
 """
 Multiple of [`iterate_bound`](@ref) past which an iterate cannot be recovered by further
 steps: three orders of magnitude past the point where certificate testing already runs every
@@ -239,32 +240,70 @@ function weights!(ws::InteriorPointWorkspace{T}) where {T}
 end
 
 """
-    refine!(ws) -> ws
+    newton_residual!(ws) -> r
 
-One refinement step of `(dx, dy)` against the regularized system the backend factored.
+Write the residual of `(dx, dy)` against the regularized Newton system into `res_x` and `res_z`,
+and return its largest entry in absolute value, which is not finite if the step is not.
+
+It is formed from products with `P` and `A`, so it does not depend on the factorization the
+backend holds, and it carries the rounding that factorization made.
 """
-function refine!(ws::InteriorPointWorkspace{T}) where {T}
+function newton_residual!(ws::InteriorPointWorkspace{T})::T where {T}
     prob, wt = ws.prob, ws.weights
     sigma, w_inv = wt.sigma, wt.w_inv
     dx, dy, res_x, res_z = ws.dx, ws.dy, ws.res_x, ws.res_z
     mul_P!(res_x, prob, dx)
     if prob.m > 0
-        mul_At!(ws.corr_x, prob, dy)
+        mul_At!(ws.tmp_x, prob, dy)
     else
-        fill!(ws.corr_x, zero(T))
+        fill!(ws.tmp_x, zero(T))
     end
+    r = zero(T)
     for j in eachindex(res_x)
-        res_x[j] = ws.rhs_x[j] - (res_x[j] + sigma * dx[j] + ws.corr_x[j])
+        res_x[j] = ws.rhs_x[j] - (res_x[j] + sigma * dx[j] + ws.tmp_x[j])
+        r = max(r, abs(res_x[j]))
     end
     if prob.m > 0
         mul_A!(res_z, prob, dx)
         for i in eachindex(res_z)
             res_z[i] = ws.rhs_z[i] - (res_z[i] - w_inv[i] * dy[i])
+            r = max(r, abs(res_z[i]))
         end
     end
-    solve_multiplier!(ws.linsys, prob, wt, res_x, res_z, ws.corr_x, ws.corr_y)
-    increment!(dx, ws.corr_x)
-    increment!(dy, ws.corr_y)
+    return r
+end
+
+"""
+    refine_direction!(ws, steps) -> ws
+
+Refine `(dx, dy)` by at most `steps` corrections, each the backend's solution of the current
+residual.
+
+A correction is kept only if the residual after it is smaller than before. When the matrix the
+backend factored is too ill conditioned for the correction to contract, which a reduced matrix of
+nearly dependent rows at large weights can be, the correction is undone and refinement stops, so
+more steps never leave a direction worse than the best one reached.
+"""
+function refine_direction!(ws::InteriorPointWorkspace{T}, steps::Integer) where {T}
+    steps > 0 || return ws
+    dx, dy, corr_x, corr_y = ws.dx, ws.dy, ws.corr_x, ws.corr_y
+    previous = newton_residual!(ws)
+    for _ in 1:steps
+        solve_multiplier!(ws.linsys, ws.prob, ws.weights, ws.res_x, ws.res_z, corr_x, corr_y)
+        increment!(dx, corr_x)
+        increment!(dy, corr_y)
+        r = newton_residual!(ws)
+        if !(r <= 2 * previous)
+            for j in eachindex(dx)
+                dx[j] -= corr_x[j]
+            end
+            for i in eachindex(dy)
+                dy[i] -= corr_y[i]
+            end
+            break
+        end
+        previous = r
+    end
     return ws
 end
 
@@ -310,9 +349,7 @@ function direction!(ws::InteriorPointWorkspace{T}) where {T}
     fill!(ws.dx, zr)
     solve_multiplier!(ws.linsys, prob, wt, ws.rhs_x, rhs_z, ws.dx, dy)
     count_miss!(ws)
-    for _ in 1:s.refine_iter
-        refine!(ws)
-    end
+    refine_direction!(ws, s.refine_iter)
     prob.m > 0 && mul_A!(ws.Adx, prob, ws.dx)
     Adx = ws.Adx
     for i in eachindex(dy)
@@ -514,6 +551,9 @@ function iterate_bound(ws::InteriorPointWorkspace{T}) where {T}
     end
     return b / T(sqrt(precision_eps(T)))
 end
+
+"Whether the backend solves the reduced system, which squares the conditioning of the rows, rather than the augmented one."
+forms_reduced_matrix(ls) = backend_info(ls).system === :reduced
 
 """
     stalled!(ws, bound) -> Bool
@@ -728,6 +768,19 @@ function solve!(ws::InteriorPointWorkspace{T}) where {T}
                 break
             end
             stall = stalled!(ws, bound)
+            if ws.flat_merit >= REGULARIZE_MERIT && ws.n_sides > 0 && ws.mu <= s.eps_abs &&
+                    forms_reduced_matrix(ws.linsys) && ws.reg_bumps < alg.max_reg_bumps
+                # Complementarity is already below the tolerance and the residuals are not: a reduced
+                # matrix of nearly dependent rows at large weights factors without error and yields a
+                # direction too inaccurate to make progress. A larger regularization bounds its
+                # conditioning, as it does when the factorization fails outright. An infeasible
+                # problem's `μ` is not small, so it is left to the certificate tests.
+                ws.reg_bumps += 1
+                set_regularization!(ws, T(10) * ws.reg_primal, T(10) * ws.reg_dual)
+                ws.flat_merit = 0
+                ws.last_merit = INFTY(T)
+                ws.alert = false
+            end
             checking = s.check_termination > 0 && iszero(iter % s.check_termination)
             triggered = stall || ws.alert
             s.verbose && (checking || triggered) && print_row(ws, cg_this_iter)

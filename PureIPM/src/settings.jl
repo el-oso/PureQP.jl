@@ -9,10 +9,15 @@ The Mehrotra predictor–corrector interior-point method, passed as the algorith
   away, and convexity is checked on `P + reg_primal*I`.
 - `max_reg_bumps = 5` — when the Newton system cannot be factorized, both regularizations
   are multiplied by ten and the factorization retried, at most this many times in one solve;
-  past that the run ends `NUMERICAL_ERROR`. Every solve starts from `reg_primal` and
-  `reg_dual`.
-- `refine_iter` — refinement steps per Newton solve against the regularized system, which
-  correct rounding in the factorization: `1` by default, `0` with `linsys = :indirect`.
+  past that the run ends `NUMERICAL_ERROR`. With a backend that factors the reduced matrix, the
+  same bump follows three consecutive iterations in which `μ` is below `eps_abs` and does not
+  decrease: a reduced matrix of nearly dependent rows at large weights can factor without error
+  and still give a direction too inaccurate to make progress. Every solve starts from
+  `reg_primal` and `reg_dual`.
+- `refine_iter` — at most this many refinement steps per Newton solve against the regularized
+  system, which correct rounding in the factorization: `1` by default, `0` with
+  `linsys = :indirect`. A correction that makes the residual more than twice as large, or not
+  finite, is undone and ends the refinement.
 - `step_fraction = 0.99` — the fraction of the step to the boundary that is taken.
 - `cg_fail_limit = 3` — this many missed conjugate-gradient solves in a row, with
   `linsys = :indirect`, end the run `NUMERICAL_ERROR`. A solve that spends `cg_max_iter`

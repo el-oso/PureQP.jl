@@ -7,6 +7,21 @@ what is true now; this file is where the history lives.
 
 ### Changed
 
+- **The interior-point method raises the regularization when a reduced-matrix solve stalls, and
+  refines each direction at most as far as it helps.** On a 629-variable, 2396-row problem whose
+  constraints are groups of 13 nearly dependent rows (`bench/lmp_like_problem.jl`), the dense
+  `ReducedCholesky` factored without error and gave directions too inaccurate to reduce `μ`: the
+  dual residual wandered between 1e-6 and 3e-4 at full steps, and 4 of 12 runs (seeds 1 to 4 at
+  1, 4 and 8 BLAS threads) ended `MAX_ITER_REACHED` after 200 iterations, with a different set at
+  each thread count. Three consecutive iterations in which `μ` is below `eps_abs` and does not
+  decrease now multiply both regularizations by ten, as a failed factorization does, for backends
+  that factor the reduced matrix; all 12 runs solve in 31 to 132 iterations and 330 to 1320 ms, against 19 to 25
+  iterations and about 2.6 s for `FullKKT`. A refinement correction that makes the Newton
+  residual more than twice as large, or not finite, is undone and ends the refinement, so a
+  larger `refine_iter` can no longer produce `NaN` (5 and 10 steps did on one seed). The
+  conditioning sweep to `κ = 1e10`, the real data set in dense form and random dense problems
+  give the same status, iterations and residuals as before.
+
 - **The interior-point method factors the reduced matrix for a dense pair with `4m ≥ n`.**
   `dense_rung` returned `FullKKT` for every dense pair of BLAS floats. On random dense problems
   with `n` of 300 to 600 and `m/n` from `1/4` to `4`, `ReducedCholesky` took 2.4 to 12.3 times

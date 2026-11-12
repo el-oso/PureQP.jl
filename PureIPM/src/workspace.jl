@@ -99,6 +99,8 @@ mutable struct InteriorPointWorkspace{
     const res_z::V
     const corr_x::V
     const corr_y::V
+    # `Ãᵀdy`, which the residual forms and the correction in `corr_x` must outlive.
+    const tmp_x::V
     # Infeasibility certificate candidates. The tests project them in place, and the one that
     # passes is what the solution reports.
     const cert_x::V
@@ -205,7 +207,7 @@ function ipm_workspace(
         buf(m), buf(n), buf(n), buf(m),
         buf(n), buf(m), buf(m), buf(m), buf(m),
         buf(n), buf(m), buf(n), buf(m), buf(m), buf(m), buf(m), buf(m), buf(m),
-        buf(n), buf(m), buf(n), buf(m),
+        buf(n), buf(m), buf(n), buf(m), buf(n),
         buf(n), buf(m),
         algorithm.reg_primal, algorithm.reg_dual, 0, true,
         0, 0, zero(T), false, false,
@@ -355,9 +357,13 @@ the augmented system. On dense random problems with `n` of 300 to 600 and `m/n` 
 count and the same `x` to `1e-10`. Its weights reach `1/δ_d`, so forming it squares the
 conditioning of the rows; on the conditioning sweep of `bench/ipm_illconditioned.jl` up to
 `κ = 1e10`, and on dense forms of the low-rank families at `eps` of `1e-8` and `1e-10`, both
-reached the same status, iteration count and referee residual to within a factor of two. A
-pair too ill-conditioned for the reduced form reports `NUMERICAL_ERROR` once `max_reg_bumps`
-regularization bumps are spent; `linsys = :kkt` selects the augmented system.
+reached the same status, iteration count and referee residual to within a factor of two. On
+groups of nearly dependent rows, where an epigraph variable is bounded by a smooth curve of
+rows, the reduced matrix can factor without error and give a direction too inaccurate to reduce
+`μ`; three iterations with `μ` below `eps_abs` and not decreasing then raise the regularization,
+as a failed factorization does, and the solve completes in tens of iterations where the
+augmented system takes about twenty. A pair that stays too ill-conditioned for the reduced form ends
+`NUMERICAL_ERROR` or `MAX_ITER_REACHED`; `linsys = :kkt` selects the augmented system.
 
 Other element types always get [`ReducedCholesky`](@ref), since `bunchkaufman!` has no generic
 method.
