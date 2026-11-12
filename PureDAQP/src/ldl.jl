@@ -318,13 +318,20 @@ end
     refine_pivot!(W, m_r, k) -> W
 
 Recompute the pivot of the row just appended as the squared norm of its residual against the
-`k` rows held, for a pivot [`suspect_pivot`](@ref) flags.
+`k` rows held, for a pivot [`suspect_pivot`](@ref) flags, unless the row's own coefficients
+show that the pivot the factorization wrote is accurate.
 
-The coefficients `c` of the projection of `m_r` on the held rows come from the factorization and
-are refined once against the explicit residual `r = m_r − Mₐᵀc`. The pivot is then `‖r‖²`, which
-is formed without the cancellation, and the new row of `L` is `Lᵀc`, the row that reproduces `g`
-under the factorization. A pivot that is still at or below `eps(T)` is stored as an exact zero,
-which is what [`first_dependent`](@ref) reads.
+The coefficients `c` of the projection of `m_r` on the held rows come from the factorization.
+The pivot it wrote is exact for a Gram matrix that is off by about `k·eps(T)` an entry, which
+moves the pivot by at most `k·eps(T)·‖c‖₁²`. `suspect_pivot` flags on `1/min(D)`, which stands
+for `‖c‖²` before `c` is known, and a row whose projection puts little weight on the nearly
+dependent rows has a far smaller one. A pivot more than `PIVOT_REFINE_GAIN` times that bound
+stands, with the row of `L` written beside it. A pivot stored as zero never does.
+
+Otherwise `c` is refined once against the explicit residual `r = m_r − Mₐᵀc`. The pivot is then
+`‖r‖²`, which is formed without the cancellation, and the new row of `L` is `Lᵀc`, the row that
+reproduces `g` under the factorization. A pivot that is still at or below `eps(T)` is stored as
+an exact zero, which is what [`first_dependent`](@ref) reads.
 """
 @noinline function refine_pivot!(W::WorkingSetGram{T}, m_r::AbstractVector{T}, k::Int) where {T}
     F = W.F
@@ -335,6 +342,11 @@ which is what [`first_dependent`](@ref) reads.
         c[i] = F.L[k + 1, i]
     end
     backward_L!(F, c)
+    c1 = zero(T)
+    for i in 1:k
+        c1 += abs(c[i])
+    end
+    PIVOT_REFINE_GAIN * k * eps(T) * c1^2 < F.D[k + 1] && return W
     # `r = m_r − Mₐᵀc`, then one correction of `c` against it, then `r` again.
     for pass in 1:2
         for i in eachindex(r)
@@ -369,8 +381,9 @@ Append `m_r` to the working set. `false` when the row is not finite, which is th
 the caller cannot continue from.
 
 A dependent row goes in at `D[k] = 0`, which is the value [`first_dependent`](@ref) reads. A
-pivot small enough for rounding to dominate it is first recomputed by [`refine_pivot!`](@ref),
-and the row is dependent only if the recomputed pivot is at or below `eps(T)`.
+pivot small enough for rounding to dominate it is first checked by [`refine_pivot!`](@ref),
+which recomputes it unless the row's own coefficients show it accurate, and the row is dependent
+only if the pivot that leaves is at or below `eps(T)`.
 
 The tolerance is `eps(T)` rather than the `sqrt(eps(T))` the factorization defaults to,
 because `D` holds the *square* of the distance `R`'s diagonal holds in the other

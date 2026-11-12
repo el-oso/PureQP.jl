@@ -143,7 +143,8 @@ what is true now; this file is where the history lives.
   The pivot of `Mₐ Mₐᵀ` for a row at distance `σ` from the span of the held rows is formed by
   cancellation and carries an absolute error near `eps`, which is the size of the pivot itself
   at `σ ≈ 3e-8`. A pivot below `100·eps/min(D)`, or one that rounded to zero, is now recomputed
-  from the explicit residual `‖m − Mₐᵀc‖²` after one refinement of `c`. On three equality rows
+  from the explicit residual `‖m − Mₐᵀc‖²` after one refinement of `c`, unless it is above
+  `100·k·eps·‖c‖₁²`, the rounding that the row's own coefficients allow. On three equality rows
   with the third at `σ = 3e-8` from the span of the first two, 85 of 300 solves failed: 59
   returned a point that violates a row, 12 reported `PRIMAL_INFEASIBLE` and 14
   `NUMERICAL_ERROR`. None do now; `:rows` was unaffected. Elsewhere the refinement accepts any
