@@ -1,4 +1,4 @@
-@testitem "a LinearMaps problem shaped like the field case solves unmaterialized and dense" begin
+@testitem "a LinearMaps problem with epigraph structure and nearly dependent rows solves unmaterialized and dense" begin
     using PureDAQP, PureQPBase, LinearAlgebra, LinearMaps
     # An epigraph problem `y_k ≥ |g_ρ·z − β_ρ|` over 76 groups of 13 nearly dependent rows, with an
     # ill-conditioned `M`; defined once in `bench/`. Its constraint rows are the case that stresses

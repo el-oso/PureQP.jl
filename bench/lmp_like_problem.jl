@@ -1,4 +1,4 @@
-# A random problem with the structure and conditioning of a serialized `LinearMaps` data set: the
+# A random problem with the structure and conditioning of a problem handed over as `LinearMaps`: the
 # shape, the block layout and the spectra, with none of its entries. Test items in `PureDAQP` and
 # `PureIPM` read it, so it needs only `LinearAlgebra` and `LinearMaps`.
 #
@@ -59,7 +59,7 @@ const LMPL_EIG_LOG = log10.([2.5e-5, 2.5e-5, 6.55e-5, 0.00962, 0.585, 2.19, 5.05
 """
     lmp_like_problem(; seed = 1) -> (H, f, A, b, x0, solution)
 
-The problem above as `LinearMaps`, in the layout a serialized data set has: `H` and `A` are
+The problem above as `LinearMaps`: `H` and `A` are
 `BlockMap`s of `WrappedMap`, `FillMap` and `KroneckerMap` blocks, and `x0` and `solution` are
 zeros, since the problem has no stored answer. `min ½xᵀHx + fᵀx s.t. Ax ≥ b`, with `H` 629×629 and
 `A` 2396×629.
