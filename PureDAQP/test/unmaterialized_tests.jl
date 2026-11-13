@@ -66,3 +66,33 @@ end
     PureDAQP.price!(dest, Mbad, u, 1:m)
     @test dest ≈ (A * (Rbad \ u)) ./ scale rtol = 1.0e-10
 end
+
+@testitem "ImplicitRows gates the explicit inverse on the element type's precision" begin
+    using PureDAQP, LinearAlgebra, Random
+    Random.seed!(67)
+
+    n, m = 10, 24
+    function rows_over(R::UpperTriangular{T}) where {T}
+        A = randn(T, m, n)
+        return PureDAQP.ImplicitRows(
+            A, R, transpose(R), ones(T, m), zeros(T, n), zeros(T, n)
+        )
+    end
+
+    # A factor with reciprocal condition about 1e-5 passes the Float64 gate and fails the Float32 one.
+    d = [1.0; fill(1.0e-5, n - 1)]
+    R64 = UpperTriangular(Matrix(Diagonal(d)))
+    R32 = UpperTriangular(Matrix{Float32}(Diagonal(d)))
+    @test rows_over(R64).use_inverse
+    @test !rows_over(R32).use_inverse
+
+    # A well-conditioned Float32 factor takes the inverse and prices to single precision.
+    G = randn(Float32, n, n)
+    R = UpperTriangular(Matrix(cholesky(Symmetric(G' * G + n * I)).U))
+    M = rows_over(R)
+    @test M.use_inverse
+    u = randn(Float32, n)
+    dest = zeros(Float32, m)
+    PureDAQP.price!(dest, M, u, 1:m)
+    @test dest ≈ (M.A * (R \ u)) rtol = 1.0f-4
+end

@@ -25,7 +25,8 @@ what is true now; this file is where the history lives.
   35.7 ms against 49.7 ms at 4 threads and 60.6 ms against 62.8 ms at 1 with the Gram working
   set, and 41.2 ms against 54.8 ms and 65.9 ms against 69.0 ms with the row working set; the
   dense pair takes 37.5 and 45.2 ms at 4 threads. The inverse is used only when the reciprocal
-  condition number of the factor is at least `1e-6`, and a Kronecker factor keeps the solve.
+  condition number of the factor is at least `1e-6` and at least `√eps` of the element type, and
+  a Kronecker factor keeps the solve.
 
 - **`ProductReduced` assembles three more block shapes from their structure.** On a
   629-variable, 2396-row join of `Fill` blocks and Kronecker products with one-column second

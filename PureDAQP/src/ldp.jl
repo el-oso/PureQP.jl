@@ -51,14 +51,14 @@ struct ImplicitRows{T <: Real, MA <: AbstractMatrix{T}, F, FT, FI, FIT}
     tmp::Vector{T}
 end
 
-"The reciprocal condition number of `R` above which `R⁻¹` replaces solves with `R`."
+"The reciprocal condition number of `R` above which `R⁻¹` replaces solves with `R`, or `√eps` of the element type where that is larger."
 const INVERSE_RCOND_MIN = 1.0e-6
 
 explicit_inverse(R) = (nothing, nothing, false)
 
 function explicit_inverse(R::UpperTriangular{T, <:StridedMatrix{T}}) where {T <: LinearAlgebra.BlasFloat}
     rc = LinearAlgebra.LAPACK.trcon!('1', 'U', 'N', copy(parent(R)))
-    if rc >= INVERSE_RCOND_MIN
+    if rc >= max(T(INVERSE_RCOND_MIN), sqrt(eps(T)))
         Ri = inv(R)
         return (Ri, transpose(Ri), true)
     end
