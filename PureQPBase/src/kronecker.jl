@@ -113,9 +113,9 @@ end
 `y = K x` for `K = A₁ ⊗ a` with `a` a single column: `y` is `a (A₁x)ᵀ` read column by column, so one
 matrix–vector product and a scaled copy replace two matrix products against a one-row operand.
 
-The product `A₁x` is written into every `m₂`-th entry of `y`, where the first entry of each block
-of the result goes, and the blocks are then filled from the last to the first so that no entry
-is read after it has been overwritten.
+The product `A₁x` is written into every `m₂`-th entry of `y`, the first entry of each block of the
+result, and each block is then filled from its own first entry, which is read before it is
+overwritten.
 """
 function kron_column_mul!(y, K::KroneckerOperator, x)
     A1, a = K.A1, K.A2

@@ -219,11 +219,10 @@ problems with `n` of 300 to 600 and `m/n` from `1/4` to `4`, the reduced form to
 twelfth of the time and reached the same iteration count and `x` to `1e-10`. On the conditioning
 sweep to `κ = 1e10` and on dense forms of the low-rank families, both forms reached the same
 status and residual. On groups of nearly dependent rows the reduced matrix can factor without
-error and give a direction too inaccurate to reduce `μ`. Three iterations with `μ` below
-`eps_abs` and not decreasing then raise the regularization, as a failed factorization does, and
-the solve completes in
-tens of iterations where the augmented system takes about twenty, at a tenth of its time per
-iteration. A pair the reduced form cannot factor ends `NUMERICAL_ERROR` after the
+error and give a direction too inaccurate to reduce `μ`. Three iterations whose merit does not
+decrease while `μ` is at or below `eps_abs` then raise the regularization, as a failed
+factorization does, and the solve completes in 31 to 132 iterations where the augmented system
+takes 19 to 25, at a tenth of its time per iteration. A pair the reduced form cannot factor ends `NUMERICAL_ERROR` after the
 regularization bumps, and `linsys = :kkt` selects the augmented system.
 
 ## What the sparse candidates ask

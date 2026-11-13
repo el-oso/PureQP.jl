@@ -22,6 +22,7 @@
 const STALL_STEPS = 3
 "Iterations in a row whose merit does not fall before the certificate tests run every iteration."
 const STALL_MERIT = 10
+"Iterations in a row whose merit does not fall, with `μ` at or below `eps_abs`, before a reduced backend raises the regularization."
 const REGULARIZE_MERIT = 3
 """
 Multiple of [`iterate_bound`](@ref) past which an iterate cannot be recovered by further
@@ -279,10 +280,11 @@ end
 Refine `(dx, dy)` by at most `steps` corrections, each the backend's solution of the current
 residual.
 
-A correction is kept only if the residual after it is smaller than before. When the matrix the
-backend factored is too ill conditioned for the correction to contract, which a reduced matrix of
-nearly dependent rows at large weights can be, the correction is undone and refinement stops, so
-more steps never leave a direction worse than the best one reached.
+A correction is kept unless the residual after it is more than twice as large as before, or not
+finite. When the matrix the backend factored is too ill conditioned for the correction to
+contract, which a reduced matrix of nearly dependent rows at large weights can be, the correction
+is undone and refinement stops. A kept correction may still raise the residual by up to that
+factor, so the residual after `steps` corrections is at most `2^steps` times the starting one.
 """
 function refine_direction!(ws::InteriorPointWorkspace{T}, steps::Integer) where {T}
     steps > 0 || return ws

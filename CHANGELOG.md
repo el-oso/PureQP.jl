@@ -44,10 +44,11 @@ what is true now; this file is where the history lives.
   `ReducedCholesky` factored without error and gave directions too inaccurate to reduce `μ`: the
   dual residual wandered between 1e-6 and 3e-4 at full steps, and 4 of 12 runs (seeds 1 to 4 at
   1, 4 and 8 BLAS threads) ended `MAX_ITER_REACHED` after 200 iterations, with a different set at
-  each thread count. Three consecutive iterations in which `μ` is below `eps_abs` and does not
-  decrease now multiply both regularizations by ten, as a failed factorization does, for backends
-  that factor the reduced matrix; all 12 runs solve in 31 to 132 iterations and 330 to 1320 ms, against 19 to 25
-  iterations and about 2.6 s for `FullKKT`. A refinement correction that makes the Newton
+  each thread count. Three consecutive iterations whose merit does not decrease while `μ` is at
+  or below `eps_abs` now multiply both regularizations by ten, as a failed factorization does,
+  for backends that factor the reduced matrix; the two kinds of bump share `max_reg_bumps`. All
+  12 runs solve in 31 to 132 iterations and 330 to 1320 ms, against 19 to 25 iterations and
+  about 2.6 s for `FullKKT`. A refinement correction that makes the Newton
   residual more than twice as large, or not finite, is undone and ends the refinement, so a
   larger `refine_iter` can no longer produce `NaN` (5 and 10 steps did on one seed). The
   conditioning sweep to `κ = 1e10`, the real data set in dense form and random dense problems

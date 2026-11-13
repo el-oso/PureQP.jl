@@ -353,16 +353,16 @@ answer for this algorithm), and [`FullKKT`](@ref) below that when LAPACK serves 
 
 The reduced matrix costs `mn²/2 + n³/3` multiply-adds to form and factor against `(n+m)³/3` for
 the augmented system. On dense random problems with `n` of 300 to 600 and `m/n` from `1/4` to
-`4`, the reduced form took between a third and a twelfth of the time, with the same iteration
-count and the same `x` to `1e-10`. Its weights reach `1/δ_d`, so forming it squares the
+`4`, the reduced form took 2.4 to 12.3 times less time, with the same iteration count and the
+same `x` to `1e-10`. Its weights reach `1/δ_d`, so forming it squares the
 conditioning of the rows; on the conditioning sweep of `bench/ipm_illconditioned.jl` up to
 `κ = 1e10`, and on dense forms of the low-rank families at `eps` of `1e-8` and `1e-10`, both
 reached the same status, iteration count and referee residual to within a factor of two. On
 groups of nearly dependent rows, where an epigraph variable is bounded by a smooth curve of
 rows, the reduced matrix can factor without error and give a direction too inaccurate to reduce
-`μ`; three iterations with `μ` below `eps_abs` and not decreasing then raise the regularization,
-as a failed factorization does, and the solve completes in tens of iterations where the
-augmented system takes about twenty. A pair that stays too ill-conditioned for the reduced form ends
+`μ`; three iterations whose merit does not decrease while `μ` is at or below `eps_abs` then
+raise the regularization, as a failed factorization does, and the solve completes in 31 to 132
+iterations where the augmented system takes 19 to 25. A pair that stays too ill-conditioned for the reduced form ends
 `NUMERICAL_ERROR` or `MAX_ITER_REACHED`; `linsys = :kkt` selects the augmented system.
 
 Other element types always get [`ReducedCholesky`](@ref), since `bunchkaufman!` has no generic

@@ -10,10 +10,11 @@ The Mehrotra predictor–corrector interior-point method, passed as the algorith
 - `max_reg_bumps = 5` — when the Newton system cannot be factorized, both regularizations
   are multiplied by ten and the factorization retried, at most this many times in one solve;
   past that the run ends `NUMERICAL_ERROR`. With a backend that factors the reduced matrix, the
-  same bump follows three consecutive iterations in which `μ` is below `eps_abs` and does not
-  decrease: a reduced matrix of nearly dependent rows at large weights can factor without error
-  and still give a direction too inaccurate to make progress. Every solve starts from
-  `reg_primal` and `reg_dual`.
+  same bump follows three consecutive iterations whose merit does not decrease while `μ` is at
+  or below `eps_abs`: a reduced matrix of nearly dependent rows at large weights can factor
+  without error and still give a direction too inaccurate to make progress. Both kinds of bump
+  draw on the same `max_reg_bumps`. The second never occurs when `eps_abs` is zero. Every solve
+  starts from `reg_primal` and `reg_dual`.
 - `refine_iter` — at most this many refinement steps per Newton solve against the regularized
   system, which correct rounding in the factorization: `1` by default, `0` with
   `linsys = :indirect`. A correction that makes the residual more than twice as large, or not
