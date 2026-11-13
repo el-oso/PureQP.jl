@@ -17,7 +17,7 @@ using LinearAlgebra
 # node, so every LAPACK call through it costs two dynamic dispatches and a symbol lookup.
 # LinearAlgebra's own LAPACK wrappers import the name for the same reason.
 using LinearAlgebra.BLAS: libblastrampoline
-using FillArrays: Fill, AbstractFill
+using FillArrays: Fill, AbstractFill, getindex_value
 using TypeContracts: TypeContracts, @contract, @verify
 using StrictMode: @strict_contract, @assert_noalloc, @assert_trim_compatible
 

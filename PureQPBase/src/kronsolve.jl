@@ -414,6 +414,7 @@ end
     kron_single_column!(R, A1, A2, Omega, D, t, S) -> Bool
 
 `R += D (A₁ ⊗ a)ᵀ diag(w) (A₁ ⊗ a) D` for a one-column `a`, returning whether it did the work.
+`R` must be symmetric on entry: the lower triangle is overwritten with the upper.
 
 With `k₂ = 1` the pair `(i₁, j₁)` indexes `R` directly, so the weighted Gram is `(√t ⊙ A₁ D)ᵀ(√t ⊙ A₁ D)`
 with `t = Ωᵀ(a ⊙ a)`: `D` folds into the columns of the scaled copy and one `syrk` accumulates into the
@@ -699,7 +700,7 @@ Whether both Kronecker products have a one-column second factor and strided firs
 single_column_pair(Aa, Ab) = false
 single_column_pair(
     Aa::KroneckerOperator{<:Any, <:StridedMatrix}, Ab::KroneckerOperator{<:Any, <:StridedMatrix}
-) = size(Aa.A2, 2) == 1 && size(Ab.A2, 2) == 1
+) = size(Aa.A2, 2) == 1 && size(Ab.A2, 2) == 1 && size(Aa.A2, 1) > 0 && size(Ab.A2, 1) > 0
 
 """
     kron_single_cross!(R, T, Aa, Ab, w, D, offa, offb, X, G, wv) -> R

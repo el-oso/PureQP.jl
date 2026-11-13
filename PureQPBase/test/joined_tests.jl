@@ -322,3 +322,34 @@ end
         @test R ≈ R' rtol = 1.0e-12
     end
 end
+
+@testitem "a join's reduced term allocates nothing once its scratch exists" begin
+    using PureQPBase, LinearAlgebra, FillArrays, Random
+    Random.seed!(71)
+
+    kron_of(m1, p, m2, q) = PureQPBase.KroneckerOperator(randn(m1, p), randn(m2, q))
+    # A constant block, a Kronecker block, and a pair of one-column Kronecker blocks over
+    # different row grids: every specialized contraction the reduced term has.
+    J = PureQPBase.JoinedOperator(
+        Fill(0.25, 24, 3), kron_of(4, 3, 6, 1), kron_of(12, 5, 2, 1), kron_of(3, 2, 8, 2)
+    )
+    n, m = size(J, 2), size(J, 1)
+    w = rand(m) .+ 0.1
+    D = rand(n) .+ 0.5
+    R = zeros(n, n)
+    scratch = PureQPBase.reduced_term_scratch(Float64, J)
+    ej, av, col = zeros(n), zeros(m), zeros(n)
+    run() = PureQPBase.add_reduced_term!(R, Float64, J, w, D, n, m, scratch, ej, av, col)
+    run()
+    # The least of several: a background task allocating on another thread is counted too.
+    @test iszero(minimum(@allocated(run()) for _ in 1:5))
+
+    # A constant block with no rows adds nothing.
+    E = PureQPBase.JoinedOperator(Fill(0.25, 0, 3), randn(0, 2))
+    RE = zeros(5, 5)
+    PureQPBase.add_reduced_term!(
+        RE, Float64, E, zeros(0), ones(5), 5, 0, PureQPBase.reduced_term_scratch(Float64, E),
+        zeros(5), zeros(0), zeros(5)
+    )
+    @test iszero(RE)
+end

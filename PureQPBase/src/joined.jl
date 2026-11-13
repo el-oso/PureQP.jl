@@ -326,10 +326,10 @@ per column. `col` is `Ao`-column scratch.
 function fill_cross!(R, ::Type{T}, Af, Ao, w, D, col, offf, offo) where {T}
     kf, ko = size(Af, 2), size(Ao, 2)
     (iszero(kf) || iszero(ko)) && return R
-    c = T(first(Af))
+    c = T(getindex_value(Af))
     g = view(col, 1:ko)
     if Ao isa AbstractFill
-        fill!(g, T(first(Ao)) * sum(w))
+        fill!(g, T(getindex_value(Ao)) * sum(w))
     else
         mul!(g, adjoint(Ao), w)
     end

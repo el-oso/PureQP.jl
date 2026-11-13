@@ -193,20 +193,38 @@ end
         @test R ≈ R' rtol = 1.0e-12
     end
 
-    # A one-column `A₂` writes through `syrk` into `R`; weights that are not non-negative leave
-    # the product to the general path, and an existing `R` is accumulated into either way.
-    let A1 = randn(9, 5), A2 = randn(4, 1), n = 5, m = 36
+    # A one-column `A₂` writes through `syrk` into `R` when the weights are non-negative; any
+    # other weights leave the product to the general path. A symmetric `R` that already holds
+    # entries is accumulated into on both paths, and into a slice of a larger matrix as a block
+    # of a join is.
+    for w in (rand(36) .+ 0.1, randn(36))
+        A1, A2, n, m = randn(9, 5), randn(4, 1), 5, 36
         K = PureQPBase.KroneckerOperator(A1, A2)
-        w = randn(m)
         D = rand(n) .+ 0.5
-        R0 = Symmetric(randn(n, n)) |> Matrix
+        R0 = Matrix(Symmetric(randn(n, n)))
+        Km = Matrix(K)
+        want = R0 + Diagonal(D) * Km' * Diagonal(w) * Km * Diagonal(D)
         R = copy(R0)
         PureQPBase.add_reduced_term!(
             R, Float64, K, w, D, n, m, PureQPBase.reduced_term_scratch(Float64, K),
             zeros(n), zeros(m), zeros(n)
         )
-        Km = Matrix(K)
-        @test R ≈ R0 + Diagonal(D) * Km' * Diagonal(w) * Km * Diagonal(D) rtol = 1.0e-12
+        @test R ≈ want rtol = 1.0e-12
+        big = fill(7.0, n + 4, n + 4)
+        big[3:(n + 2), 3:(n + 2)] .= R0
+        PureQPBase.add_reduced_term!(
+            view(big, 3:(n + 2), 3:(n + 2)), Float64, K, w, D, n, m,
+            PureQPBase.reduced_term_scratch(Float64, K), zeros(n), zeros(m), zeros(n)
+        )
+        @test big[3:(n + 2), 3:(n + 2)] ≈ want rtol = 1.0e-12
+        @test all(==(7.0), big[1:2, :]) && all(==(7.0), big[:, (n + 3):end])
+    end
+
+    # An operand with no rows contributes nothing and does not throw.
+    let K = PureQPBase.KroneckerOperator(randn(3, 2), zeros(0, 1)), y = zeros(0), v = zeros(2)
+        mul!(y, K, randn(2))
+        mul!(v, K', y)
+        @test iszero(v)
     end
 
     # Each shape above really does select the arm it is there to cover, so neither is dead code.
@@ -297,11 +315,11 @@ end
     mul!(vb, Kb', zb)
     @test vb ≈ Matrix(Kb)' * zb rtol = 1.0e-30
     # The product and its adjoint do not allocate once the operator exists.
-    K = PureQPBase.KroneckerOperator(randn(40, 9), randn(3, 1))
-    x, y = randn(9), zeros(120)
-    mul!(y, K, x)
-    @test iszero(@allocated mul!(y, K, x))
-    v = zeros(9)
-    mul!(v, K', y)
-    @test iszero(@allocated mul!(v, K', y))
+    let K = PureQPBase.KroneckerOperator(randn(40, 9), randn(3, 1)), x = randn(9), y = zeros(120), v = zeros(9)
+        mul!(y, K, x)
+        mul!(v, K', y)
+        # The least of several: a background task allocating on another thread is counted too.
+        @test iszero(minimum(@allocated(mul!(y, K, x)) for _ in 1:5))
+        @test iszero(minimum(@allocated(mul!(v, K', y)) for _ in 1:5))
+    end
 end

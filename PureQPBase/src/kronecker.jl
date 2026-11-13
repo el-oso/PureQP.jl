@@ -120,6 +120,7 @@ overwritten.
 function kron_column_mul!(y, K::KroneckerOperator, x)
     A1, a = K.A1, K.A2
     m1, m2 = size(A1, 1), size(a, 1)
+    (iszero(m1) || iszero(m2)) && return y
     mul!(view(y, 1:m2:((m1 - 1) * m2 + 1)), A1, x)
     for k in m1:-1:1
         base = (k - 1) * m2
