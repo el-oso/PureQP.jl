@@ -267,6 +267,10 @@ end
             (kron_of(4, 3, 6, 1), kron_of(8, 2, 3, 2)),
             (kron_of(8, 2, 3, 2), kron_of(4, 3, 6, 1)),
             (kron_of(6, 4, 4, 1), kron_of(3, 5, 8, 1)),
+            (kron_of(4, 3, 6, 1), kron_of(12, 5, 2, 1)),
+            (kron_of(12, 5, 2, 1), kron_of(4, 3, 6, 1)),
+            (kron_of(3, 2, 4, 1), kron_of(4, 3, 3, 1)),
+            (kron_of(5, 4, 6, 1), kron_of(10, 2, 3, 1)),
         )
         @test PureQPBase.kron_batch_pair(a, b)
         @test !PureQPBase.kron_cross_pair(a, b)
@@ -285,4 +289,36 @@ end
     J = PureQPBase.JoinedOperator(kron_of(2, 2, 6, 2), kron_of(3, 2, 4, 3), kron_of(4, 1, 3, 1))
     R, Rtrue = reduced(J)
     @test R ≈ Rtrue rtol = 1.0e-12
+end
+
+@testitem "a join takes the cross term of a constant block from one adjoint product" begin
+    using PureQPBase, LinearAlgebra, FillArrays, Random
+    Random.seed!(53)
+
+    function reduced(J)
+        n, m = size(J, 2), size(J, 1)
+        w = randn(m)
+        D = rand(n) .+ 0.5
+        R = zeros(n, n)
+        PureQPBase.add_reduced_term!(
+            R, Float64, J, w, D, n, m, PureQPBase.reduced_term_scratch(Float64, J),
+            zeros(n), zeros(m), zeros(n)
+        )
+        Jm = Matrix(J)
+        return R, Diagonal(D) * Jm' * Diagonal(w) * Jm * Diagonal(D)
+    end
+
+    K = PureQPBase.KroneckerOperator(randn(6, 4), randn(5, 3))
+    # Constant blocks beside a Kronecker block, beside each other, and beside a stored matrix, in
+    # each order; the weights are signed, so nothing may assume a Gram matrix.
+    for blocks in (
+            (Fill(0.25, 30, 4), K, Fill(-0.5, 30, 7)),
+            (K, Fill(0.25, 30, 2)),
+            (Fill(0.25, 30, 4), Fill(2.0, 30, 3)),
+            (Fill(0.25, 30, 4), randn(30, 5), Fill(1.5, 30, 1)),
+        )
+        R, Rtrue = reduced(PureQPBase.JoinedOperator(blocks...))
+        @test R ≈ Rtrue rtol = 1.0e-12
+        @test R ≈ R' rtol = 1.0e-12
+    end
 end

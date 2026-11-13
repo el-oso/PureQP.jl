@@ -186,11 +186,27 @@ end
     end
 
     # `k₁ ≤ k₂` takes the order over `A₁`'s pairs, `k₁ > k₂` the order over `A₂`'s.
-    for (m1, k1, m2, k2) in ((2, 1, 6, 5), (3, 2, 5, 4), (7, 5, 6, 4), (4, 4, 4, 4), (5, 1, 4, 1))
+    for (m1, k1, m2, k2) in ((2, 1, 6, 5), (3, 2, 5, 4), (7, 5, 6, 4), (4, 4, 4, 4), (5, 1, 4, 1), (9, 5, 4, 1))
         R, Rtrue = reduced(m1, k1, m2, k2)
         @test R ≈ Rtrue rtol = 1.0e-12
         # Symmetric by construction, including the half the loop fills by transposition.
         @test R ≈ R' rtol = 1.0e-12
+    end
+
+    # A one-column `A₂` writes through `syrk` into `R`; weights that are not non-negative leave
+    # the product to the general path, and an existing `R` is accumulated into either way.
+    let A1 = randn(9, 5), A2 = randn(4, 1), n = 5, m = 36
+        K = PureQPBase.KroneckerOperator(A1, A2)
+        w = randn(m)
+        D = rand(n) .+ 0.5
+        R0 = Symmetric(randn(n, n)) |> Matrix
+        R = copy(R0)
+        PureQPBase.add_reduced_term!(
+            R, Float64, K, w, D, n, m, PureQPBase.reduced_term_scratch(Float64, K),
+            zeros(n), zeros(m), zeros(n)
+        )
+        Km = Matrix(K)
+        @test R ≈ R0 + Diagonal(D) * Km' * Diagonal(w) * Km * Diagonal(D) rtol = 1.0e-12
     end
 
     # Each shape above really does select the arm it is there to cover, so neither is dead code.

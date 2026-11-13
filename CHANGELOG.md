@@ -7,6 +7,17 @@ what is true now; this file is where the history lives.
 
 ### Changed
 
+- **`ProductReduced` assembles three more block shapes from their structure.** On a
+  629-variable, 2396-row join of `Fill` blocks and Kronecker products with one-column second
+  factors (random data, 4 BLAS threads), the weighted term `Aᵀ diag(w) A` takes 2.97 ms against
+  4.54 ms, and a 17-iteration `ProductReduced` solve of the real data set takes about 102 ms
+  against 125 ms at 4 threads and 181 ms against 226 ms at 1. A Kronecker block with a one-column
+  second factor folds `D` into the scaled copy and accumulates one `syrk` straight into the
+  matrix. The cross term of two such blocks on different row grids is `F₁ᵀ W B₁` with `W`
+  banded, one short `gemv` per row block instead of a product over all rows. The cross term of a
+  constant (`Fill`) block with any other block needs one adjoint product, not one forward and
+  one adjoint product per column. The results agree with the dense product to `1e-15`.
+
 - **The interior-point method raises the regularization when a reduced-matrix solve stalls, and
   refines each direction at most as far as it helps.** On a 629-variable, 2396-row problem whose
   constraints are groups of 13 nearly dependent rows (`bench/lmp_like_problem.jl`), the dense

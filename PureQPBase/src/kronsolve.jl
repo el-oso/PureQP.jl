@@ -376,6 +376,7 @@ function add_reduced_term!(
     for c in 1:m1, r in 1:m2
         Omega[r, c] = weights[(c - 1) * m2 + r]
     end
+    k2 == 1 && kron_single_column!(R, A1, A2, Omega, D, t, S) && return R
     for i2 in 1:k2, j2 in 1:i2
         # `t = Ωᵀ(A₂[:,i₂] ⊙ A₂[:,j₂])`, through the column pair rather than a formed product.
         for c in 1:m1
@@ -407,6 +408,47 @@ function add_reduced_term!(
         end
     end
     return R
+end
+
+"""
+    kron_single_column!(R, A1, A2, Omega, D, t, S) -> Bool
+
+`R += D (A₁ ⊗ a)ᵀ diag(w) (A₁ ⊗ a) D` for a one-column `a`, returning whether it did the work.
+
+With `k₂ = 1` the pair `(i₁, j₁)` indexes `R` directly, so the weighted Gram is `(√t ⊙ A₁ D)ᵀ(√t ⊙ A₁ D)`
+with `t = Ωᵀ(a ⊙ a)`: `D` folds into the columns of the scaled copy and one `syrk` accumulates into the
+upper triangle of `R`, which is then mirrored. Returns `false`, touching nothing, when the element type
+is not a BLAS float, `R` is not strided, or `t` has a negative or NaN entry.
+"""
+kron_single_column!(R, A1, A2, Omega, D, t, S) = false
+
+function kron_single_column!(
+        R::StridedMatrix{T}, A1::StridedMatrix{T}, A2, Omega::StridedMatrix{T}, D, t::StridedVector{T},
+        S::StridedMatrix{T}
+    ) where {T <: LinearAlgebra.BlasFloat}
+    m2, m1 = size(Omega)
+    for c in 1:m1
+        acc = zero(T)
+        for r in 1:m2
+            acc += Omega[r, c] * A2[r, 1] * A2[r, 1]
+        end
+        t[c] = acc
+    end
+    all(>=(zero(T)), t) || return false
+    for c in eachindex(t)
+        t[c] = sqrt(t[c])
+    end
+    for j in axes(S, 2)
+        dj = D[j]
+        for r in axes(S, 1)
+            S[r, j] = t[r] * A1[r, j] * dj
+        end
+    end
+    LinearAlgebra.BLAS.syrk!('U', 'T', one(T), S, one(T), R)
+    for j in axes(R, 2), i in (j + 1):size(R, 1)
+        R[i, j] = R[j, i]
+    end
+    return true
 end
 
 """
@@ -599,8 +641,11 @@ function kron_batch_cross!(
     mb2, kb2 = size(B2)
     kb = size(Ab, 2)
     m = size(Ab, 1)
+    Zbuf, Tbuf, Ubuf, Ybuf, Xbuf, Gbuf, wbuf = batch
+    if single_column_pair(Aa, Ab)
+        return kron_single_cross!(R, T, Aa, Ab, w, D, offa, offb, Xbuf, Gbuf, wbuf)
+    end
     ncol = ma1 * kb
-    Zbuf, Tbuf, Ubuf, Ybuf = batch
     Z = view(Zbuf, 1:ma2, 1:ncol)
     T1 = view(Tbuf, 1:ka2, 1:ncol)
     U = view(Ubuf, 1:ma1, 1:kb)
@@ -646,17 +691,93 @@ function kron_batch_cross!(
 end
 
 """
-    kron_batch_scratch(T, blocks) -> (Z, T1, U, Y)
+    single_column_pair(Aa, Ab) -> Bool
+
+Whether both Kronecker products have a one-column second factor and strided first factors, which
+[`kron_single_cross!`](@ref) serves.
+"""
+single_column_pair(Aa, Ab) = false
+single_column_pair(
+    Aa::KroneckerOperator{<:Any, <:StridedMatrix}, Ab::KroneckerOperator{<:Any, <:StridedMatrix}
+) = size(Aa.A2, 2) == 1 && size(Ab.A2, 2) == 1
+
+"""
+    kron_single_cross!(R, T, Aa, Ab, w, D, offa, offb, X, G, wv) -> R
+
+Add `Dₐ Aₐᵀ diag(w) A_b D_b` and its transpose into `R` for `Aₐ = F₁ ⊗ f` and `A_b = B₁ ⊗ b`, with
+`f` and `b` single columns.
+
+Row `r` of the join is row `⌈r/m_b⌉` of `B₁` and row `⌈r/mₐ⌉` of `F₁`, where `mₐ` and `m_b` are the
+row counts of `f` and `b`. Each `r` therefore pairs one row of each, and
+
+    Aₐᵀ diag(w) A_b = F₁ᵀ W B₁,    W[c, κ] = Σ_{r ↦ (c, κ)} w[r] f[·] b[·]
+
+with `W` banded: row `κ` of `B₁` meets only the `≈ m_b/mₐ` rows of `F₁` that its `m_b` rows fall in.
+`X = Wᵀ F₁` is then one short `gemv` over a contiguous block of `F₁` per row `κ`, and `G = B₁ᵀ X` is
+one small product, against the `m₁ × kᵦ` by `m₁ × kₐ` product the general path forms.
+`X` is `m_b₁ × kₐ`, `G` is `k_b × kₐ`, and `wv` holds one row's span of `W`.
+"""
+function kron_single_cross!(
+        R, ::Type{T}, Aa::KroneckerOperator, Ab::KroneckerOperator, w, D, offa, offb, X, G, wv
+    ) where {T}
+    F1, f = Aa.A1, Aa.A2
+    B1, b = Ab.A1, Ab.A2
+    mb1, kb = size(B1)
+    mb2 = size(b, 1)
+    ma2 = size(f, 1)
+    ka = size(F1, 2)
+    Xv = view(X, 1:mb1, 1:ka)
+    Gv = view(G, 1:kb, 1:ka)
+    for κ in 1:mb1
+        first_row = (κ - 1) * mb2 + 1
+        c0 = (first_row - 1) ÷ ma2 + 1
+        c1 = (κ * mb2 - 1) ÷ ma2 + 1
+        span = c1 - c0 + 1
+        v = view(wv, 1:span)
+        fill!(v, zero(T))
+        for s in 1:mb2
+            r = first_row + s - 1
+            c = (r - 1) ÷ ma2 + 1
+            v[c - c0 + 1] += w[r] * b[s, 1] * f[(r - 1) % ma2 + 1, 1]
+        end
+        mul!(view(Xv, κ, :), transpose(view(F1, c0:c1, :)), v)
+    end
+    mul!(Gv, transpose(B1), Xv)
+    for i in 1:ka
+        pp = offa + i - 1
+        dp = D[pp]
+        for j in 1:kb
+            q = offb + j - 1
+            val = dp * Gv[j, i] * D[q]
+            R[pp, q] += val
+            R[q, pp] += val
+        end
+    end
+    return R
+end
+
+"""
+    kron_batch_scratch(T, blocks) -> (Z, T1, U, Y, X, G, wv)
 
 Buffers for [`kron_batch_cross!`](@ref), each sized to the largest qualifying pair in a join and
-empty when no pair qualifies.
+empty when no pair qualifies. `X`, `G` and `wv` are those of [`kron_single_cross!`](@ref) and are
+empty for pairs the general path serves.
 """
 function kron_batch_scratch(::Type{T}, blocks::Tuple) where {T}
-    zr = zc = tr = ur = uc = yr = yc = 0
+    zr = zc = tr = ur = uc = yr = yc = xr = xc = gr = gc = wl = 0
     for i in eachindex(blocks), j in (i + 1):lastindex(blocks)
         Ai, Aj = blocks[i], blocks[j]
         kron_batch_pair(Ai, Aj) || continue
         Aa, Ab = size(Aj, 2) <= size(Ai, 2) ? (Ai, Aj) : (Aj, Ai)
+        if single_column_pair(Aa, Ab)
+            mb1, kb = size(Ab.A1)
+            xr = max(xr, mb1)
+            xc = max(xc, size(Aa.A1, 2))
+            gr = max(gr, kb)
+            gc = max(gc, size(Aa.A1, 2))
+            wl = max(wl, cld(size(Ab.A2, 1), size(Aa.A2, 1)) + 1)
+            continue
+        end
         ma1, ka1 = size(Aa.A1)
         ma2, ka2 = size(Aa.A2)
         kb = size(Ab, 2)
@@ -671,6 +792,7 @@ function kron_batch_scratch(::Type{T}, blocks::Tuple) where {T}
     return (
         Matrix{T}(undef, zr, zc), Matrix{T}(undef, tr, zc),
         Matrix{T}(undef, ur, uc), Matrix{T}(undef, yr, yc),
+        Matrix{T}(undef, xr, xc), Matrix{T}(undef, gr, gc), Vector{T}(undef, wl),
     )
 end
 

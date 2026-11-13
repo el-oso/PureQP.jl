@@ -315,6 +315,50 @@ end
 end
 
 """
+    fill_cross!(R, T, Af, Ao, w, D, col, offf, offo) -> R
+
+One off-diagonal block of a join whose block `Af` is a constant matrix.
+
+Every column of a constant `c` is the vector `c·1`, so `Afᵀ diag(w) Ao` has the same row `c·(Aoᵀw)ᵀ`
+in each of its rows: one adjoint product with `Ao` in place of one forward and one adjoint product
+per column. `col` is `Ao`-column scratch.
+"""
+function fill_cross!(R, ::Type{T}, Af, Ao, w, D, col, offf, offo) where {T}
+    kf, ko = size(Af, 2), size(Ao, 2)
+    (iszero(kf) || iszero(ko)) && return R
+    c = T(first(Af))
+    g = view(col, 1:ko)
+    if Ao isa AbstractFill
+        fill!(g, T(first(Ao)) * sum(w))
+    else
+        mul!(g, adjoint(Ao), w)
+    end
+    for j in 1:ko
+        q = offo + j - 1
+        gq = c * g[j] * D[q]
+        for i in 1:kf
+            p = offf + i - 1
+            v = D[p] * gq
+            R[p, q] += v
+            R[q, p] += v
+        end
+    end
+    return R
+end
+
+@inline cross_block!(
+    R, ::Type{T}, Ai::AbstractFill, Aj, w, D, m, ej, av, col, cross, offi, offj
+) where {T} = fill_cross!(R, T, Ai, Aj, w, D, col, offi, offj)
+
+@inline cross_block!(
+    R, ::Type{T}, Ai, Aj::AbstractFill, w, D, m, ej, av, col, cross, offi, offj
+) where {T} = fill_cross!(R, T, Aj, Ai, w, D, col, offj, offi)
+
+@inline cross_block!(
+    R, ::Type{T}, Ai::AbstractFill, Aj::AbstractFill, w, D, m, ej, av, col, cross, offi, offj
+) where {T} = fill_cross!(R, T, Ai, Aj, w, D, col, offi, offj)
+
+"""
     cross_columns!(R, T, Aa, Ab, w, D, m, ej, av, col, offa, offb) -> R
 
 Write `Dₐ Aₐᵀ diag(w) A_b D_b` and its transpose into `R`, one column of `A_b` at a time.
