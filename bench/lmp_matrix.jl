@@ -37,10 +37,11 @@
 # for polishing indistinguishable from one that did not; and `active_rows` is what sets an
 # active-set method's cost. `README.md` in `lmp-portable/` reads the columns.
 #
-# Each cell is solved twice, the second time on a workspace built afresh, and the second times are
-# reported — the first pay compilation, which for an operator naming its blocks lands once per
-# distinct block structure. A solve that spends `TIME_LIMIT` is not repeated, so such a cell costs
-# one budget rather than two. The first solve's time is kept, and `cell_s` is the whole wall clock.
+# Each cell first runs a short throwaway solve that pays compilation, which for an operator naming
+# its blocks lands once per distinct block structure, and a BLAS library's first calls. It is then
+# solved twice, the second time on a workspace built afresh, and the second times are reported. A
+# solve that spends `TIME_LIMIT` is not repeated, so such a cell costs one budget rather than two.
+# The first timed solve's time is kept, and `cell_s` is the whole wall clock.
 # `BLAS_BACKEND` (default `mkl`) and `BLAS_THREADS` (default 4) pick the BLAS library and its threads.
 #
 # Equilibration reads entries, so a representation supplying products only is set up with
@@ -72,6 +73,10 @@ BLAS.set_num_threads(parse(Int, get(ENV, "BLAS_THREADS", "4")))
 # one to watch as problems grow. And `ActiveSet` has no time-limit check at all, so it runs to its
 # own termination; its cost is bounded by the working set instead, which cannot exceed `n` rows.
 const TIME_LIMIT = 0.5
+# The warm-up solve before each cell's timed ones: enough iterations to reach the factorization,
+# the weight update and the termination check, and a budget that compilation cannot exhaust.
+const WARMUP_ITERS = 60
+const WARMUP_LIMIT = 120.0
 # Every name `linsys` accepts, taken from the base rather than listed here, so a backend added
 # there is measured without editing this file. A name the pair does not admit is refused by
 # `setup`, and that refusal is the cell's result.
@@ -180,7 +185,9 @@ refusal or an error is a cell too, carrying the message.
 """
 function run_cell(P, q, A, l, u, make_alg, kwargs, Pd, solution)
     scaling = get(kwargs, :scaling, default_options(make_alg(), Float64).scaling)
-    build() = setup(P, q, A, l, u, make_alg(); time_limit = TIME_LIMIT, merge((; scaling), kwargs)...)
+    build(extra = (;)) = setup(
+        P, q, A, l, u, make_alg(); merge((; time_limit = TIME_LIMIT, scaling), kwargs, extra)...
+    )
     cell_start = time_ns()
     cell_s() = (time_ns() - cell_start) / 1.0e9
     try
@@ -193,6 +200,10 @@ function run_cell(P, q, A, l, u, make_alg, kwargs, Pd, solution)
             ws = build()
         end
         ws, setup_s = timed(build)
+        # Compilation and a BLAS library's first calls are paid on a throwaway workspace, outside
+        # the budget: a solve that pays them inside `TIME_LIMIT` is cut short or reported at the
+        # budget however fast it runs, and on a slower host they alone exceed it.
+        solve!(build((; time_limit = WARMUP_LIMIT, max_iter = WARMUP_ITERS)))
         sol, first_solve_s = timed(() -> solve!(ws))
         # A solve that spent its whole budget has nothing to gain from a second pass and would
         # double the cell's wall time, so only a solve that terminated inside the budget is
