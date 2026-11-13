@@ -131,11 +131,45 @@ function kron_column_mul!(y, K::KroneckerOperator, x)
     return y
 end
 
+"""
+    kron_column_adjoint_mul!(y, K, x) -> Bool
+
+`y = Kᵀ x` for `K = A₁ ⊗ a` with `a` a single column, returning whether it did the work.
+
+`Σᵣ a[r] x[(k-1)m₂ + r]` collapses `x` to a vector over the rows of `A₁`, and one matrix–vector
+product with `A₁ᵀ` finishes. A matrix–vector product is what BLAS threads, where the product
+against a one-row operand is not. The product is `gemv!` itself, so that the proof of the
+operator's products allocating nothing does not reach the generic `mul!` fallback, whose
+wrapper selection it cannot rule out. Only strided BLAS floats take it; any other `K` returns
+`false` and leaves the general product to run.
+"""
+kron_column_adjoint_mul!(y, K, x) = false
+
+function kron_column_adjoint_mul!(
+        y::StridedVector{T}, K::KroneckerOperator{T, <:StridedMatrix{T}}, x
+    ) where {T <: LinearAlgebra.BlasFloat}
+    A1, a = K.A1, K.A2
+    m1, m2 = size(A1, 1), size(a, 1)
+    # `scratch2` is `1 × m₁` when `a` has one column, so its single row is contiguous.
+    s = view(K.scratch2, 1, :)
+    for k in 1:m1
+        base = (k - 1) * m2
+        acc = zero(eltype(s))
+        for r in 1:m2
+            acc += a[r, 1] * x[base + r]
+        end
+        s[k] = acc
+    end
+    LinearAlgebra.BLAS.gemv!('T', one(T), A1, s, zero(T), y)
+    return true
+end
+
 function LinearAlgebra.mul!(
         y::AbstractVector, Kt::Adjoint{<:Any, <:KroneckerOperator}, x::AbstractVector
     )
     K = parent(Kt)
     Base.require_one_based_indexing(y, x)
+    isone(size(K.A2, 2)) && kron_column_adjoint_mul!(y, K, x) && return y
     flat_copy!(K.ymat, x)
     mul!(K.scratch2, K.A2', K.ymat)   # n₂×m₁
     mul!(K.xmat, K.scratch2, K.A1)    # n₂×n₁

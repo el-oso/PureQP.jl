@@ -265,8 +265,7 @@ end
 end
 
 @testitem "a Kronecker product with a one-column second factor multiplies through one gemv" begin
-    # The forward product only; the adjoint of such a product keeps the two-gemm form, whose cost is
-    # already close to a single gemv's.
+    # The product and its adjoint each reduce to one matrix–vector product with the first factor.
     using PureQPBase, LinearAlgebra, Random
     Random.seed!(43)
 
@@ -285,10 +284,24 @@ end
         mul!(view(buf, 4:(3 + m1 * m2)), K, x)
         @test buf[4:(3 + m1 * m2)] ≈ Km * x rtol = 1.0e-13
         @test all(==(7.0), buf[1:3]) && all(==(7.0), buf[(m1 * m2 + 4):end])
+        # The adjoint into a slice, and from a vector that is itself a slice.
+        out = fill(7.0, k1 + 4)
+        mul!(view(out, 3:(2 + k1)), K', view(vcat(0.0, z, 0.0), 2:(1 + m1 * m2)))
+        @test out[3:(2 + k1)] ≈ Km' * z rtol = 1.0e-13
+        @test all(==(7.0), out[1:2]) && all(==(7.0), out[(k1 + 3):end])
     end
-    # The product does not allocate once the operator exists.
+    # An element type BLAS does not serve takes the general product.
+    Kb = PureQPBase.KroneckerOperator(rand(BigFloat, 5, 3), rand(BigFloat, 2, 1))
+    zb = rand(BigFloat, 10)
+    vb = zeros(BigFloat, 3)
+    mul!(vb, Kb', zb)
+    @test vb ≈ Matrix(Kb)' * zb rtol = 1.0e-30
+    # The product and its adjoint do not allocate once the operator exists.
     K = PureQPBase.KroneckerOperator(randn(40, 9), randn(3, 1))
     x, y = randn(9), zeros(120)
     mul!(y, K, x)
-    @test (@allocated mul!(y, K, x)) == 0
+    @test iszero(@allocated mul!(y, K, x))
+    v = zeros(9)
+    mul!(v, K', y)
+    @test iszero(@allocated mul!(v, K', y))
 end

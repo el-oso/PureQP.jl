@@ -7,6 +7,16 @@ what is true now; this file is where the history lives.
 
 ### Changed
 
+- **The adjoint of a Kronecker product with a one-column second factor is one matrix–vector
+  product.** It was a product against a one-row operand, which BLAS does not thread: 46.2 µs at
+  4 threads for the 988 × 553 block of a 2396-row problem, against 18.6 µs for the forward
+  product. It now collapses the vector over the first factor's rows and calls `gemv!` with the
+  transpose of the first factor, 14.8 µs at 4 threads. An ADMM step of that problem takes
+  47.9 µs against 74.7 µs and a fresh solve 21.3 ms against 26.1 ms at 4 threads; at 1 thread
+  the times are unchanged. A 17-iteration `ProductReduced` interior-point solve of that problem
+  takes 97.1 ms against 101.5 ms at 4 threads and 183.4 ms against 181.3 ms at 1. Only strided
+  BLAS floats take it.
+
 - **`ActiveSet` over an unmaterialized pair applies an explicit inverse of the factor of `P`.**
   Pricing every row and reading an entering row each take a triangular solve with the factor,
   and OpenBLAS does not thread a solve: about 20 µs at 1 and at 4 threads for a 553 × 553
