@@ -89,7 +89,7 @@ const KroneckerWorkspace{T} = ActiveSetWorkspace{
         T, KroneckerCholesky{T}, Transpose{T, KroneckerCholesky{T}}, WorkingSetQR{T},
         ImplicitRows{
             T, KroneckerOperator{T, Matrix{T}}, KroneckerCholesky{T},
-            Transpose{T, KroneckerCholesky{T}},
+            Transpose{T, KroneckerCholesky{T}}, Nothing, Nothing,
         },
     },
     ActiveSet{T, T, T, T, T, WorkingSetQR},

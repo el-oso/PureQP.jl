@@ -33,16 +33,51 @@ length-`m` vectors, whatever `m` is.
 carries `R⁻¹u` into the product. Both are overwritten by every call, and `R` and `A` may keep
 scratch of their own, so one of these must not be read from two tasks at once.
 """
-struct ImplicitRows{T <: Real, MA <: AbstractMatrix{T}, F, FT}
+struct ImplicitRows{T <: Real, MA <: AbstractMatrix{T}, F, FT, FI, FIT}
     A::MA
     R::F
     # `transpose(R)`, held rather than formed per row: the wrapper is a heap allocation on
     # Julia 1.13 for a triangular `R`, and a row is read every iteration.
     Rt::FT
+    # `R⁻¹` and its transpose for a dense triangular `R` that is well conditioned: a triangular
+    # product with them threads where a triangular solve does not. `use_inverse` is false, and
+    # both are empty, when `R` is too ill conditioned for an explicit inverse to apply as
+    # accurately as the solve, and for a factor that is not a dense triangle.
+    Rinv::FI
+    Rinvt::FIT
+    use_inverse::Bool
     scale::Vector{T}
     rowbuf::Vector{T}
     tmp::Vector{T}
 end
+
+"The reciprocal condition number of `R` above which `R⁻¹` replaces solves with `R`."
+const INVERSE_RCOND_MIN = 1.0e-6
+
+explicit_inverse(R) = (nothing, nothing, false)
+
+function explicit_inverse(R::UpperTriangular{T, <:StridedMatrix{T}}) where {T <: LinearAlgebra.BlasFloat}
+    rc = LinearAlgebra.LAPACK.trcon!('1', 'U', 'N', copy(parent(R)))
+    if rc >= INVERSE_RCOND_MIN
+        Ri = inv(R)
+        return (Ri, transpose(Ri), true)
+    end
+    empty = UpperTriangular(Matrix{T}(undef, 0, 0))
+    return (empty, transpose(empty), false)
+end
+
+function ImplicitRows(A, R, Rt, scale::Vector{T}, rowbuf, tmp) where {T}
+    Ri, Rit, use = explicit_inverse(R)
+    return ImplicitRows{T, typeof(A), typeof(R), typeof(Rt), typeof(Ri), typeof(Rit)}(
+        A, R, Rt, Ri, Rit, use, scale, rowbuf, tmp
+    )
+end
+
+# `x ← R⁻¹x` and `x ← R⁻ᵀx`, by the explicit inverse where one is held and by a solve otherwise.
+solve_R!(M::ImplicitRows{<:Any, <:Any, <:Any, <:Any, Nothing}, x) = ldiv!(M.R, x)
+solve_R!(M::ImplicitRows, x) = M.use_inverse ? lmul!(M.Rinv, x) : ldiv!(M.R, x)
+solve_Rt!(M::ImplicitRows{<:Any, <:Any, <:Any, <:Any, Nothing}, x) = ldiv!(M.Rt, x)
+solve_Rt!(M::ImplicitRows, x) = M.use_inverse ? lmul!(M.Rinvt, x) : ldiv!(M.Rt, x)
 
 "How many variables the reduced rows have."
 nvars(M::DenseRows) = size(M.Mt, 1)
@@ -58,7 +93,7 @@ nreduced(M::ImplicitRows) = size(M.A, 1)
 function row(M::ImplicitRows{T}, r::Integer) where {T}
     buf = M.rowbuf
     dense_row!(buf, M.A, r)
-    ldiv!(M.Rt, buf)
+    solve_Rt!(M, buf)
     s = M.scale[r]
     @simd for i in eachindex(buf)
         buf[i] /= s
@@ -96,7 +131,7 @@ function price!(
     ) where {T}
     tmp = M.tmp
     copyto!(tmp, u)
-    ldiv!(M.R, tmp)
+    solve_R!(M, tmp)
     mul!(dest, M.A, tmp)
     scale = M.scale
     @simd for j in paired(dest, scale)
